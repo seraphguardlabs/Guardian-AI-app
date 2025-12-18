@@ -47,10 +47,12 @@ class PreferencesManager {
   }
 
   bool isLoggedIn() {
-    return getAuthToken() != null;
+    final token = getAuthToken();
+    return token != null && token.isNotEmpty;
   }
 
   bool hasSelectedChild() {
-    return getChildHash() != null;
+    final hash = getChildHash();
+    return hash != null && hash.isNotEmpty;
   }
 }

@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:device_apps/device_apps.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../utils/preferences_manager.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -14,10 +16,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
+  static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
   bool _loading = true;
   List<UsageInfo> _usageStats = [];
   Map<String, Application> _apps = {};
+  List<Map<String, String>> _browserHistory = [];
   Timer? _refreshTimer;
 
   @override
@@ -40,6 +44,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await Future.wait([
       _getScreenTime(),
       _initUsageStats(),
+      _getBrowserHistory(),
     ]);
   }
 
@@ -149,6 +154,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _formatDuration(totalMillis.toString());
   }
 
+  bool _isBrowserApp(String packageName, String appName) {
+    final browserKeywords = [
+      'browser', 'chrome', 'firefox', 'opera', 'edge', 'safari', 'brave',
+      'duck', 'samsung internet', 'uc browser', 'dolphin', 'maxthon',
+      'puffin', 'kiwi', 'vivaldi', 'tor', 'duckduckgo'
+    ];
+    final lowerPackage = packageName.toLowerCase();
+    final lowerName = appName.toLowerCase();
+    return browserKeywords.any((keyword) => 
+      lowerPackage.contains(keyword) || lowerName.contains(keyword)
+    );
+  }
+
+  List<UsageInfo> get _browserUsageStats {
+    return _usageStats.where((usage) {
+      final app = _apps[usage.packageName];
+      if (app == null) return false;
+      return _isBrowserApp(usage.packageName ?? '', app.appName);
+    }).toList();
+  }
+
+  String get _totalBrowserTime {
+    if (_browserUsageStats.isEmpty) return '0m';
+    int totalMillis = 0;
+    for (var usage in _browserUsageStats) {
+      totalMillis += int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+    }
+    return _formatDuration(totalMillis.toString());
+  }
+
+  Future<void> _getBrowserHistory() async {
+    try {
+      final List<dynamic> result = await browserChannel.invokeMethod('getBrowserHistory');
+      if (mounted) {
+        setState(() {
+          _browserHistory = result.map((item) => Map<String, String>.from(item)).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching browser history: $e');
+      if (mounted) {
+        setState(() {
+          _browserHistory = [];
+        });
+      }
+    }
+  }
+
+  String _formatTimestamp(String timestampStr) {
+    try {
+      final timestamp = int.tryParse(timestampStr) ?? 0;
+      if (timestamp == 0) return 'Unknown';
+      
+      // Chrome timestamps are in microseconds since 1601, convert to milliseconds since epoch
+      final chromeEpochStart = 11644473600000000; // Microseconds
+      final millisSinceEpoch = (timestamp - chromeEpochStart) ~/ 1000;
+      
+      final date = DateTime.fromMillisecondsSinceEpoch(millisSinceEpoch);
+      final now = DateTime.now();
+      final diff = now.difference(date);
+      
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+      if (diff.inDays < 1) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      
+      return DateFormat('MMM d').format(date);
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -163,6 +240,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refreshData,
             tooltip: 'Refresh',
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) async {
+              if (value == 'logout') {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Logout'),
+                    content: const Text('Are you sure you want to logout?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Logout'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed == true && mounted) {
+                  final prefsManager = context.read<PreferencesManager>();
+                  await prefsManager.clearAll();
+                  if (mounted) {
+                    Navigator.pushReplacementNamed(context, '/login');
+                  }
+                }
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -260,6 +381,292 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const SizedBox(height: 24),
                     ],
+                    
+                    // Browser Usage Section
+                    if (_browserUsageStats.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.language_rounded, size: 20, color: colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Browser Activity',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.errorContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _totalBrowserTime,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: Container(
+                          height: 200,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(8),
+                            itemCount: _browserUsageStats.length,
+                            itemBuilder: (context, index) {
+                              final usage = _browserUsageStats[index];
+                              final app = _apps[usage.packageName];
+                              
+                              if (app == null) return const SizedBox.shrink();
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  leading: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: colorScheme.surfaceContainerHighest,
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: app is ApplicationWithIcon
+                                          ? Image.memory(
+                                              app.icon,
+                                              width: 48,
+                                              height: 48,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Icon(
+                                              Icons.language_rounded,
+                                              color: colorScheme.primary,
+                                            ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    app.appName,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Browser app',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.errorContainer,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _formatDuration(usage.totalTimeInForeground),
+                                      style: theme.textTheme.labelLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    
+                    // Browser History Section - Always show
+                    Row(
+                      children: [
+                        Icon(Icons.history_rounded, size: 20, color: colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Browsing History',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_browserHistory.isNotEmpty)
+                          Text(
+                            '${_browserHistory.length} ${_browserHistory.length == 1 ? 'entry' : 'entries'}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Container(
+                        height: 300,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: _browserHistory.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline_rounded,
+                                        size: 48,
+                                        color: colorScheme.primary,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'No browsing history available',
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Enable Accessibility Service to track visited websites',
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      FilledButton.icon(
+                                        onPressed: () async {
+                                          try {
+                                            await platform.invokeMethod('openAccessibilitySettings');
+                                          } catch (e) {
+                                            debugPrint('Error opening settings: $e');
+                                          }
+                                        },
+                                        icon: const Icon(Icons.settings, size: 18),
+                                        label: const Text('Enable Accessibility Service'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(8),
+                                itemCount: _browserHistory.length,
+                                itemBuilder: (context, index) {
+                                  final site = _browserHistory[index];
+                                  final title = site['title'] ?? 'Unknown';
+                                  final url = site['url'] ?? '';
+                                  final timestamp = site['timestamp'] ?? '';
+                                  
+                                  final isErrorMessage = title.contains('Failed') || 
+                                                         title.contains('Permission') ||
+                                                         title.contains('Debug');
+                                  
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    color: isErrorMessage ? colorScheme.errorContainer.withOpacity(0.3) : null,
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  leading: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: isErrorMessage 
+                                          ? colorScheme.errorContainer 
+                                          : colorScheme.primaryContainer,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      isErrorMessage ? Icons.info_outline_rounded : Icons.public_rounded,
+                                      color: isErrorMessage 
+                                          ? colorScheme.error 
+                                          : colorScheme.primary,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    title,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        url,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: isErrorMessage 
+                                              ? colorScheme.onSurface 
+                                              : colorScheme.primary,
+                                        ),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (!isErrorMessage) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _formatTimestamp(timestamp),
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ] else ...[
+                                        const SizedBox(height: 8),
+                                        FilledButton.icon(
+                                          onPressed: () async {
+                                            try {
+                                              await platform.invokeMethod('openAccessibilitySettings');
+                                            } catch (e) {
+                                              debugPrint('Error opening settings: $e');
+                                            }
+                                          },
+                                          icon: const Icon(Icons.settings, size: 16),
+                                          label: const Text('Enable Accessibility Service'),
+                                          style: FilledButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            minimumSize: const Size(0, 32),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  isThreeLine: true,
+                                ),
+                              );
+                            },
+                          ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     
                     // App Usage List Header
                     Row(

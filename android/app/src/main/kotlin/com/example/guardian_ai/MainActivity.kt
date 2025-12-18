@@ -5,6 +5,8 @@ import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.annotation.NonNull
@@ -15,9 +17,13 @@ import java.util.Calendar
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.guardian_ai/screen_time"
+    private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // Initialize WebsiteDataStore
+        WebsiteDataStore.init(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler {
             call, result ->
             if (call.method == "getScreenTime") {
@@ -27,6 +33,28 @@ class MainActivity: FlutterActivity() {
                 } else {
                     result.error("UNAVAILABLE", "Screen time not available.", null)
                 }
+            } else if (call.method == "openAccessibilitySettings") {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                result.success(true)
+            } else {
+                result.notImplemented()
+            }
+        }
+        
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BROWSER_CHANNEL).setMethodCallHandler {
+            call, result ->
+            if (call.method == "getBrowserHistory") {
+                val websites = WebsiteDataStore.getWebsites()
+                val historyList = websites.map { url ->
+                    mapOf(
+                        "title" to url,
+                        "url" to url,
+                        "timestamp" to System.currentTimeMillis().toString()
+                    )
+                }
+                result.success(historyList)
             } else {
                 result.notImplemented()
             }
