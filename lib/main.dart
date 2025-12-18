@@ -4,6 +4,7 @@ import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/child_selection_screen.dart';
 import 'services/api_service.dart';
+import 'services/location_service.dart';
 import 'utils/preferences_manager.dart';
 
 void main() async {
@@ -17,6 +18,7 @@ void main() async {
       providers: [
         Provider<PreferencesManager>.value(value: prefsManager),
         Provider<ApiService>(create: (_) => ApiService()),
+        ChangeNotifierProvider(create: (_) => LocationService()),
       ],
       child: GuardianAIApp(prefsManager: prefsManager),
     ),
