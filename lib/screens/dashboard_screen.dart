@@ -6,6 +6,7 @@ import 'package:device_apps/device_apps.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
+import '../services/location_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -32,11 +33,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshData();
     });
+    
+    // Start location tracking
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final locationService = Provider.of<LocationService>(context, listen: false);
+      locationService.startTracking();
+    });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    // Stop location tracking
+    final locationService = Provider.of<LocationService>(context, listen: false);
+    locationService.stopTracking();
     super.dispose();
   }
 
@@ -338,6 +348,152 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Location Tracking Card
+                    Consumer<LocationService>(
+                      builder: (context, locationService, child) {
+                        return Card(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  colorScheme.secondaryContainer,
+                                  colorScheme.tertiaryContainer,
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      locationService.isTracking
+                                          ? Icons.my_location_rounded
+                                          : Icons.location_off_rounded,
+                                      size: 32,
+                                      color: locationService.isTracking
+                                          ? colorScheme.primary
+                                          : colorScheme.error,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'Live Location',
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surface.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      if (locationService.currentPosition != null) ...[
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.place_rounded,
+                                              size: 20,
+                                              color: colorScheme.primary,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                locationService.getLocationString(),
+                                                style: theme.textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.speed_rounded,
+                                              size: 16,
+                                              color: colorScheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Speed: ${locationService.currentPosition!.speed.toStringAsFixed(1)} m/s',
+                                              style: theme.textTheme.bodyMedium?.copyWith(
+                                                color: colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.radar_rounded,
+                                              size: 16,
+                                              color: colorScheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Accuracy: ±${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
+                                              style: theme.textTheme.bodyMedium?.copyWith(
+                                                color: colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Live Tracking',
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ] else ...[
+                                        Text(
+                                          locationService.locationStatus,
+                                          style: theme.textTheme.bodyLarge?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 24),
                     
