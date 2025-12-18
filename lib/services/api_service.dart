@@ -19,20 +19,34 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        // Handle different response formats like PCA
+        if (data['status'] == 'ok') {
+          final childrenList = data['children'] as List? ?? [];
+          return {
+            'success': true,
+            'token': '',
+            'children': childrenList
+                .map((childJson) => Child.fromJson(childJson as Map<String, dynamic>))
+                .toList(),
+          };
+        }
+        
+        // Standard format with token
         final childrenList = data['children'] as List? ?? [];
         return {
           'success': true,
-          'token': data['token'],
+          'token': data['token'] ?? '',
           'children': childrenList
-              .map((childJson) => Child.fromJson(childJson))
+              .map((childJson) => Child.fromJson(childJson as Map<String, dynamic>))
               .toList(),
         };
       } else {
-        final errorData = jsonDecode(response.body);
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
         return {
           'success': false,
-          'error': errorData['error'] ?? 'Login failed',
+          'error': errorData['error'] ?? errorData['message'] ?? errorData['detail'] ?? 'Login failed',
         };
       }
     } catch (e) {

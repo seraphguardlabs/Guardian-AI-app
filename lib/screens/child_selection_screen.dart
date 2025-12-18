@@ -4,12 +4,15 @@ import '../models/child.dart';
 import '../utils/preferences_manager.dart';
 
 class ChildSelectionScreen extends StatelessWidget {
-  const ChildSelectionScreen({super.key});
+  final List<Child>? children;
+  
+  const ChildSelectionScreen({super.key, this.children});
 
   @override
   Widget build(BuildContext context) {
-    // Retrieve children passed from login screen
-    final List<Child> children = ModalRoute.of(context)!.settings.arguments as List<Child>;
+    // Try to get children from constructor first, then from route arguments
+    final List<Child> childrenList = children ?? 
+        (ModalRoute.of(context)?.settings.arguments as List<Child>? ?? []);
 
     return Scaffold(
       appBar: AppBar(
@@ -17,7 +20,7 @@ class ChildSelectionScreen extends StatelessWidget {
         centerTitle: true,
         automaticallyImplyLeading: false,
       ),
-      body: children.isEmpty
+      body: childrenList.isEmpty
           ? const Center(
               child: Text(
                 'No child profiles found.\nPlease create a profile on the web dashboard.',
@@ -27,9 +30,9 @@ class ChildSelectionScreen extends StatelessWidget {
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: children.length,
+              itemCount: childrenList.length,
               itemBuilder: (context, index) {
-                final child = children[index];
+                final child = childrenList[index];
                 return Card(
                   elevation: 2,
                   margin: const EdgeInsets.only(bottom: 16),
@@ -79,13 +82,8 @@ class ChildSelectionScreen extends StatelessWidget {
     await prefs.setChildName(child.firstName);
 
     if (context.mounted) {
-      // Navigate to Dashboard (placeholder for now)
-      // Navigator.pushReplacementNamed(context, '/dashboard');
-      
-      // For now, just show a success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Selected ${child.firstName}')),
-      );
+      // Navigate to Dashboard
+      Navigator.pushReplacementNamed(context, '/dashboard');
     }
   }
 }

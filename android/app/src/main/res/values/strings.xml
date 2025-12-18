@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">guardian_ai</string>
+    <string name="accessibility_service_description">Monitors browser activity to track visited websites and help manage screen time.</string>
+</resources>

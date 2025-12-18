@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
 import '../models/child.dart';
+import 'child_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +19,13 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
@@ -40,15 +48,20 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (result['success']) {
-      // Save token
-      await prefs.setAuthToken(result['token']);
+      // Save token if available
+      final token = result['token'] as String?;
+      if (token != null && token.isNotEmpty) {
+        await prefs.setAuthToken(token);
+      }
 
       // Navigate to child selection, passing the children list
       if (mounted) {
-        Navigator.pushReplacementNamed(
+        final children = result['children'] as List<Child>;
+        Navigator.pushReplacement(
           context,
-          '/child_selection',
-          arguments: result['children'],
+          MaterialPageRoute(
+            builder: (context) => ChildSelectionScreen(children: children),
+          ),
         );
       }
     } else {
@@ -183,12 +196,5 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/child_selection_screen.dart';
 import 'services/api_service.dart';
 import 'utils/preferences_manager.dart';
 
@@ -16,13 +18,15 @@ void main() async {
         Provider<PreferencesManager>.value(value: prefsManager),
         Provider<ApiService>(create: (_) => ApiService()),
       ],
-      child: const GuardianAIApp(),
+      child: GuardianAIApp(prefsManager: prefsManager),
     ),
   );
 }
 
 class GuardianAIApp extends StatelessWidget {
-  const GuardianAIApp({super.key});
+  final PreferencesManager prefsManager;
+  
+  const GuardianAIApp({super.key, required this.prefsManager});
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +68,14 @@ class GuardianAIApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: const DashboardScreen(),
+      home: prefsManager.hasSelectedChild()
+          ? const DashboardScreen()
+          : const LoginScreen(),
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/child_selection': (context) => const ChildSelectionScreen(),
+        '/dashboard': (context) => const DashboardScreen(),
+      },
     );
   }
 }
