@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
 import '../services/location_service.dart';
+import '../services/websocket_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -38,6 +39,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationService = Provider.of<LocationService>(context, listen: false);
       locationService.startTracking();
+      
+      // Initialize WebSocket connection
+      _initializeWebSocket();
     });
   }
 
@@ -56,6 +60,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _initUsageStats(),
       _getBrowserHistory(),
     ]);
+    
+    // Send data via WebSocket after collecting
+    _sendDataViaWebSocket();
+  }
+  
+  Future<void> _initializeWebSocket() async {
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefsManager.getChildHash();
+    
+    if (childHash != null && childHash.isNotEmpty) {
+      final wsService = Provider.of<WebSocketService>(context, listen: false);
+      await wsService.connect(childHash);
+      debugPrint('🔌 WebSocket connected for child: $childHash');
+    } else {
+      debugPrint('⚠️ No child hash found, skipping WebSocket connection');
+    }
+  }
+  
+  Future<void> _sendDataViaWebSocket() async {
+    final wsService = Provider.of<WebSocketService>(context, listen: false);
+    
+    if (!wsService.isConnected) {
+      debugPrint('⚠️ WebSocket not connected, skipping data send');
+      return;
+    }
+    
+    // Send screen time data
+    await _sendScreenTimeData();
+    
+    // Send location data
+    await _sendLocationData();
+    
+    // Send website access data
+    await _sendWebsiteData();
+  }
+  
+  Future<void> _sendScreenTimeData() async {
+    if (_usageStats.isEmpty) return;
+    
+    final wsService = Provider.of<WebSocketService>(context, listen: false);
+    
+    // Calculate total screen time in seconds
+    int totalSeconds = 0;
+    final appWiseData = <String, Map<String, int>>{};
+    
+    for (var usage in _usageStats) {
+      final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+      final seconds = millis ~/ 1000;
+      totalSeconds += seconds;
+      
+      // Get current hour for hourly breakdown
+      final hour = DateTime.now().hour.toString().padLeft(2, '0');
+      
+      final packageName = usage.packageName ?? 'unknown';
+      appWiseData[packageName] = {hour: seconds};
+    }
+    
+    final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    
+    await wsService.sendScreenTime(
+      date: dateStr,
+      totalScreenTime: totalSeconds,
+      appWiseData: appWiseData,
+    );
+    
+    debugPrint('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
+  }
+  
+  Future<void> _sendLocationData() async {
+    final locationService = Provider.of<LocationService>(context, listen: false);
+    final wsService = Provider.of<WebSocketService>(context, listen: false);
+    
+    if (locationService.currentPosition != null) {
+      await wsService.sendLocation(
+        timestamp: DateTime.now().toUtc().toIso8601String(),
+        latitude: locationService.currentPosition!.latitude,
+        longitude: locationService.currentPosition!.longitude,
+      );
+      
+      debugPrint('📍 Sent location: ${locationService.currentPosition!.latitude}, ${locationService.currentPosition!.longitude}');
+    }
+  }
+  
+  Future<void> _sendWebsiteData() async {
+    if (_browserHistory.isEmpty) return;
+    
+    final wsService = Provider.of<WebSocketService>(context, listen: false);
+    
+    final logs = _browserHistory.map((entry) {
+      return {
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+        'url': entry['url'] ?? '',
+        'accessed': true,
+      };
+    }).toList();
+    
+    await wsService.sendSiteAccess(logs: logs);
+    
+    debugPrint('🌐 Sent ${logs.length} website visits');
   }
 
   Future<void> _getScreenTime() async {
@@ -246,6 +349,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: const Text('Guardian AI'),
         backgroundColor: colorScheme.surface,
         actions: [
+          // WebSocket connection status indicator
+          Consumer<WebSocketService>(
+            builder: (context, wsService, child) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      wsService.isConnected ? Icons.cloud_done : Icons.cloud_off,
+                      color: wsService.isConnected ? Colors.green : Colors.grey,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      wsService.isConnected ? 'LIVE' : 'OFFLINE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: wsService.isConnected ? Colors.green : Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refreshData,

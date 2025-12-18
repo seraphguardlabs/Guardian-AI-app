@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../models/child.dart';
+import '../models/websocket_data.dart';
 
 class ApiService {
   static const String baseUrl = 'https://seraphguardlabs.com';
@@ -53,6 +55,120 @@ class ApiService {
       return {
         'success': false,
         'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// HTTP Fallback: Send data via POST when WebSocket is unavailable
+  Future<Map<String, dynamic>> sendDataViaHttp({
+    required String childHash,
+    ScreenTimeData? screenTimeData,
+    LocationData? locationData,
+    SiteAccessData? siteAccessData,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/ingest/');
+    
+    try {
+      final payload = <String, dynamic>{};
+      
+      // Add screen time info
+      if (screenTimeData != null) {
+        payload['screen_time_info'] = {
+          'child_hash': childHash,
+          ...screenTimeData.toJson(),
+        };
+      }
+      
+      // Add location info
+      if (locationData != null) {
+        payload['location_info'] = {
+          'child_hash': childHash,
+          ...locationData.toJson(),
+        };
+      }
+      
+      // Add site access info
+      if (siteAccessData != null) {
+        payload['site_access_info'] = {
+          'child_hash': childHash,
+          ...siteAccessData.toJson(),
+        };
+      }
+      
+      debugPrint('📤 HTTP Fallback: Sending data to $url');
+      debugPrint('📦 Payload: ${jsonEncode(payload)}');
+      
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('✅ HTTP Fallback: Data sent successfully');
+        final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'data': responseData,
+        };
+      } else {
+        debugPrint('❌ HTTP Fallback: Failed with status ${response.statusCode}');
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['error'] ?? errorData['message'] ?? 'Failed to send data',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ HTTP Fallback: Network error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Batch send multiple data types via HTTP
+  Future<Map<String, dynamic>> batchSendData({
+    required String childHash,
+    required List<Map<String, dynamic>> batchData,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/ingest/');
+    
+    try {
+      debugPrint('📤 HTTP Batch: Sending ${batchData.length} items');
+      
+      final results = [];
+      for (final data in batchData) {
+        final response = await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(data),
+        );
+        
+        results.add({
+          'status': response.statusCode,
+          'success': response.statusCode == 200 || response.statusCode == 201,
+        });
+        
+        // Small delay between requests to avoid overwhelming the server
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      
+      final successCount = results.where((r) => r['success'] == true).length;
+      debugPrint('✅ HTTP Batch: $successCount/${batchData.length} sent successfully');
+      
+      return {
+        'success': successCount == batchData.length,
+        'total': batchData.length,
+        'successful': successCount,
+        'results': results,
+      };
+    } catch (e) {
+      debugPrint('❌ HTTP Batch: Error: $e');
+      return {
+        'success': false,
+        'error': 'Batch send error: $e',
       };
     }
   }
