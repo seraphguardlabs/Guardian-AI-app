@@ -8,6 +8,9 @@ import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
 import '../services/location_service.dart';
 import '../services/websocket_service.dart';
+import '../services/api_service.dart';
+import '../services/app_blocker_service.dart';
+import '../models/restrictions_data.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -25,6 +28,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, Application> _apps = {};
   List<Map<String, String>> _browserHistory = [];
   Timer? _refreshTimer;
+  RestrictionsData? _restrictions;
+  StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
+  StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
 
   @override
   void initState() {
@@ -42,12 +48,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       // Initialize WebSocket connection
       _initializeWebSocket();
+      
+      // Fetch restrictions
+      _fetchRestrictions();
     });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _wsMessageSubscription?.cancel();
+    _wsRestrictionsSubscription?.cancel();
     // Stop location tracking
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
@@ -73,8 +84,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final wsService = Provider.of<WebSocketService>(context, listen: false);
       await wsService.connect(childHash);
       debugPrint('🔌 WebSocket connected for child: $childHash');
+      
+      // Listen for incoming messages from server
+      _wsMessageSubscription = wsService.messages.listen((message) {
+        if (message['type'] == 'restrictions_update') {
+          debugPrint('🚫 Received restrictions update via WebSocket');
+          _fetchRestrictions();
+        }
+      });
+      
+      // Listen for restrictions updates from dedicated WSS connection
+      _wsRestrictionsSubscription = wsService.restrictions.listen((message) {
+        if (message['type'] == 'restrictions_update') {
+          debugPrint('🚫 Received restrictions from WSS');
+          final restrictedApps = message['restricted_apps'] as Map<String, dynamic>? ?? {};
+          
+          // Update app blocker service
+          final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
+          appBlocker.updateRestrictions(restrictedApps);
+          
+          // Also update local restrictions data for UI
+          if (mounted) {
+            setState(() {
+              _restrictions = RestrictionsData.fromJson(restrictedApps);
+            });
+          }
+        }
+      });
     } else {
       debugPrint('⚠️ No child hash found, skipping WebSocket connection');
+    }
+  }
+  
+  Future<void> _fetchRestrictions() async {
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefsManager.getChildHash();
+    
+    if (childHash == null || childHash.isEmpty) {
+      debugPrint('⚠️ No child hash, skipping restrictions fetch');
+      return;
+    }
+    
+    final apiService = Provider.of<ApiService>(context, listen: false);
+    final result = await apiService.fetchRestrictions(childHash);
+    
+    if (result['success'] == true && mounted) {
+      final restrictions = result['restrictions'] as RestrictionsData;
+      setState(() {
+        _restrictions = restrictions;
+      });
+      debugPrint('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
+      
+      // Update app blocker service
+      final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
+      appBlocker.updateRestrictions(_restrictions!.restrictedApps);
     }
   }
   
@@ -1022,8 +1085,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   
                                   if (app == null) return const SizedBox.shrink();
 
+                                  // Check if this app has a time limit
+                                  final packageName = usage.packageName ?? '';
+                                  final hasLimit = _restrictions?.restrictedApps.containsKey(packageName) ?? false;
+                                  final limitHours = hasLimit ? _restrictions!.restrictedApps[packageName] : null;
+                                  
+                                  // Calculate time used in hours
+                                  final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+                                  final usedHours = millis / 1000 / 3600;
+                                  
+                                  // Check if limit is exceeded
+                                  final isExceeded = hasLimit && limitHours != null && usedHours >= limitHours;
+
                                   return Card(
                                     margin: const EdgeInsets.only(bottom: 8),
+                                    color: isExceeded ? colorScheme.errorContainer.withOpacity(0.3) : null,
                                     child: ListTile(
                                       contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -1051,19 +1127,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                 ),
                                         ),
                                       ),
-                                      title: Text(
-                                        app.appName,
-                                        style: theme.textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              app.appName,
+                                              style: theme.textTheme.titleSmall?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          if (isExceeded)
+                                            Icon(
+                                              Icons.block_rounded,
+                                              size: 16,
+                                              color: colorScheme.error,
+                                            ),
+                                        ],
                                       ),
-                                      subtitle: Text(
-                                        usage.packageName ?? '',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            usage.packageName ?? '',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: colorScheme.onSurfaceVariant,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (hasLimit && limitHours != null) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.timer_outlined,
+                                                  size: 14,
+                                                  color: isExceeded 
+                                                      ? colorScheme.error 
+                                                      : colorScheme.primary,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Limit: ${limitHours.toStringAsFixed(1)}h',
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    color: isExceeded 
+                                                        ? colorScheme.error 
+                                                        : colorScheme.primary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                       trailing: Container(
                                         padding: const EdgeInsets.symmetric(
@@ -1071,14 +1188,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: colorScheme.primaryContainer,
+                                          color: isExceeded
+                                              ? colorScheme.errorContainer
+                                              : colorScheme.primaryContainer,
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           _formatDuration(usage.totalTimeInForeground),
                                           style: theme.textTheme.labelLarge?.copyWith(
                                             fontWeight: FontWeight.bold,
-                                            color: colorScheme.onPrimaryContainer,
+                                            color: isExceeded
+                                                ? colorScheme.onErrorContainer
+                                                : colorScheme.onPrimaryContainer,
                                           ),
                                         ),
                                       ),

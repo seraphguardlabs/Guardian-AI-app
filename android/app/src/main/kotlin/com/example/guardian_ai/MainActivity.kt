@@ -1,5 +1,6 @@
 package com.example.guardian_ai
 
+import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
@@ -18,6 +19,7 @@ import java.util.Calendar
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.guardian_ai/screen_time"
     private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
+    private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -59,6 +61,78 @@ class MainActivity: FlutterActivity() {
                 result.notImplemented()
             }
         }
+        
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BLOCKER_CHANNEL).setMethodCallHandler {
+            call, result ->
+            when (call.method) {
+                "getForegroundApp" -> {
+                    val foregroundApp = getForegroundApp()
+                    result.success(foregroundApp)
+                }
+                "blockApp" -> {
+                    val packageName = call.argument<String>("package")
+                    if (packageName != null) {
+                        blockApp(packageName)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGS", "Package name required", null)
+                    }
+                }
+                "goToHomeScreen" -> {
+                    goToHomeScreen()
+                    result.success(true)
+                }
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+    }
+    
+    private fun getForegroundApp(): String? {
+        if (!hasUsageStatsPermission()) {
+            return null
+        }
+        
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val currentTime = System.currentTimeMillis()
+        val fiveSecondsAgo = currentTime - 5000
+        
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST,
+            fiveSecondsAgo,
+            currentTime
+        )
+        
+        if (stats != null && stats.isNotEmpty()) {
+            // Get the most recently used app
+            val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
+            return sortedStats.firstOrNull()?.packageName
+        }
+        
+        return null
+    }
+    
+    private fun blockApp(packageName: String) {
+        // Kill the app process if permission is granted
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        
+        // Send user to home screen
+        goToHomeScreen()
+        
+        // Try to kill background processes (requires KILL_BACKGROUND_PROCESSES permission)
+        try {
+            activityManager.killBackgroundProcesses(packageName)
+        } catch (e: Exception) {
+            // Permission not granted or other error
+        }
+    }
+    
+    private fun goToHomeScreen() {
+        val homeIntent = Intent(Intent.ACTION_MAIN)
+        homeIntent.addCategory(Intent.CATEGORY_HOME)
+        homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        startActivity(homeIntent)
     }
 
     private fun getScreenTime(): String? {
