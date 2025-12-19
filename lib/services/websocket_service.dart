@@ -14,24 +14,33 @@ enum WebSocketStatus {
 
 class WebSocketService extends ChangeNotifier {
   static const String wsBaseUrl = 'wss://seraphguardlabs.com/ws/ingest';
+  static const String wsRestrictionsUrl = 'wss://seraphguardlabs.com/ws/restrictions';
   static const int maxReconnectAttempts = 5;
   static const int initialReconnectDelay = 1000; // milliseconds
   
   WebSocketChannel? _channel;
+  WebSocketChannel? _restrictionsChannel;
   WebSocketStatus _status = WebSocketStatus.disconnected;
+  WebSocketStatus _restrictionsStatus = WebSocketStatus.disconnected;
   String? _childHash;
   int _reconnectAttempts = 0;
   Timer? _reconnectTimer;
   Timer? _heartbeatTimer;
+  Timer? _restrictionsHeartbeatTimer;
   
   final List<Map<String, dynamic>> _messageBuffer = [];
   final StreamController<Map<String, dynamic>> _messageController = 
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _restrictionsController = 
+      StreamController<Map<String, dynamic>>.broadcast();
   
   WebSocketStatus get status => _status;
+  WebSocketStatus get restrictionsStatus => _restrictionsStatus;
   String? get childHash => _childHash;
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
+  Stream<Map<String, dynamic>> get restrictions => _restrictionsController.stream;
   bool get isConnected => _status == WebSocketStatus.connected;
+  bool get isRestrictionsConnected => _restrictionsStatus == WebSocketStatus.connected;
   
   /// Connect to WebSocket with child hash
   Future<void> connect(String childHash) async {
@@ -43,6 +52,7 @@ class WebSocketService extends ChangeNotifier {
     _childHash = childHash;
     await _disconnect();
     await _establishConnection();
+    await _establishRestrictionsConnection();
   }
   
   /// Establish WebSocket connection
@@ -116,6 +126,35 @@ class WebSocketService extends ChangeNotifier {
     }
   }
   
+  /// Handle incoming restrictions messages
+  void _onRestrictionsMessage(dynamic message) {
+    try {
+      final data = jsonDecode(message as String) as Map<String, dynamic>;
+      debugPrint('📥 WSS Restrictions: Received: ${data['type']}');
+      
+      // Handle different message types
+      switch (data['type']) {
+        case 'connection_established':
+          debugPrint('✅ WSS Restrictions: Connection acknowledged by server');
+          break;
+        case 'restrictions_update':
+          debugPrint('🚫 WSS Restrictions: Restrictions updated');
+          final restrictedApps = data['restricted_apps'] as Map<String, dynamic>? ?? {};
+          debugPrint('📋 Restricted apps count: ${restrictedApps.length}');
+          _restrictionsController.add(data);
+          break;
+        case 'pong':
+          debugPrint('💓 WSS Restrictions: Heartbeat response received');
+          break;
+        default:
+          debugPrint('📨 WSS Restrictions: Unknown message type: ${data['type']}');
+      }
+      
+    } catch (e) {
+      debugPrint('❌ WSS Restrictions: Failed to parse message: $e');
+    }
+  }
+  
   /// Handle errors
   void _onError(error) {
     debugPrint('❌ WebSocket: Error: $error');
@@ -128,6 +167,51 @@ class WebSocketService extends ChangeNotifier {
     _stopHeartbeat();
     _updateStatus(WebSocketStatus.disconnected);
     _scheduleReconnect();
+  }
+  
+  /// Handle restrictions disconnection
+  void _onRestrictionsDisconnected() {
+    debugPrint('🔌 WSS Restrictions: Disconnected');
+    _stopRestrictionsHeartbeat();
+    _updateRestrictionsStatus(WebSocketStatus.disconnected);
+  }
+  
+  /// Establish restrictions WebSocket connection
+  Future<void> _establishRestrictionsConnection() async {
+    if (_childHash == null) {
+      debugPrint('❌ WSS Restrictions: Cannot connect without child hash');
+      return;
+    }
+    
+    _updateRestrictionsStatus(WebSocketStatus.connecting);
+    
+    try {
+      final uri = Uri.parse('$wsRestrictionsUrl/$_childHash/');
+      debugPrint('🔌 WSS Restrictions: Connecting to $uri');
+      
+      _restrictionsChannel = WebSocketChannel.connect(uri);
+      
+      // Listen for messages
+      _restrictionsChannel!.stream.listen(
+        _onRestrictionsMessage,
+        onError: (error) {
+          debugPrint('❌ WSS Restrictions: Error: $error');
+          _updateRestrictionsStatus(WebSocketStatus.failed);
+        },
+        onDone: _onRestrictionsDisconnected,
+        cancelOnError: false,
+      );
+      
+      // Start heartbeat
+      _startRestrictionsHeartbeat();
+      
+      _updateRestrictionsStatus(WebSocketStatus.connected);
+      debugPrint('✅ WSS Restrictions: Connected successfully');
+      
+    } catch (e) {
+      debugPrint('❌ WSS Restrictions: Connection failed: $e');
+      _updateRestrictionsStatus(WebSocketStatus.failed);
+    }
   }
   
   /// Schedule reconnection with exponential backoff
@@ -270,6 +354,27 @@ class WebSocketService extends ChangeNotifier {
     _heartbeatTimer = null;
   }
   
+  /// Start restrictions heartbeat
+  void _startRestrictionsHeartbeat() {
+    _restrictionsHeartbeatTimer?.cancel();
+    _restrictionsHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (isRestrictionsConnected) {
+        try {
+          _restrictionsChannel!.sink.add(jsonEncode({'type': 'ping'}));
+          debugPrint('💓 WSS Restrictions: Heartbeat sent');
+        } catch (e) {
+          debugPrint('❌ WSS Restrictions: Heartbeat failed: $e');
+        }
+      }
+    });
+  }
+  
+  /// Stop restrictions heartbeat
+  void _stopRestrictionsHeartbeat() {
+    _restrictionsHeartbeatTimer?.cancel();
+    _restrictionsHeartbeatTimer = null;
+  }
+  
   /// Update status and notify listeners
   void _updateStatus(WebSocketStatus newStatus) {
     if (_status != newStatus) {
@@ -279,17 +384,33 @@ class WebSocketService extends ChangeNotifier {
     }
   }
   
+  /// Update restrictions status and notify listeners
+  void _updateRestrictionsStatus(WebSocketStatus newStatus) {
+    if (_restrictionsStatus != newStatus) {
+      _restrictionsStatus = newStatus;
+      notifyListeners();
+      debugPrint('🔄 WSS Restrictions: Status changed to ${newStatus.name}');
+    }
+  }
+  
   /// Disconnect WebSocket
   Future<void> _disconnect() async {
     _reconnectTimer?.cancel();
     _stopHeartbeat();
+    _stopRestrictionsHeartbeat();
     
     if (_channel != null) {
       await _channel!.sink.close(ws_status.goingAway);
       _channel = null;
     }
     
+    if (_restrictionsChannel != null) {
+      await _restrictionsChannel!.sink.close(ws_status.goingAway);
+      _restrictionsChannel = null;
+    }
+    
     _updateStatus(WebSocketStatus.disconnected);
+    _updateRestrictionsStatus(WebSocketStatus.disconnected);
   }
   
   /// Manually retry connection
@@ -311,6 +432,7 @@ class WebSocketService extends ChangeNotifier {
   void dispose() {
     _disconnect();
     _messageController.close();
+    _restrictionsController.close();
     super.dispose();
   }
 }

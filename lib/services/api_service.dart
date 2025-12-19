@@ -3,9 +3,11 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../models/child.dart';
 import '../models/websocket_data.dart';
+import '../models/restrictions_data.dart';
 
 class ApiService {
   static const String baseUrl = 'https://seraphguardlabs.com';
+  static const String restrictionsBaseUrl = 'https://seraphguardlabs.com';
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/api/login/');
@@ -169,6 +171,49 @@ class ApiService {
       return {
         'success': false,
         'error': 'Batch send error: $e',
+      };
+    }
+  }
+  
+  /// Fetch app restrictions for a child
+  Future<Map<String, dynamic>> fetchRestrictions(String childHash) async {
+    final url = Uri.parse('$restrictionsBaseUrl/api/blocked-apps/$childHash/');
+    
+    try {
+      debugPrint('📥 Fetching restrictions for: $childHash');
+      
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'success') {
+          final restrictedApps = data['restricted_apps'] as Map<String, dynamic>? ?? {};
+          debugPrint('✅ Restrictions fetched: ${restrictedApps.length} apps');
+          
+          return {
+            'success': true,
+            'restrictions': RestrictionsData.fromJson(restrictedApps),
+          };
+        } else {
+          debugPrint('⚠️ Restrictions API returned non-success status');
+          return {
+            'success': false,
+            'error': 'API returned non-success status',
+          };
+        }
+      } else {
+        debugPrint('❌ Restrictions fetch failed: ${response.statusCode}');
+        return {
+          'success': false,
+          'error': 'HTTP ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Restrictions fetch error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
       };
     }
   }
