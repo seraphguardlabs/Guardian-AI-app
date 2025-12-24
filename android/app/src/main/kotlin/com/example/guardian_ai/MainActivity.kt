@@ -20,6 +20,7 @@ class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.guardian_ai/screen_time"
     private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
     private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
+    private val MONITORING_CHANNEL = "com.example.guardian_ai/monitoring_service"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -81,6 +82,34 @@ class MainActivity: FlutterActivity() {
                 "goToHomeScreen" -> {
                     goToHomeScreen()
                     result.success(true)
+                }
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+        
+        // Monitoring Service Channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MONITORING_CHANNEL).setMethodCallHandler {
+            call, result ->
+            when (call.method) {
+                "startMonitoring" -> {
+                    MonitoringService.start(this)
+                    result.success(true)
+                }
+                "stopMonitoring" -> {
+                    MonitoringService.stop(this)
+                    result.success(true)
+                }
+                "updateRestrictions" -> {
+                    val restrictions = call.argument<Map<String, Any>>("restrictions")
+                    if (restrictions != null) {
+                        val json = org.json.JSONObject(restrictions).toString()
+                        MonitoringService.updateRestrictions(this, json)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGS", "Restrictions required", null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
