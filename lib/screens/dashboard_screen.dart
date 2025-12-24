@@ -10,6 +10,7 @@ import '../services/location_service.dart';
 import '../services/websocket_service.dart';
 import '../services/api_service.dart';
 import '../services/app_blocker_service.dart';
+import '../services/background_monitoring_service.dart';
 import '../models/restrictions_data.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -35,6 +36,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // Start background monitoring service
+    BackgroundMonitoringService.start();
+    
     _refreshData();
     // Auto-refresh every 30 seconds
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -103,6 +108,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
           appBlocker.updateRestrictions(restrictedApps);
           
+          // Update background monitoring service
+          BackgroundMonitoringService.updateRestrictions(restrictedApps);
+          
           // Also update local restrictions data for UI
           if (mounted) {
             setState(() {
@@ -138,6 +146,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Update app blocker service
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
       appBlocker.updateRestrictions(_restrictions!.restrictedApps);
+      
+      // Update background monitoring service
+      BackgroundMonitoringService.updateRestrictions(_restrictions!.restrictedApps);
     }
   }
   

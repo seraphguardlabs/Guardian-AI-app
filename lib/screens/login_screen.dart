@@ -21,10 +21,23 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
 
   @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    // Check if already logged in when screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkLoginStatus();
+    });
+  }
+
+  Future<void> _checkLoginStatus() async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    
+    if (prefs.isLoggedIn() && prefs.hasSelectedChild()) {
+      // Already logged in, navigate to dashboard
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -196,5 +209,12 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 }
