@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
-import 'screens/child_selection_screen.dart';
+import 'screens/profile_selection_screen.dart';
+import 'screens/parent_dashboard_screen.dart';
 import 'services/api_service.dart';
 import 'services/location_service.dart';
 import 'services/websocket_service.dart';
@@ -79,9 +80,15 @@ class GuardianAIApp extends StatelessWidget {
           : const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/child_selection': (context) => const ChildSelectionScreen(),
+        '/profile_selection': (context) => const ProfileSelectionScreen(),
         '/dashboard': (context) => const DashboardScreen(),
+        '/parent_dashboard': (context) => const ParentDashboardScreen(),
       },
     );
   }
 }
+
+
+
+
+

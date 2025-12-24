@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
 import '../models/child.dart';
-import 'child_selection_screen.dart';
+import 'profile_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -67,13 +67,13 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setAuthToken(token);
       }
 
-      // Navigate to child selection, passing the children list
+      // Navigate to profile selection, passing the children list
       if (mounted) {
         final children = result['children'] as List<Child>;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => ChildSelectionScreen(children: children),
+            builder: (context) => ProfileSelectionScreen(children: children),
           ),
         );
       }
