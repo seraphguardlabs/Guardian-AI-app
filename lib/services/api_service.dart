@@ -388,4 +388,165 @@ class ApiService {
       };
     }
   }
+
+  /// Update app restrictions for a child
+  /// Supports multiple operations: add, update, remove, or full replacement
+  Future<Map<String, dynamic>> updateRestrictions({
+    required String email,
+    required String password,
+    required String childHash,
+    String? action,  // 'add', 'update', 'remove', or null for full replacement
+    String? package,
+    double? hours,
+    Map<String, double>? restrictedApps,  // For full replacement
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/restricted-apps/');
+    
+    try {
+      Map<String, dynamic> requestBody;
+      
+      if (action != null) {
+        // Action-based update (add, update, remove)
+        requestBody = {'action': action};
+        
+        if (action == 'add' || action == 'update') {
+          if (package == null || hours == null) {
+            return {
+              'success': false,
+              'error': 'Package and hours are required for $action action'
+            };
+          }
+          requestBody['package'] = package;
+          requestBody['hours'] = hours;
+        } else if (action == 'remove') {
+          if (package == null) {
+            return {
+              'success': false,
+              'error': 'Package is required for remove action'
+            };
+          }
+          requestBody['package'] = package;
+        }
+      } else {
+        // Full replacement
+        if (restrictedApps == null) {
+          return {
+            'success': false,
+            'error': 'restrictedApps map is required for full replacement'
+          };
+        }
+        requestBody = {'restricted_apps': restrictedApps};
+      }
+      
+      debugPrint('📤 Updating restrictions for: $childHash');
+      debugPrint('   Action: ${action ?? "full_replacement"}');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          debugPrint('✅ Restrictions updated successfully');
+          return {
+            'success': true,
+            'message': data['message'],
+            'restricted_apps': data['restricted_apps'],
+            'total_restricted': data['total_restricted'],
+          };
+        } else {
+          debugPrint('⚠️ Update returned non-success status');
+          return {
+            'success': false,
+            'error': data['message'] ?? 'Update failed',
+          };
+        }
+      } else if (response.statusCode == 401) {
+        return {
+          'success': false,
+          'error': 'Authentication failed. Check email and password.',
+        };
+      } else if (response.statusCode == 404) {
+        return {
+          'success': false,
+          'error': 'Child not found or restriction not found.',
+        };
+      } else {
+        debugPrint('❌ Restrictions update failed: ${response.statusCode}');
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'HTTP ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Restrictions update error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Get app restrictions for a child (using mobile API endpoint)
+  Future<Map<String, dynamic>> getAppRestrictions({
+    required String email,
+    required String password,
+    required String childHash,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/restricted-apps/');
+    
+    try {
+      debugPrint('📥 Fetching app restrictions for: $childHash');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          debugPrint('✅ App restrictions fetched: ${data['total_restricted']} apps');
+          return {
+            'success': true,
+            'data': data,
+          };
+        } else {
+          return {
+            'success': false,
+            'error': data['message'] ?? 'Failed to fetch restrictions',
+          };
+        }
+      } else if (response.statusCode == 401) {
+        return {
+          'success': false,
+          'error': 'Authentication failed',
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'HTTP ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Get restrictions error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
 }

@@ -304,21 +304,395 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Top Apps', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Top Apps', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                TextButton.icon(
+                  onPressed: () => _showAllApps(apps),
+                  icon: const Icon(Icons.list, size: 18),
+                  label: const Text('View All'),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
-            ...apps.take(5).map((app) => Padding(
-              padding: const EdgeInsets.only(bottom: 12.0),
-              child: Row(
-                children: [
-                  Expanded(child: Text(app['name'] ?? app['domain'])),
-                  Text('${app['formatted']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            )),
+            ...apps.take(5).map((app) => _buildAppItem(app)),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildAppItem(Map<String, dynamic> app) {
+    final totalSeconds = app['total_seconds'] ?? 0;
+    final maxSeconds = _appUsage!['apps'].isNotEmpty 
+        ? (_appUsage!['apps'][0]['total_seconds'] ?? 1) 
+        : 1;
+    final percentage = totalSeconds / maxSeconds;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // App Icon
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade200,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: app['icon_url'] != null
+                      ? Image.network(
+                          app['icon_url'],
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(Icons.android, color: Colors.grey);
+                          },
+                        )
+                      : const Icon(Icons.android, color: Colors.grey),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // App Name and Package
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      app['name'] ?? app['domain'],
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      app['domain'],
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Usage Time
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  app['formatted'],
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Set Limit Button
+              IconButton(
+                icon: const Icon(Icons.timer_outlined, size: 20),
+                tooltip: 'Set Daily Limit',
+                onPressed: () => _showSetLimitDialog(app),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Animated horizontal bar graph
+          Row(
+            children: [
+              const SizedBox(width: 52), // Align with app name
+              Expanded(
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 1000),
+                  curve: Curves.easeOutCubic,
+                  tween: Tween<double>(begin: 0, end: percentage),
+                  builder: (context, value, child) {
+                    return Stack(
+                      children: [
+                        // Background bar
+                        Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        // Animated progress bar
+                        FractionallySizedBox(
+                          widthFactor: value,
+                          child: Container(
+                            height: 6,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.blue.shade300,
+                                  Colors.blue.shade600,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.blue.withOpacity(0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Percentage indicator
+              TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 1000),
+                curve: Curves.easeOutCubic,
+                tween: Tween<double>(begin: 0, end: app['percentage'] ?? 0),
+                builder: (context, value, child) {
+                  return Text(
+                    '${value.toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade600,
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAllApps(List apps) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Center(
+                  child: Text(
+                    'All Apps',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: apps.length,
+                    itemBuilder: (context, index) {
+                      return _buildAppItem(apps[index]);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSetLimitDialog(Map<String, dynamic> app) {
+    final TextEditingController hoursController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.grey.shade200,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: app['icon_url'] != null
+                    ? Image.network(
+                        app['icon_url'],
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.android, color: Colors.grey);
+                        },
+                      )
+                    : const Icon(Icons.android, color: Colors.grey),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    app['name'] ?? app['domain'],
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  Text(
+                    'Set Daily Time Limit',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current usage: ${app['daily_average_formatted']} per day',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: hoursController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Daily Limit (hours)',
+                hintText: 'e.g., 2.0 or 1.5',
+                border: OutlineInputBorder(),
+                suffixText: 'hours/day',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Examples: 2.0 = 2 hours, 1.5 = 1 hour 30 min, 0.5 = 30 min',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final hoursText = hoursController.text.trim();
+              if (hoursText.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a time limit')),
+                );
+                return;
+              }
+              
+              final hours = double.tryParse(hoursText);
+              if (hours == null || hours <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid number')),
+                );
+                return;
+              }
+              
+              Navigator.pop(context);
+              await _setAppRestriction(app['domain'], hours, app['name']);
+            },
+            icon: const Icon(Icons.check),
+            label: const Text('Set Limit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setAppRestriction(String packageName, double hours, String? appName) async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    if (_selectedChild == null) return;
+
+    // Show loading
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Text('Setting limit for ${appName ?? packageName}...'),
+          ],
+        ),
+        duration: const Duration(seconds: 30),
+      ),
+    );
+
+    final result = await _apiService.updateRestrictions(
+      email: email,
+      password: password,
+      childHash: _selectedChild!.childHash,
+      action: 'add',
+      package: packageName,
+      hours: hours,
+    );
+
+    // Dismiss loading snackbar
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '${appName ?? packageName} limited to $hours hour${hours == 1.0 ? '' : 's'} per day',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed: ${result['error'] ?? 'Unknown error'}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildLocationsCard() {
