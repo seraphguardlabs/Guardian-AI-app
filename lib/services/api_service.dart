@@ -175,6 +175,177 @@ class ApiService {
     }
   }
   
+  /// Fetch children list for parent dashboard
+  Future<Map<String, dynamic>> fetchChildren(String email, String password) async {
+    final url = Uri.parse('$baseUrl/api/mobile/children/');
+    
+    try {
+      debugPrint('📥 Fetching children list');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          final childrenList = data['children'] as List? ?? [];
+          debugPrint('✅ Children fetched: ${childrenList.length} children');
+          
+          return {
+            'success': true,
+            'children': childrenList
+                .map((childJson) => Child.fromJson(childJson as Map<String, dynamic>))
+                .toList(),
+          };
+        } else {
+          debugPrint('⚠️ Children API returned non-success status');
+          return {
+            'success': false,
+            'error': 'API returned non-success status',
+          };
+        }
+      } else {
+        debugPrint('❌ Children fetch failed: ${response.statusCode}');
+        return {
+          'success': false,
+          'error': 'HTTP ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Children fetch error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+  
+  /// Fetch child metrics (aggregated overview)
+  Future<Map<String, dynamic>> fetchChildMetrics(String email, String password, String childHash) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/metrics/');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch screen time trend data
+  Future<Map<String, dynamic>> fetchScreenTime(String email, String password, String childHash) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/screen-time/');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch app usage data
+  Future<Map<String, dynamic>> fetchAppUsage(String email, String password, String childHash) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/app-usage/');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch location history
+  Future<Map<String, dynamic>> fetchLocations(String email, String password, String childHash, {int limit = 100}) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/locations/?limit=$limit');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch site access logs
+  Future<Map<String, dynamic>> fetchSiteAccess(String email, String password, String childHash, {String filter = 'all', int limit = 100}) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/site-access/?filter=$filter&limit=$limit');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+  
   /// Fetch app restrictions for a child
   Future<Map<String, dynamic>> fetchRestrictions(String childHash) async {
     final url = Uri.parse('$restrictionsBaseUrl/api/blocked-apps/$childHash/');

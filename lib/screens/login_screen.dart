@@ -61,6 +61,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (result['success']) {
+      // Save parent credentials for API calls
+      await prefs.setParentEmail(_emailController.text.trim());
+      await prefs.setParentPassword(_passwordController.text);
+      
       // Save token if available
       final token = result['token'] as String?;
       if (token != null && token.isNotEmpty) {

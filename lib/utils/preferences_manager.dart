@@ -4,6 +4,8 @@ class PreferencesManager {
   static const String _keyAuthToken = 'auth_token';
   static const String _keyChildHash = 'child_hash';
   static const String _keyChildName = 'child_name';
+  static const String _keyParentEmail = 'parent_email';
+  static const String _keyParentPassword = 'parent_password';
 
   final SharedPreferences _prefs;
 
@@ -21,6 +23,24 @@ class PreferencesManager {
 
   String? getAuthToken() {
     return _prefs.getString(_keyAuthToken);
+  }
+
+  // Parent Email
+  Future<void> setParentEmail(String email) async {
+    await _prefs.setString(_keyParentEmail, email);
+  }
+
+  String? getParentEmail() {
+    return _prefs.getString(_keyParentEmail);
+  }
+
+  // Parent Password
+  Future<void> setParentPassword(String password) async {
+    await _prefs.setString(_keyParentPassword, password);
+  }
+
+  String? getParentPassword() {
+    return _prefs.getString(_keyParentPassword);
   }
 
   // Child Hash
