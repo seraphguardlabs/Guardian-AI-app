@@ -1,0 +1,26 @@
+# Guardian AI Backend - Requirements
+
+# Django and core dependencies
+Django>=4.2.0,<5.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.0.0
+python-decouple>=3.8
+
+# Database
+psycopg2-binary>=2.9.5  # PostgreSQL
+# OR for MySQL: mysqlclient>=2.1.1
+
+# Image handling
+Pillow>=10.0.0
+
+# Timezone support
+pytz>=2023.3
+
+# WSGI server
+gunicorn>=21.2.0
+
+# Environment and security
+python-dotenv>=1.0.0
+
+# Optional: for reverse geocoding
+# geopy>=2.3.0

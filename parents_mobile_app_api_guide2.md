@@ -315,6 +315,166 @@ Get detailed logs of websites accessed or blocked.
 
 ---
 
+### 7. Restricted Apps (Screen Time Limits)
+
+Get or update app-wise screen time restrictions for a child. This allows parents to set daily time limits on specific apps.
+
+**Endpoint:** `GET/POST /api/mobile/child/<child_hash>/restricted-apps/`
+
+#### GET - Retrieve Current Restrictions
+
+**Example:** `/api/mobile/child/abc123xyz/restricted-apps/`
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "child_hash": "abc123xyz",
+  "child_name": "Emma Smith",
+  "restricted_apps": {
+    "com.instagram.android": 2.0,
+    "com.zhiliaoapp.musically": 1.5,
+    "com.google.android.youtube": 3.0
+  },
+  "restricted_apps_detailed": [
+    {
+      "package": "com.instagram.android",
+      "hours_limit": 2.0,
+      "minutes_limit": 120,
+      "name": "Instagram",
+      "icon_url": "https://play-lh.googleusercontent.com/..."
+    },
+    {
+      "package": "com.zhiliaoapp.musically",
+      "hours_limit": 1.5,
+      "minutes_limit": 90,
+      "name": "TikTok",
+      "icon_url": "https://play-lh.googleusercontent.com/..."
+    }
+  ],
+  "total_restricted": 3
+}
+```
+
+#### POST - Update Restrictions
+
+There are multiple ways to update restrictions:
+
+##### Option 1: Add a Single App Restriction
+
+**Request Body:**
+```json
+{
+  "action": "add",
+  "package": "com.facebook.katana",
+  "hours": 2.5
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "App com.facebook.katana restricted to 2.5 hours/day",
+  "child_hash": "abc123xyz",
+  "restricted_apps": {
+    "com.instagram.android": 2.0,
+    "com.facebook.katana": 2.5
+  },
+  "total_restricted": 2
+}
+```
+
+##### Option 2: Update an Existing App's Time Limit
+
+**Request Body:**
+```json
+{
+  "action": "update",
+  "package": "com.instagram.android",
+  "hours": 1.0
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "App com.instagram.android limit updated to 1.0 hours/day",
+  "child_hash": "abc123xyz",
+  "restricted_apps": {
+    "com.instagram.android": 1.0
+  },
+  "total_restricted": 1
+}
+```
+
+##### Option 3: Remove an App Restriction
+
+**Request Body:**
+```json
+{
+  "action": "remove",
+  "package": "com.instagram.android"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "App com.instagram.android restriction removed",
+  "child_hash": "abc123xyz",
+  "restricted_apps": {},
+  "total_restricted": 0
+}
+```
+
+##### Option 4: Full Replacement (Set All Restrictions at Once)
+
+**Request Body:**
+```json
+{
+  "restricted_apps": {
+    "com.instagram.android": 2.0,
+    "com.zhiliaoapp.musically": 1.5,
+    "com.google.android.youtube": 3.0,
+    "com.facebook.katana": 1.0
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Restricted apps updated successfully",
+  "child_hash": "abc123xyz",
+  "restricted_apps": {
+    "com.instagram.android": 2.0,
+    "com.zhiliaoapp.musically": 1.5,
+    "com.google.android.youtube": 3.0,
+    "com.facebook.katana": 1.0
+  },
+  "total_restricted": 4
+}
+```
+
+#### Common App Package Names
+
+| App | Package Name |
+|-----|--------------|
+| Facebook | `com.facebook.katana` |
+| Instagram | `com.instagram.android` |
+| TikTok | `com.zhiliaoapp.musically` |
+| Snapchat | `com.snapchat.android` |
+| YouTube | `com.google.android.youtube` |
+| WhatsApp | `com.whatsapp` |
+| Twitter/X | `com.twitter.android` |
+| Messenger | `com.facebook.orca` |
+
+---
+
 ## Error Responses
 
 All endpoints return consistent error responses:
@@ -366,11 +526,12 @@ All endpoints return consistent error responses:
 | Endpoint | URL | Description |
 |----------|-----|-------------|
 | Children List | `GET /api/mobile/children/` | All children for guardian |
-| Child Metrics | `/api/mobile/child/<hash>/metrics/` | Aggregated overview |
+| Child Metrics | `GET /api/mobile/child/<hash>/metrics/` | Aggregated overview |
 | Screen Time | `GET /api/mobile/child/<hash>/screen-time/` | Daily trend data |
 | App Usage | `GET /api/mobile/child/<hash>/app-usage/` | Per-app breakdown |
 | Locations | `GET /api/mobile/child/<hash>/locations/` | Location history |
 | Site Access | `GET /api/mobile/child/<hash>/site-access/` | Site logs |
+| Restricted Apps | `GET/POST /api/mobile/child/<hash>/restricted-apps/` | Manage app restrictions |
 
 ---
 
@@ -381,59 +542,4 @@ All endpoints return consistent error responses:
 3. **Paginate locations** - Use the `limit` parameter for location data
 4. **Filter site logs** - Use `filter=blocked` to show only concerning activity
 5. **Handle offline** - Store last successful responses for offline viewing
-Got dependencies!
-1 package is discontinued.
-11 packages have newer versions incompatible with dependency constraints.
-Try `flutter pub outdated` for more information.
-Launching lib\main.dart on A059 in debug mode...
-Running Gradle task 'assembleDebug'...                              
-Auto-assigned namespace 'fr.g123k.deviceapps' to project 'device_apps'
-Running Gradle task 'assembleDebug'...                              
-lib/main.dart:5:8: Error: Error when reading 'lib/screens/child_selection_screen.dart': The system cannot find the file specified.      
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-import 'screens/child_selection_screen.dart';
-Running Gradle task 'assembleDebug'...                              
-       ^
-Running Gradle task 'assembleDebug'...                              
-lib/main.dart:82:48: Error: Not a constant expression.
-Running Gradle task 'assembleDebug'...                              
-        '/child_selection': (context) => const ChildSelectionScreen(),
-Running Gradle task 'assembleDebug'...                              
-                                               ^^^^^^^^^^^^^^^^^^^^ 
-Running Gradle task 'assembleDebug'...                              
-Target kernel_snapshot_program failed: Exception
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-FAILURE: Build failed with an exception.
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-* What went wrong:
-Running Gradle task 'assembleDebug'...                              
-Execution failed for task ':app:compileFlutterBuildDebug'.
-Running Gradle task 'assembleDebug'...                              
-> Process 'command 'C:\develop\flutter\bin\flutter.bat'' finished with non-zero exit value 1
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-* Try:
-Running Gradle task 'assembleDebug'...                              
-> Run with --stacktrace option to get the stack trace.
-Running Gradle task 'assembleDebug'...                              
-> Run with --info or --debug option to get more log output.
-Running Gradle task 'assembleDebug'...                              
-> Run with --scan to get full insights.
-Running Gradle task 'assembleDebug'...                              
-> Get more help at https://help.gradle.org.
-Running Gradle task 'assembleDebug'...                              
-
-Running Gradle task 'assembleDebug'...                              
-BUILD FAILED in 12s
-Running Gradle task 'assembleDebug'...                              
-   13.3s
-Error: Gradle task assembleDebug failed with exit code 1
+6. **Sync restrictions** - After setting app restrictions, verify with a GET request
