@@ -419,9 +419,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        title: const Text('Guardian AI'),
-        backgroundColor: colorScheme.surface,
+        title: const Text('Guardian AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
         actions: [
           // WebSocket connection status indicator
           Consumer<WebSocketService>(
@@ -456,22 +458,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
             tooltip: 'Refresh',
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded),
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
             onSelected: (value) async {
               if (value == 'logout') {
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text('Logout'),
-                    content: const Text('Are you sure you want to logout?'),
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    title: const Text('Logout', style: TextStyle(color: Colors.white)),
+                    content: const Text('Are you sure you want to logout?', style: TextStyle(color: Colors.white70)),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
                       ),
-                      FilledButton(
+                      ElevatedButton(
                         onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Logout'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5B4A9F),
+                        ),
+                        child: const Text('Logout', style: TextStyle(color: Colors.white)),
                       ),
                     ],
                   ),
@@ -487,13 +493,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout_rounded),
+                    Icon(Icons.logout_rounded, color: Colors.white70),
                     SizedBox(width: 8),
-                    Text('Logout'),
+                    Text('Logout', style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -502,8 +508,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
           : RefreshIndicator(
+              color: const Color(0xFF5B4A9F),
               onRefresh: _refreshData,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -513,13 +520,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     // Screen Time Card
                     Card(
+                      color: const Color(0xFF1A1A1A),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 4,
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              colorScheme.primaryContainer,
-                              colorScheme.secondaryContainer,
-                            ],
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
@@ -531,21 +538,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Icon(
                               Icons.access_time_rounded,
                               size: 48,
-                              color: colorScheme.primary,
+                              color: Colors.white,
                             ),
                             const SizedBox(height: 16),
                             Text(
                               'Today\'s Screen Time',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: colorScheme.onPrimaryContainer,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                             const SizedBox(height: 12),
                             Text(
                               _screenTime,
-                              style: theme.textTheme.headlineLarge?.copyWith(
+                              style: TextStyle(
+                                fontSize: 32,
                                 fontWeight: FontWeight.bold,
-                                color: colorScheme.primary,
+                                color: Colors.white,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -559,13 +569,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Consumer<LocationService>(
                       builder: (context, locationService, child) {
                         return Card(
+                          color: const Color(0xFF1A1A1A),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 4,
                           child: Container(
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  colorScheme.secondaryContainer,
-                                  colorScheme.tertiaryContainer,
-                                ],
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -582,16 +592,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ? Icons.my_location_rounded
                                           : Icons.location_off_rounded,
                                       size: 32,
-                                      color: locationService.isTracking
-                                          ? colorScheme.primary
-                                          : colorScheme.error,
+                                      color: Colors.white,
                                     ),
                                     const SizedBox(width: 12),
                                     Text(
                                       'Live Location',
-                                      style: theme.textTheme.titleLarge?.copyWith(
+                                      style: TextStyle(
+                                        fontSize: 20,
                                         fontWeight: FontWeight.bold,
-                                        color: colorScheme.onSecondaryContainer,
+                                        color: Colors.white,
                                       ),
                                     ),
                                   ],
@@ -600,7 +609,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: colorScheme.surface.withOpacity(0.7),
+                                    color: Colors.white.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
@@ -611,15 +620,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.place_rounded,
                                               size: 20,
-                                              color: colorScheme.primary,
+                                              color: Colors.white,
                                             ),
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
                                                 locationService.getLocationString(),
-                                                style: theme.textTheme.titleMedium?.copyWith(
+                                                style: TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   fontFamily: 'monospace',
+                                                  color: Colors.white,
                                                 ),
                                               ),
                                             ),
@@ -631,13 +641,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.speed_rounded,
                                               size: 16,
-                                              color: colorScheme.onSurfaceVariant,
+                                              color: Colors.white70,
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
                                               'Speed: ${locationService.currentPosition!.speed.toStringAsFixed(1)} m/s',
-                                              style: theme.textTheme.bodyMedium?.copyWith(
-                                                color: colorScheme.onSurfaceVariant,
+                                              style: TextStyle(
+                                                color: Colors.white70,
                                               ),
                                             ),
                                           ],
@@ -648,13 +658,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.radar_rounded,
                                               size: 16,
-                                              color: colorScheme.onSurfaceVariant,
+                                              color: Colors.white70,
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
                                               'Accuracy: ±${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
-                                              style: theme.textTheme.bodyMedium?.copyWith(
-                                                color: colorScheme.onSurfaceVariant,
+                                              style: TextStyle(
+                                                color: Colors.white70,
                                               ),
                                             ),
                                           ],
@@ -667,16 +677,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               width: 8,
                                               height: 8,
                                               decoration: BoxDecoration(
-                                                color: Colors.green,
+                                                color: Colors.greenAccent,
                                                 shape: BoxShape.circle,
                                               ),
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
                                               'Live Tracking',
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: Colors.green,
+                                              style: TextStyle(
+                                                color: Colors.greenAccent,
                                                 fontWeight: FontWeight.bold,
+                                                fontSize: 12,
                                               ),
                                             ),
                                           ],
@@ -684,8 +695,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ] else ...[
                                         Text(
                                           locationService.locationStatus,
-                                          style: theme.textTheme.bodyLarge?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
+                                          style: TextStyle(
+                                            color: Colors.white70,
                                           ),
                                           textAlign: TextAlign.center,
                                         ),
@@ -706,14 +717,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              colorScheme.tertiaryContainer,
-                              colorScheme.secondaryContainer,
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                          color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Row(
@@ -728,7 +732,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Container(
                               width: 1,
                               height: 40,
-                              color: colorScheme.outline.withOpacity(0.3),
+                              color: Colors.white24,
                             ),
                             _buildStatItem(
                               context,
@@ -746,12 +750,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     if (_browserUsageStats.isNotEmpty) ...[
                       Row(
                         children: [
-                          Icon(Icons.language_rounded, size: 20, color: colorScheme.primary),
+                          Icon(Icons.language_rounded, size: 20, color: Color(0xFF9C27B0)),
                           const SizedBox(width: 8),
                           Text(
                             'Browser Activity',
-                            style: theme.textTheme.titleLarge?.copyWith(
+                            style: TextStyle(
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                           const Spacer(),
@@ -761,14 +767,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: colorScheme.errorContainer,
+                              color: Color(0xFF5B4A9F),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               _totalBrowserTime,
-                              style: theme.textTheme.labelMedium?.copyWith(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: colorScheme.onErrorContainer,
+                                color: Colors.white,
                               ),
                             ),
                           ),
@@ -776,10 +782,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const SizedBox(height: 12),
                       Card(
+                        color: const Color(0xFF1A1A1A),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         child: Container(
                           height: 200,
                           decoration: BoxDecoration(
-                            color: colorScheme.surface,
+                            color: const Color(0xFF1A1A1A),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: ListView.builder(
@@ -792,6 +800,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               if (app == null) return const SizedBox.shrink();
 
                               return Card(
+                                color: const Color(0xFF0F0F0F),
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
@@ -803,7 +812,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     height: 48,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
-                                      color: colorScheme.surfaceContainerHighest,
+                                      color: Color(0xFF2A2A2A),
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
@@ -816,20 +825,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             )
                                           : Icon(
                                               Icons.language_rounded,
-                                              color: colorScheme.primary,
+                                              color: Color(0xFF9C27B0),
                                             ),
                                     ),
                                   ),
                                   title: Text(
                                     app.appName,
-                                    style: theme.textTheme.titleSmall?.copyWith(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w600,
+                                      color: Colors.white,
                                     ),
                                   ),
                                   subtitle: Text(
                                     'Browser app',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
+                                    style: TextStyle(
+                                      color: Colors.white60,
                                     ),
                                   ),
                                   trailing: Container(
@@ -838,14 +848,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: colorScheme.errorContainer,
+                                      color: Color(0xFF5B4A9F),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       _formatDuration(usage.totalTimeInForeground),
-                                      style: theme.textTheme.labelLarge?.copyWith(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        color: colorScheme.onErrorContainer,
+                                        color: Colors.white,
                                       ),
                                     ),
                                   ),
@@ -861,30 +871,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // Browser History Section - Always show
                     Row(
                       children: [
-                        Icon(Icons.history_rounded, size: 20, color: colorScheme.primary),
+                        Icon(Icons.history_rounded, size: 20, color: Color(0xFF9C27B0)),
                         const SizedBox(width: 8),
                         Text(
                           'Browsing History',
-                          style: theme.textTheme.titleLarge?.copyWith(
+                          style: TextStyle(
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
                         const Spacer(),
                         if (_browserHistory.isNotEmpty)
                           Text(
                             '${_browserHistory.length} ${_browserHistory.length == 1 ? 'entry' : 'entries'}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Card(
+                      color: const Color(0xFF1A1A1A),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Container(
                         height: 300,
                         decoration: BoxDecoration(
-                          color: colorScheme.surface,
+                          color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: _browserHistory.isEmpty
@@ -897,26 +912,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       Icon(
                                         Icons.info_outline_rounded,
                                         size: 48,
-                                        color: colorScheme.primary,
+                                        color: Color(0xFF9C27B0),
                                       ),
                                       const SizedBox(height: 16),
                                       Text(
                                         'No browsing history available',
-                                        style: theme.textTheme.titleMedium?.copyWith(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.bold,
+                                          color: Colors.white,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Enable Accessibility Service to track visited websites',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
+                                        style: TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 12,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 16),
-                                      FilledButton.icon(
+                                      ElevatedButton.icon(
                                         onPressed: () async {
                                           try {
                                             await platform.invokeMethod('openAccessibilitySettings');
@@ -924,6 +941,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             debugPrint('Error opening settings: $e');
                                           }
                                         },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Color(0xFF5B4A9F),
+                                          foregroundColor: Colors.white,
+                                        ),
                                         icon: const Icon(Icons.settings, size: 18),
                                         label: const Text('Enable Accessibility Service'),
                                       ),
@@ -945,8 +966,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                          title.contains('Debug');
                                   
                                   return Card(
+                                    color: const Color(0xFF0F0F0F),
                                     margin: const EdgeInsets.only(bottom: 8),
-                                    color: isErrorMessage ? colorScheme.errorContainer.withOpacity(0.3) : null,
                                 child: ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -957,22 +978,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     height: 40,
                                     decoration: BoxDecoration(
                                       color: isErrorMessage 
-                                          ? colorScheme.errorContainer 
-                                          : colorScheme.primaryContainer,
+                                          ? Color(0xFF5B4A9F).withOpacity(0.3)
+                                          : Color(0xFF5B4A9F),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(
                                       isErrorMessage ? Icons.info_outline_rounded : Icons.public_rounded,
-                                      color: isErrorMessage 
-                                          ? colorScheme.error 
-                                          : colorScheme.primary,
+                                      color: Colors.white,
                                       size: 24,
                                     ),
                                   ),
                                   title: Text(
                                     title,
-                                    style: theme.textTheme.titleSmall?.copyWith(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w600,
+                                      color: Colors.white,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -983,10 +1003,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         url,
-                                        style: theme.textTheme.bodySmall?.copyWith(
+                                        style: TextStyle(
                                           color: isErrorMessage 
-                                              ? colorScheme.onSurface 
-                                              : colorScheme.primary,
+                                              ? Colors.white 
+                                              : Color(0xFF9C27B0),
+                                          fontSize: 12,
                                         ),
                                         maxLines: 3,
                                         overflow: TextOverflow.ellipsis,
@@ -995,13 +1016,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         const SizedBox(height: 2),
                                         Text(
                                           _formatTimestamp(timestamp),
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
+                                          style: TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 11,
                                           ),
                                         ),
                                       ] else ...[
                                         const SizedBox(height: 8),
-                                        FilledButton.icon(
+                                        ElevatedButton.icon(
                                           onPressed: () async {
                                             try {
                                               await platform.invokeMethod('openAccessibilitySettings');
@@ -1009,12 +1031,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               debugPrint('Error opening settings: $e');
                                             }
                                           },
-                                          icon: const Icon(Icons.settings, size: 16),
-                                          label: const Text('Enable Accessibility Service'),
-                                          style: FilledButton.styleFrom(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Color(0xFF5B4A9F),
+                                            foregroundColor: Colors.white,
                                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                             minimumSize: const Size(0, 32),
                                           ),
+                                          icon: const Icon(Icons.settings, size: 16),
+                                          label: const Text('Enable Accessibility Service'),
                                         ),
                                       ],
                                     ],
@@ -1033,15 +1057,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         Text(
                           'App Usage',
-                          style: theme.textTheme.titleLarge?.copyWith(
+                          style: TextStyle(
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
                         const Spacer(),
                         Text(
                           DateFormat('MMM d').format(DateTime.now()),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
                           ),
                         ),
                       ],
@@ -1050,10 +1077,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // App Usage List in scrollable box
                     Card(
+                      color: const Color(0xFF1A1A1A),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Container(
                         height: 400,
                         decoration: BoxDecoration(
-                          color: colorScheme.surface,
+                          color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: _usageStats.isEmpty
@@ -1066,20 +1095,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       Icon(
                                         Icons.hourglass_empty_rounded,
                                         size: 48,
-                                        color: colorScheme.onSurfaceVariant,
+                                        color: Colors.white60,
                                       ),
                                       const SizedBox(height: 16),
                                       Text(
                                         'No usage data available',
-                                        style: theme.textTheme.titleMedium?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
+                                        style: TextStyle(
+                                          color: Colors.white,
                                         ),
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Grant usage access permission to see statistics',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
+                                        style: TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 12,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
@@ -1109,8 +1139,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   final isExceeded = hasLimit && limitHours != null && usedHours >= limitHours;
 
                                   return Card(
+                                    color: isExceeded ? Color(0xFF5B4A9F).withOpacity(0.3) : Color(0xFF0F0F0F),
                                     margin: const EdgeInsets.only(bottom: 8),
-                                    color: isExceeded ? colorScheme.errorContainer.withOpacity(0.3) : null,
                                     child: ListTile(
                                       contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -1121,7 +1151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         height: 48,
                                         decoration: BoxDecoration(
                                           borderRadius: BorderRadius.circular(12),
-                                          color: colorScheme.surfaceContainerHighest,
+                                          color: Color(0xFF2A2A2A),
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(12),
@@ -1134,7 +1164,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                 )
                                               : Icon(
                                                   Icons.android,
-                                                  color: colorScheme.primary,
+                                                  color: Color(0xFF9C27B0),
                                                 ),
                                         ),
                                       ),
@@ -1143,8 +1173,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           Expanded(
                                             child: Text(
                                               app.appName,
-                                              style: theme.textTheme.titleSmall?.copyWith(
+                                              style: TextStyle(
                                                 fontWeight: FontWeight.w600,
+                                                color: Colors.white,
                                               ),
                                             ),
                                           ),
@@ -1152,7 +1183,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.block_rounded,
                                               size: 16,
-                                              color: colorScheme.error,
+                                              color: Colors.redAccent,
                                             ),
                                         ],
                                       ),
@@ -1161,8 +1192,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         children: [
                                           Text(
                                             usage.packageName ?? '',
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              color: colorScheme.onSurfaceVariant,
+                                            style: TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 11,
                                             ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
@@ -1175,17 +1207,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   Icons.timer_outlined,
                                                   size: 14,
                                                   color: isExceeded 
-                                                      ? colorScheme.error 
-                                                      : colorScheme.primary,
+                                                      ? Colors.redAccent
+                                                      : Color(0xFF9C27B0),
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
                                                   'Limit: ${limitHours.toStringAsFixed(1)}h',
-                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                  style: TextStyle(
                                                     color: isExceeded 
-                                                        ? colorScheme.error 
-                                                        : colorScheme.primary,
+                                                        ? Colors.redAccent
+                                                        : Color(0xFF9C27B0),
                                                     fontWeight: FontWeight.w600,
+                                                    fontSize: 12,
                                                   ),
                                                 ),
                                               ],
@@ -1200,17 +1233,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: isExceeded
-                                              ? colorScheme.errorContainer
-                                              : colorScheme.primaryContainer,
+                                              ? Colors.redAccent
+                                              : Color(0xFF5B4A9F),
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           _formatDuration(usage.totalTimeInForeground),
-                                          style: theme.textTheme.labelLarge?.copyWith(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: isExceeded
-                                                ? colorScheme.onErrorContainer
-                                                : colorScheme.onPrimaryContainer,
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ),
@@ -1228,25 +1259,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
     return Column(
       children: [
-        Icon(icon, color: colorScheme.primary, size: 28),
+        Icon(icon, color: Color(0xFF9C27B0), size: 28),
         const SizedBox(height: 8),
         Text(
           value,
-          style: theme.textTheme.headlineSmall?.copyWith(
+          style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: colorScheme.onTertiaryContainer,
+            color: Colors.white,
+            fontSize: 22,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onTertiaryContainer,
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
           ),
         ),
       ],

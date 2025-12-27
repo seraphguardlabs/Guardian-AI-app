@@ -15,8 +15,11 @@ class ProfileSelectionScreen extends StatelessWidget {
         (ModalRoute.of(context)?.settings.arguments as List<Child>? ?? []);
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        title: const Text('Select Profile'),
+        title: const Text('Select Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
         centerTitle: true,
         automaticallyImplyLeading: false,
       ),
@@ -26,15 +29,15 @@ class ProfileSelectionScreen extends StatelessWidget {
           Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blue.shade600, Colors.blue.shade400],
+              gradient: const LinearGradient(
+                colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.blue.withOpacity(0.3),
+                  color: Color(0xFF5B4A9F).withOpacity(0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -43,7 +46,7 @@ class ProfileSelectionScreen extends StatelessWidget {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 onTap: () {
                   Navigator.pushReplacementNamed(context, '/parent_dashboard');
                 },
@@ -103,19 +106,19 @@ class ProfileSelectionScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                const Expanded(child: Divider()),
+                const Expanded(child: Divider(color: Colors.white24)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
                     'OR SELECT CHILD PROFILE',
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: Colors.white60,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                const Expanded(child: Divider()),
+                const Expanded(child: Divider(color: Colors.white24)),
               ],
             ),
           ),
@@ -127,7 +130,7 @@ class ProfileSelectionScreen extends StatelessWidget {
                     child: Text(
                       'No child profiles found.\nPlease create a profile on the web dashboard.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                      style: TextStyle(fontSize: 16, color: Colors.white60),
                     ),
                   )
                 : ListView.builder(
@@ -136,13 +139,15 @@ class ProfileSelectionScreen extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final child = childrenList[index];
                       return Card(
-                        elevation: 2,
+                        color: const Color(0xFF1A1A1A),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 4,
                         margin: const EdgeInsets.only(bottom: 16),
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(16),
                           leading: CircleAvatar(
                             radius: 30,
-                            backgroundColor: Colors.blue.shade100,
+                            backgroundColor: Color(0xFF5B4A9F).withOpacity(0.3),
                             backgroundImage: child.profileImageUrl != null
                                 ? NetworkImage(child.profileImageUrl!)
                                 : null,
@@ -152,7 +157,7 @@ class ProfileSelectionScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
+                                      color: Color(0xFF9C27B0),
                                     ),
                                   )
                                 : null,
@@ -162,10 +167,11 @@ class ProfileSelectionScreen extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
-                          subtitle: const Text('Tap to monitor this device'),
-                          trailing: const Icon(Icons.arrow_forward_ios),
+                          subtitle: const Text('Tap to monitor this device', style: TextStyle(color: Colors.white60)),
+                          trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF9C27B0)),
                           onTap: () async {
                             await _selectChild(context, child);
                           },

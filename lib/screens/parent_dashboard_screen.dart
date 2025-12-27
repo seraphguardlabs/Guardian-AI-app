@@ -89,21 +89,45 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        title: const Text('Parent Dashboard'),
-        centerTitle: true,
+        backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white),
+          onPressed: () {},
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              Navigator.pushReplacementNamed(context, '/login');
-            },
-            tooltip: 'Logout',
+            icon: const Icon(Icons.wb_sunny_outlined, color: Colors.white),
+            onPressed: () {},
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.grey.shade700,
+              child: _selectedChild?.profileImageUrl != null
+                  ? ClipOval(
+                      child: Image.network(
+                        'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.person, color: Colors.white);
+                        },
+                      ),
+                    )
+                  : const Icon(Icons.person, color: Colors.white),
+            ),
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.purple),
+            )
           : _errorMessage != null
               ? Center(
                   child: Column(
@@ -117,7 +141,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                       const SizedBox(height: 16),
                       Text(
                         _errorMessage!,
-                        style: const TextStyle(fontSize: 16),
+                        style: const TextStyle(fontSize: 16, color: Colors.white70),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 16),
@@ -125,6 +149,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         onPressed: _loadChildren,
                         icon: const Icon(Icons.refresh),
                         label: const Text('Retry'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.purple,
+                        ),
                       ),
                     ],
                   ),
@@ -133,99 +160,94 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   ? const Center(
                       child: Text(
                         'No children found',
-                        style: TextStyle(fontSize: 16),
+                        style: TextStyle(fontSize: 16, color: Colors.white70),
                       ),
                     )
-                  : Padding(
-                      padding: const EdgeInsets.all(16.0),
+                  : SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Select Child',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                          // Header with child name
+                          Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedChild != null
+                                      ? "${_selectedChild!.firstName}'s Dashboard"
+                                      : "Dashboard",
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                if (_metrics?['metrics']?['latest_location'] != null)
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on,
+                                        size: 16,
+                                        color: Colors.white70,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Location',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<Child>(
-                                isExpanded: true,
-                                value: _selectedChild,
-                                icon: const Icon(Icons.arrow_drop_down),
-                                items: _children.map((Child child) {
-                                  return DropdownMenuItem<Child>(
-                                    value: child,
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 16,
-                                          backgroundImage: child.profileImageUrl != null
-                                              ? NetworkImage(
-                                                  'https://seraphguardlabs.com${child.profileImageUrl}',
-                                                )
-                                              : null,
-                                          child: child.profileImageUrl == null
-                                              ? Text(
-                                                  child.firstName[0].toUpperCase(),
-                                                  style: const TextStyle(fontSize: 14),
-                                                )
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          '${child.firstName} ${child.lastName}',
-                                          style: const TextStyle(fontSize: 16),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (Child? newValue) {
-                                  setState(() {
-                                    _selectedChild = newValue;
-                                  });
-                                  if (newValue != null) {
-                                    _loadChildData(newValue.childHash);
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
+
                           if (_selectedChild != null) ...[
                             if (_isLoadingData)
-                              const Center(child: CircularProgressIndicator())
+                              const Padding(
+                                padding: EdgeInsets.all(40.0),
+                                child: Center(
+                                  child: CircularProgressIndicator(color: Colors.purple),
+                                ),
+                              )
                             else ...[
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Column(
-                                    children: [
-                                      // Metrics Overview
-                                      if (_metrics != null) _buildMetricsCard(),
-                                      const SizedBox(height: 16),
-                                      // Screen Time
-                                      if (_screenTime != null) _buildScreenTimeCard(),
-                                      const SizedBox(height: 16),
-                                      // Top Apps
-                                      if (_appUsage != null) _buildAppUsageCard(),
-                                      const SizedBox(height: 16),
-                                      // Recent Locations
-                                      if (_locations != null) _buildLocationsCard(),
-                                      const SizedBox(height: 16),
-                                      // Site Access
-                                      if (_siteAccess != null) _buildSiteAccessCard(),
-                                    ],
+                              // Main metrics cards
+                              if (_metrics != null) _buildMetricsCard(),
+                              const SizedBox(height: 16),
+
+                              // Weekly Activity Section
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Text(
+                                  'Weekly Activity',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 12),
+
+                              // Screen Time Trends
+                              if (_screenTime != null) _buildScreenTimeCard(),
+                              const SizedBox(height: 16),
+
+                              // Top Apps
+                              if (_appUsage != null) _buildAppUsageCard(),
+                              const SizedBox(height: 16),
+
+                              // Recent Locations
+                              if (_locations != null) _buildLocationsCard(),
+                              const SizedBox(height: 16),
+
+                              // Site Access
+                              if (_siteAccess != null) _buildSiteAccessCard(),
+                              const SizedBox(height: 20),
                             ],
                           ],
                         ],
@@ -236,60 +258,131 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _buildMetricsCard() {
     final metrics = _metrics!['metrics'];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF5B4A9F),
+              Color(0xFF4A3280),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.purple.withOpacity(0.3),
+              blurRadius: 20,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Overview', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildMetricItem(Icons.access_time, 'Screen Time', metrics['total_screen_time_formatted']),
-                _buildMetricItem(Icons.apps, 'Apps Used', '${metrics['unique_apps_used']}'),
-                _buildMetricItem(Icons.block, 'Blocked', '${metrics['site_access']['total_blocked']}'),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.phone_android,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  '/3h',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
               ],
             ),
-            if (metrics['latest_location'] != null) ...[
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              const Text('Latest Location', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(metrics['latest_location']['address'] ?? 'Unknown location'),
-            ],
+            SizedBox(height: 16),
+            Text(
+              metrics['total_screen_time_formatted'],
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                decoration: TextDecoration.underline,
+                decorationColor: Colors.white,
+                decorationThickness: 2,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Screen Time',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              '${((metrics['total_screen_time_seconds'] ?? 0) / 10800 * 100).toStringAsFixed(0)}% of daily limit',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white70,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMetricItem(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, size: 32, color: Colors.blue),
-        const SizedBox(height: 8),
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-      ],
-    );
-  }
-
   Widget _buildScreenTimeCard() {
     final summary = _screenTime!['summary'];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Screen Time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            _buildInfoRow('Total', summary['total_formatted']),
-            _buildInfoRow('Daily Average', summary['average_formatted']),
-            _buildInfoRow('Peak Day', '${summary['max_formatted']} on ${summary['max_date']}'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Screen Time Trends',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Last 7 Days',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.arrow_drop_down, size: 18, color: Colors.white70),
+                  ],
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            _buildInfoRow('Total', summary['total_formatted'], Colors.purple),
+            _buildInfoRow('Daily Average', summary['average_formatted'], Colors.blue),
+            _buildInfoRow('Peak Day', '${summary['max_formatted']} on ${summary['max_date']}', Colors.orange),
           ],
         ),
       ),
@@ -339,25 +432,25 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             children: [
               // App Icon
               Container(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(10),
+                  color: Color(0xFF2A2A2A),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   child: app['icon_url'] != null
                       ? Image.network(
                           app['icon_url'],
-                          width: 40,
-                          height: 40,
+                          width: 44,
+                          height: 44,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
-                            return const Icon(Icons.android, color: Colors.grey);
+                            return Icon(Icons.android, color: Colors.white54, size: 24);
                           },
                         )
-                      : const Icon(Icons.android, color: Colors.grey),
+                      : Icon(Icons.android, color: Colors.white54, size: 24),
                 ),
               ),
               const SizedBox(width: 12),
@@ -368,14 +461,21 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   children: [
                     Text(
                       app['name'] ?? app['domain'],
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
                       app['domain'],
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white54,
+                      ),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
@@ -385,16 +485,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               const SizedBox(width: 8),
               // Usage Time
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(6),
+                  color: Colors.purple.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.purple.withOpacity(0.3),
+                    width: 1,
+                  ),
                 ),
                 child: Text(
                   app['formatted'],
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: Colors.purple.shade300,
                     fontSize: 13,
                   ),
                 ),
@@ -402,7 +506,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               const SizedBox(width: 8),
               // Set Limit Button
               IconButton(
-                icon: const Icon(Icons.timer_outlined, size: 20),
+                icon: Icon(Icons.timer_outlined, size: 20, color: Colors.white54),
                 tooltip: 'Set Daily Limit',
                 onPressed: () => _showSetLimitDialog(app),
                 padding: EdgeInsets.zero,
@@ -410,11 +514,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           // Animated horizontal bar graph
           Row(
             children: [
-              const SizedBox(width: 52), // Align with app name
+              const SizedBox(width: 56), // Align with app name
               Expanded(
                 child: TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 1000),
@@ -427,7 +531,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         Container(
                           height: 6,
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
+                            color: Color(0xFF2A2A2A),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         ),
@@ -439,15 +543,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  Colors.blue.shade300,
-                                  Colors.blue.shade600,
+                                  Colors.purple.shade400,
+                                  Colors.purple.shade600,
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(3),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.blue.withOpacity(0.3),
-                                  blurRadius: 4,
+                                  color: Colors.purple.withOpacity(0.4),
+                                  blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 ),
                               ],
@@ -471,7 +575,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600,
+                      color: Colors.white54,
                     ),
                   );
                 },
@@ -487,37 +591,57 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Center(
-                  child: Text(
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
                     'All Apps',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: apps.length,
-                    itemBuilder: (context, index) {
-                      return _buildAppItem(apps[index]);
-                    },
+                  SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: apps.length,
+                      itemBuilder: (context, index) {
+                        return _buildAppItem(apps[index]);
+                      },
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -528,6 +652,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             Container(
@@ -535,7 +661,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               height: 40,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.grey.shade200,
+                color: Color(0xFF2A2A2A),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -546,10 +672,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         height: 40,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return const Icon(Icons.android, color: Colors.grey);
+                          return Icon(Icons.android, color: Colors.white54);
                         },
                       )
-                    : const Icon(Icons.android, color: Colors.grey),
+                    : Icon(Icons.android, color: Colors.white54),
               ),
             ),
             const SizedBox(width: 12),
@@ -560,11 +686,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 children: [
                   Text(
                     app['name'] ?? app['domain'],
-                    style: const TextStyle(fontSize: 16),
+                    style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                   Text(
                     'Set Daily Time Limit',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 12, color: Colors.white54),
                   ),
                 ],
               ),
@@ -577,37 +703,52 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           children: [
             Text(
               'Current usage: ${app['daily_average_formatted']} per day',
-              style: TextStyle(color: Colors.grey.shade700),
+              style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: hoursController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              style: TextStyle(color: Colors.white),
+              decoration: InputDecoration(
                 labelText: 'Daily Limit (hours)',
+                labelStyle: TextStyle(color: Colors.white54),
                 hintText: 'e.g., 2.0 or 1.5',
-                border: OutlineInputBorder(),
+                hintStyle: TextStyle(color: Colors.white30),
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.purple),
+                ),
                 suffixText: 'hours/day',
+                suffixStyle: TextStyle(color: Colors.white54),
               ),
             ),
             const SizedBox(height: 8),
             Text(
               'Examples: 2.0 = 2 hours, 1.5 = 1 hour 30 min, 0.5 = 30 min',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 11, color: Colors.white38),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton.icon(
             onPressed: () async {
               final hoursText = hoursController.text.trim();
               if (hoursText.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a time limit')),
+                  SnackBar(
+                    content: Text('Please enter a time limit'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
                 return;
               }
@@ -615,7 +756,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               final hours = double.tryParse(hoursText);
               if (hours == null || hours <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a valid number')),
+                  SnackBar(
+                    content: Text('Please enter a valid number'),
+                    backgroundColor: Colors.red,
+                  ),
                 );
                 return;
               }
@@ -625,6 +769,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             },
             icon: const Icon(Icons.check),
             label: const Text('Set Limit'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+            ),
           ),
         ],
       ),
@@ -698,23 +845,54 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _buildLocationsCard() {
     final locations = _locations!['locations'] as List;
     final summary = _locations!['summary'];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Recent Locations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('${summary['total_count']} locations tracked', style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Locations',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${summary['total_count']} tracked',
+                    style: TextStyle(color: Colors.green, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
             ...locations.take(5).map((loc) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
+              padding: const EdgeInsets.only(bottom: 12.0),
               child: Row(
                 children: [
-                  const Icon(Icons.location_on, size: 16),
-                  const SizedBox(width: 8),
-                  Text('${loc['latitude'].toStringAsFixed(4)}, ${loc['longitude'].toStringAsFixed(4)}'),
+                  Icon(Icons.location_on, size: 18, color: Colors.green),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${loc['latitude'].toStringAsFixed(4)}, ${loc['longitude'].toStringAsFixed(4)}',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
                 ],
               ),
             )),
@@ -727,24 +905,60 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _buildSiteAccessCard() {
     final logs = _siteAccess!['logs'] as List;
     final summary = _siteAccess!['summary'];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Site Access', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Blocked: ${summary['blocked_count']}', style: const TextStyle(color: Colors.red)),
-                Text('Accessed: ${summary['accessed_count']}', style: const TextStyle(color: Colors.green)),
+                Text(
+                  'Site Access',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${summary['blocked_count']} blocked',
+                        style: TextStyle(color: Colors.red, fontSize: 11),
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${summary['accessed_count']} ok',
+                        style: TextStyle(color: Colors.green, fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             ...logs.take(5).map((log) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
+              padding: const EdgeInsets.only(bottom: 12.0),
               child: Row(
                 children: [
                   Icon(
@@ -752,8 +966,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     size: 16,
                     color: log['accessed'] ? Colors.green : Colors.red,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(log['domain'], overflow: TextOverflow.ellipsis)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      log['domain'],
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
                 ],
               ),
             )),
@@ -763,14 +983,37 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, Color accentColor) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
         ],
       ),
     );
