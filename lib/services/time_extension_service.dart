@@ -1,0 +1,366 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/status.dart' as ws_status;
+import '../models/time_extension_request.dart';
+
+class TimeExtensionService extends ChangeNotifier {
+  static const String baseUrl = 'https://seraphguardlabs.com';
+  static const String wsUrl = 'wss://seraphguardlabs.com/ws/guardian/time-extension';
+  
+  WebSocketChannel? _channel;
+  List<TimeExtensionRequest> _pendingRequests = [];
+  List<TimeExtensionRequest> _allRequests = [];
+  bool _isConnected = false;
+  bool _isConnecting = false;
+  bool _isAuthenticated = false;
+  DateTime? _lastConnectionAttempt;
+  int _reconnectAttempts = 0;
+  
+  final StreamController<TimeExtensionRequest> _newRequestController = 
+      StreamController<TimeExtensionRequest>.broadcast();
+  
+  List<TimeExtensionRequest> get pendingRequests => _pendingRequests;
+  List<TimeExtensionRequest> get allRequests => _allRequests;
+  bool get isConnected => _isConnected;
+  bool get isAuthenticated => _isAuthenticated;
+  Stream<TimeExtensionRequest> get newRequestStream => _newRequestController.stream;
+
+  TimeExtensionService() {
+    debugPrint('⏰ TimeExt: Service initialized');
+    // Auto-connect when service is created
+    Future.delayed(const Duration(milliseconds: 500), () {
+      debugPrint('⏰ TimeExt: Auto-connecting...');
+      connect();
+    });
+  }
+
+  // Get authentication headers
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('parent_email') ?? '';
+    final password = prefs.getString('parent_password') ?? '';
+    
+    return {
+      'Content-Type': 'application/json',
+      'X-Email': email,
+      'X-Password': password,
+    };
+  }
+
+  // Connect to WebSocket for real-time time extension requests
+  Future<void> connect() async {
+    debugPrint('\n⏰ TimeExt: connect() called');
+    debugPrint('⏰ TimeExt: Current state - isConnecting: $_isConnecting, isConnected: $_isConnected, isAuth: $_isAuthenticated');
+    
+    if (_isConnecting) {
+      debugPrint('⚠️ TimeExt: Connection already in progress, skipping');
+      return;
+    }
+
+    if (_isConnected && _isAuthenticated) {
+      debugPrint('⏰ TimeExt: Already connected and authenticated');
+      return;
+    }
+
+    // Throttle connection attempts (min 2 seconds between attempts)
+    if (_lastConnectionAttempt != null) {
+      final timeSinceLastAttempt = DateTime.now().difference(_lastConnectionAttempt!);
+      if (timeSinceLastAttempt.inSeconds < 2) {
+        debugPrint('⚠️ TimeExt: Connection attempt too soon (${timeSinceLastAttempt.inSeconds}s ago), waiting...');
+        return;
+      }
+    }
+
+    _isConnecting = true;
+    _lastConnectionAttempt = DateTime.now();
+    await disconnect();
+    
+    try {
+      final uri = Uri.parse('$wsUrl/');
+      debugPrint('⏰ TimeExt: Connecting to WebSocket at: $uri');
+      
+      _channel = WebSocketChannel.connect(uri);
+      debugPrint('⏰ TimeExt: WebSocket channel created');
+      
+      // Listen for messages
+      _channel!.stream.listen(
+        _onWebSocketMessage,
+        onError: _onWebSocketError,
+        onDone: _onWebSocketDisconnected,
+        cancelOnError: false,
+      );
+      
+      debugPrint('⏰ TimeExt: Stream listeners attached');
+      
+      _isConnected = true;
+      _isConnecting = false;
+      _reconnectAttempts = 0;
+      notifyListeners();
+      debugPrint('✅ TimeExt: WebSocket connected successfully, waiting for server messages...');
+      debugPrint('⏰ TimeExt: Connection state - isConnected: $_isConnected, isAuth: $_isAuthenticated');
+      
+    } catch (e, stackTrace) {
+      _reconnectAttempts++;
+      debugPrint('❌ TimeExt: Connection failed (attempt $_reconnectAttempts): $e');
+      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
+      _isConnected = false;
+      _isConnecting = false;
+      notifyListeners();
+      
+      if (_reconnectAttempts >= 3) {
+        debugPrint('🛑 TimeExt: Max reconnection attempts reached');
+      }
+    }
+  }
+
+  // Authenticate after connection
+  Future<void> _authenticate() async {
+    debugPrint('\n🔐 TimeExt: _authenticate() called');
+    debugPrint('🔐 TimeExt: isConnected: $_isConnected, channel: ${_channel != null}');
+    
+    if (!_isConnected || _channel == null) {
+      debugPrint('❌ TimeExt: Cannot authenticate - not connected');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('parent_email') ?? '';
+    final password = prefs.getString('parent_password') ?? '';
+    
+    debugPrint('🔐 TimeExt: Email: $email');
+    debugPrint('🔐 TimeExt: Password: ${password.isNotEmpty ? "[PRESENT]" : "[MISSING]"}');
+    
+    if (email.isEmpty || password.isEmpty) {
+      debugPrint('❌ TimeExt: Missing credentials - email: ${email.isEmpty ? "EMPTY" : "OK"}, password: ${password.isEmpty ? "EMPTY" : "OK"}');
+      return;
+    }
+
+    debugPrint('🔐 TimeExt: Sending auth message...');
+    final authPayload = json.encode({
+      'type': 'auth',
+      'email': email,
+      'password': password,
+    });
+    debugPrint('🔐 TimeExt: Auth payload: ${authPayload.replaceAll(password, "[HIDDEN]") }');
+    _channel!.sink.add(authPayload);
+    debugPrint('✅ TimeExt: Auth message sent, waiting for response...');
+  }
+
+  // Handle incoming WebSocket messages
+  void _onWebSocketMessage(dynamic message) {
+    try {
+      debugPrint('\n📨 TimeExt: Received message: $message');
+      final data = json.decode(message as String);
+      debugPrint('⏰ TimeExt: Message type: ${data['type']}');
+      
+      switch (data['type']) {
+        case 'auth_required':
+          debugPrint('🔐 TimeExt: Auth required received, authenticating...');
+          _authenticate();
+          break;
+          
+        case 'auth_success':
+          _isAuthenticated = true;
+          notifyListeners();
+          debugPrint('✅ TimeExt: Authenticated successfully!');
+          debugPrint('✅ TimeExt: Guardian ID: ${data['guardian_id']}');
+          debugPrint('✅ TimeExt: Email: ${data['email']}');
+          debugPrint('⏰ TimeExt: Final state - isConnected: $_isConnected, isAuth: $_isAuthenticated');
+          break;
+          
+        case 'pending_requests':
+          _handlePendingRequests(data);
+          break;
+          
+        case 'time_extension_request':
+          _handleNewRequest(data['data']);
+          break;
+          
+        case 'response_sent':
+          debugPrint('✅ TimeExt: Response sent for request ${data['request_id']}');
+          // Remove from pending list
+          _pendingRequests.removeWhere((r) => r.requestId == data['request_id']);
+          notifyListeners();
+          break;
+          
+        case 'error':
+          debugPrint('❌ TimeExt error: ${data['message']}');
+          break;
+      }
+    } catch (e) {
+      debugPrint('❌ TimeExt: Error parsing message: $e');
+    }
+  }
+
+  void _handlePendingRequests(Map<String, dynamic> data) {
+    try {
+      final List<dynamic> requestsList = data['requests'] ?? [];
+      _pendingRequests = requestsList.map((req) => TimeExtensionRequest.fromJson(req)).toList();
+      notifyListeners();
+      debugPrint('📋 TimeExt: Loaded ${_pendingRequests.length} pending requests');
+    } catch (e) {
+      debugPrint('❌ TimeExt: Error handling pending requests: $e');
+    }
+  }
+
+  void _handleNewRequest(Map<String, dynamic> data) {
+    try {
+      final request = TimeExtensionRequest.fromJson(data);
+      _pendingRequests.add(request);
+      _allRequests.add(request);
+      _newRequestController.add(request);
+      notifyListeners();
+      debugPrint('🔔 TimeExt: New request from ${request.childName} for ${request.appDomain}');
+    } catch (e) {
+      debugPrint('❌ TimeExt: Error handling new request: $e');
+    }
+  }
+
+  void _onWebSocketError(error) {
+    debugPrint('❌ TimeExt WebSocket error: $error');
+    _isConnected = false;
+    _isConnecting = false;
+    _isAuthenticated = false;
+    notifyListeners();
+  }
+
+  void _onWebSocketDisconnected() {
+    if (_isConnected) {
+      debugPrint('🔌 TimeExt: WebSocket disconnected unexpectedly');
+    } else {
+      debugPrint('⏰ TimeExt: WebSocket disconnected normally');
+    }
+    _isConnected = false;
+    _isConnecting = false;
+    _isAuthenticated = false;
+    notifyListeners();
+  }
+
+  // Disconnect WebSocket
+  Future<void> disconnect() async {
+    if (_channel != null) {
+      try {
+        await _channel!.sink.close(ws_status.normalClosure);
+      } catch (e) {
+        debugPrint('⚠️ TimeExt: Error closing WebSocket: $e');
+      }
+      _channel = null;
+      _isConnected = false;
+      _isConnecting = false;
+      _isAuthenticated = false;
+      notifyListeners();
+      debugPrint('🔌 TimeExt: Disconnected');
+    }
+  }
+
+  // Fetch pending requests via REST API (fallback)
+  Future<void> fetchPendingRequests() async {
+    try {
+      debugPrint('📡 TimeExt: Fetching pending requests via API');
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/mobile/time-extension-requests/?status=pending'),
+        headers: await _getAuthHeaders(),
+      );
+
+      debugPrint('📥 TimeExt: Response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> requestsList = data['requests'] ?? [];
+        _pendingRequests = requestsList.map((req) => TimeExtensionRequest.fromJson(req)).toList();
+        notifyListeners();
+        debugPrint('✅ TimeExt: Loaded ${_pendingRequests.length} pending requests');
+      }
+    } catch (e) {
+      debugPrint('❌ TimeExt: Error fetching requests: $e');
+    }
+  }
+
+  // Respond to a time extension request via WebSocket
+  Future<bool> respondToRequest({
+    required int requestId,
+    required String action, // 'approve', 'deny', 'message'
+    double? grantedHours,
+    String? responseEncrypted,
+  }) async {
+    try {
+      debugPrint('\n📤 TimeExt: Responding to request $requestId');
+      debugPrint('📤 TimeExt: Action: $action');
+      if (grantedHours != null) debugPrint('📤 TimeExt: Granted hours: $grantedHours');
+
+      // Send via WebSocket if connected
+      if (_isConnected && _isAuthenticated && _channel != null) {
+        final payload = {
+          'type': 'time_extension_response',
+          'data': {
+            'request_id': requestId,
+            'action': action,
+            if (grantedHours != null) 'granted_hours': grantedHours,
+            if (responseEncrypted != null) 'response_encrypted': responseEncrypted,
+          }
+        };
+        
+        debugPrint('📡 TimeExt: Sending via WebSocket: $payload');
+        _channel!.sink.add(json.encode(payload));
+        debugPrint('✅ TimeExt: Response sent via WebSocket');
+        return true;
+      } else {
+        // Fallback to REST API
+        debugPrint('📡 TimeExt: WebSocket not available, using HTTP fallback');
+        final url = '$baseUrl/api/mobile/time-extension-requests/$requestId/respond/';
+        
+        final body = {
+          'action': action,
+          if (grantedHours != null) 'granted_hours': grantedHours,
+          if (responseEncrypted != null) 'response_encrypted': responseEncrypted,
+        };
+        
+        debugPrint('📡 TimeExt: Sending to: $url');
+        debugPrint('📦 TimeExt: Body: $body');
+        
+        final response = await http.post(
+          Uri.parse(url),
+          headers: await _getAuthHeaders(),
+          body: json.encode(body),
+        );
+
+        debugPrint('📥 TimeExt: Response status: ${response.statusCode}');
+        debugPrint('📥 TimeExt: Response body: ${response.body}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          // Remove from pending list
+          _pendingRequests.removeWhere((r) => r.requestId == requestId);
+          notifyListeners();
+          debugPrint('✅ TimeExt: Response sent via HTTP successfully');
+          return true;
+        }
+        
+        debugPrint('❌ TimeExt: HTTP response failed');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ TimeExt: Error responding to request: $e');
+      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  // Request pending updates manually
+  void requestPendingUpdates() {
+    if (_isConnected && _isAuthenticated && _channel != null) {
+      debugPrint('📡 TimeExt: Requesting pending requests update');
+      _channel!.sink.add(json.encode({'type': 'get_pending_requests'}));
+    }
+  }
+
+  @override
+  void dispose() {
+    disconnect();
+    _newRequestController.close();
+    super.dispose();
+  }
+}

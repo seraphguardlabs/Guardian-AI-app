@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/api_service.dart';
+import '../services/chat_service.dart';
+import '../services/time_extension_service.dart';
+import '../models/time_extension_request.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
 
@@ -93,15 +97,34 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A1A),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
-          onPressed: () {},
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+          ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.wb_sunny_outlined, color: Colors.white),
-            onPressed: () {},
-          ),
+          if (_selectedChild != null)
+            IconButton(
+              icon: const Icon(Icons.access_time, color: Colors.white),
+              onPressed: () {
+                // Connect to time extension WebSocket before showing requests
+                final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
+                timeExtService.connect();
+                
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  isDismissible: true,
+                  enableDrag: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => _buildTimeExtensionBottomSheet(),
+                );
+              },
+              tooltip: 'Time Extension Requests',
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: CircleAvatar(
@@ -123,6 +146,91 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ),
           ),
         ],
+      ),
+      drawer: Drawer(
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  CircleAvatar(
+                    radius: 32,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    child: _selectedChild?.profileImageUrl != null
+                        ? ClipOval(
+                            child: Image.network(
+                              'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
+                              width: 64,
+                              height: 64,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.person, color: Colors.white, size: 32);
+                              },
+                            ),
+                          )
+                        : const Icon(Icons.person, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Parent Dashboard',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.white70),
+              title: const Text('Logout', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context); // Close drawer
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    title: const Text('Logout', style: TextStyle(color: Colors.white)),
+                    content: const Text('Are you sure you want to logout?', style: TextStyle(color: Colors.white70)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5B4A9F),
+                        ),
+                        child: const Text('Logout', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed == true && mounted) {
+                  final prefsManager = context.read<PreferencesManager>();
+                  await prefsManager.clearAll();
+                  if (mounted) {
+                    Navigator.pushReplacementNamed(context, '/login');
+                  }
+                }
+              },
+            ),
+          ],
+        ),
       ),
       body: _isLoading
           ? const Center(
@@ -1015,6 +1123,609 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+    
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inHours < 1) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inDays < 1) {
+      return DateFormat('HH:mm').format(timestamp);
+    } else if (difference.inDays < 7) {
+      return DateFormat('EEE HH:mm').format(timestamp);
+    } else {
+      return DateFormat('MMM d, HH:mm').format(timestamp);
+    }
+  }
+
+  Widget _buildTimeExtensionBottomSheet() {
+    final timeExtService = Provider.of<TimeExtensionService>(context);
+    
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F0F0F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.access_time, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Time Extension Requests',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Consumer<TimeExtensionService>(
+                        builder: (context, service, child) {
+                          return Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: service.isConnected && service.isAuthenticated
+                                      ? Colors.greenAccent 
+                                      : Colors.grey,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                service.isConnected && service.isAuthenticated
+                                    ? 'Connected • ${service.pendingRequests.length} pending' 
+                                    : 'Offline',
+                                style: TextStyle(
+                                  color: service.isConnected && service.isAuthenticated
+                                      ? Colors.greenAccent.withOpacity(0.8)
+                                      : Colors.white60,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.white70),
+                  onPressed: () {
+                    timeExtService.requestPendingUpdates();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+
+          // Request List
+          Expanded(
+            child: timeExtService.pendingRequests.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 64,
+                          color: Colors.white24,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No pending requests',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: timeExtService.pendingRequests.length,
+                    itemBuilder: (context, index) {
+                      final request = timeExtService.pendingRequests[index];
+                      return _buildRequestCard(request, timeExtService);
+                    },
+                  ),
+          ),
+        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequestCard(TimeExtensionRequest request, TimeExtensionService service) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: Child name and time
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    request.childName[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.childName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      request.getFormattedTime(),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // App info
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F0F0F),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.apps, color: Colors.white70, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.getAppName(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        request.appDomain,
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF5B4A9F).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF5B4A9F).withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    '+${request.requestedHours}h',
+                    style: const TextStyle(
+                      color: Color(0xFFB8A4E8),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Action buttons
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final success = await service.respondToRequest(
+                      requestId: request.requestId,
+                      action: 'deny',
+                    );
+                    if (success && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Request denied'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Deny'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withOpacity(0.2),
+                    foregroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final success = await service.respondToRequest(
+                      requestId: request.requestId,
+                      action: 'approve',
+                      grantedHours: request.requestedHours,
+                    );
+                    if (success && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Granted ${request.requestedHours}h extra time'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Approve'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B4A9F),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatBottomSheet() {
+    final TextEditingController messageController = TextEditingController();
+    final chatService = Provider.of<ChatService>(context, listen: false);
+    final childHash = _selectedChild?.childHash ?? '';
+    
+    // Connect to WebSocket only once when opened (don't call on every rebuild)
+    // The connection is already established when the bottom sheet is shown
+    // See _showChatBottomSheet() method
+    
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F0F0F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.child_care, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedChild != null 
+                          ? '${_selectedChild!.firstName} ${_selectedChild!.lastName}'
+                          : 'Chat',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Consumer<ChatService>(
+                        builder: (context, chatService, child) {
+                          return Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: chatService.isConnected 
+                                      ? Colors.greenAccent 
+                                      : Colors.grey,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                chatService.isConnected 
+                                    ? 'E2E Encrypted • Connected' 
+                                    : 'E2E Encrypted • Offline',
+                                style: TextStyle(
+                                  color: chatService.isConnected 
+                                      ? Colors.greenAccent.withOpacity(0.8)
+                                      : Colors.white60,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          // Messages area
+          Expanded(
+            child: Consumer<ChatService>(
+              builder: (context, chatService, child) {
+                if (chatService.isLoading) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF5B4A9F),
+                    ),
+                  );
+                }
+                
+                if (chatService.messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, size: 64, color: Colors.white24),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No messages yet',
+                          style: TextStyle(color: Colors.white60, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Send a message to start the conversation',
+                          style: TextStyle(color: Colors.white38, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  reverse: true,
+                  itemCount: chatService.messages.length,
+                  itemBuilder: (context, index) {
+                    final message = chatService.messages[chatService.messages.length - 1 - index];
+                    final displayText = message.messageDecrypted ?? '[Encrypted]';
+                    
+                    return Align(
+                      alignment: message.isFromParent 
+                          ? Alignment.centerRight 
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.7,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: message.isFromParent
+                              ? const LinearGradient(
+                                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                                )
+                              : null,
+                          color: message.isFromParent ? null : const Color(0xFF1A1A1A),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayText,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatTime(message.timestamp),
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.6),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          // Input area
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: messageController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Type a message...',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                      maxLines: null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.send, color: Colors.white),
+                      onPressed: () async {
+                        if (messageController.text.trim().isNotEmpty && _selectedChild != null) {
+                          final message = messageController.text.trim();
+                          messageController.clear();
+                          
+                          final success = await chatService.sendMessage(
+                            _selectedChild!.childHash,
+                            message,
+                          );
+                          
+                          if (!success && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('⚠️ Failed to send message. No encryption key found for child.'),
+                                backgroundColor: Colors.red,
+                                duration: Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        ),
       ),
     );
   }
