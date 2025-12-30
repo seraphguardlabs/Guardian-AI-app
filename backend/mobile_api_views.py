@@ -714,3 +714,118 @@ def restricted_apps(request, child_hash):
                 'restricted_apps': restricted_apps_data,
                 'total_restricted': len(restricted_apps_data),
             })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def guardian_public_key_update(request):
+    """
+    POST /api/mobile/guardian/public-key/
+    Upload/update guardian's RSA public key
+    """
+    # Authenticate
+    guardian = authenticate_guardian(request)
+    if not guardian:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Authentication required. Provide X-Email and X-Password headers.'
+        }, status=401)
+    
+    # Parse request body
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON data'
+        }, status=400)
+    
+    # Get public key from request
+    public_key = data.get('public_key')
+    
+    if not public_key:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Missing public_key parameter'
+        }, status=400)
+    
+    # Validate PEM format (basic check)
+    if not public_key.startswith('-----BEGIN PUBLIC KEY-----'):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid public key format. Must be PEM format.'
+        }, status=400)
+    
+    # Update guardian's public key
+    guardian.public_key = public_key
+    guardian.save()
+    
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'Public key uploaded successfully',
+        'guardian_id': guardian.id,
+        'email': guardian.email,
+        'key_length': len(public_key),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def child_public_key_update(request, child_hash):
+    """
+    POST /api/mobile/child/<child_hash>/public-key/
+    Upload/update child's RSA public key
+    """
+    # Authenticate
+    guardian = authenticate_guardian(request)
+    if not guardian:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Authentication required. Provide X-Email and X-Password headers.'
+        }, status=401)
+    
+    # Get child
+    try:
+        child = Child.objects.get(child_hash=child_hash, guardian=guardian, is_active=True)
+    except Child.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Child not found or you do not have access'
+        }, status=404)
+    
+    # Parse request body
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON data'
+        }, status=400)
+    
+    # Get public key from request
+    public_key = data.get('public_key')
+    
+    if not public_key:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Missing public_key parameter'
+        }, status=400)
+    
+    # Validate PEM format (basic check)
+    if not public_key.startswith('-----BEGIN PUBLIC KEY-----'):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid public key format. Must be PEM format.'
+        }, status=400)
+    
+    # Update child's public key
+    child.public_key = public_key
+    child.save()
+    
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'Public key uploaded successfully',
+        'child_hash': child_hash,
+        'child_name': child.full_name,
+        'key_length': len(public_key),
+    })

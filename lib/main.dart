@@ -8,13 +8,34 @@ import 'services/api_service.dart';
 import 'services/location_service.dart';
 import 'services/websocket_service.dart';
 import 'services/app_blocker_service.dart';
+import 'services/chat_service.dart';
+import 'services/time_extension_service.dart';
+import 'services/encryption_service.dart';
 import 'utils/preferences_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  print('═══════════════════════════════════════════════════════');
+  print('🚀 GUARDIAN AI APP STARTING...');
+  print('═══════════════════════════════════════════════════════');
+  
   // Initialize PreferencesManager
+  print('📦 Initializing PreferencesManager...');
   final prefsManager = await PreferencesManager.init();
+  print('✅ PreferencesManager initialized');
+  
+  // Initialize Encryption Service (generate/load RSA keys)
+  print('🔐 Initializing Encryption Service...');
+  try {
+    await EncryptionService.instance.initialize();
+    print('✅ Encryption Service initialized successfully');
+  } catch (e, stackTrace) {
+    print('❌ ENCRYPTION SERVICE INITIALIZATION FAILED!');
+    print('Error: $e');
+    print('Stack trace: $stackTrace');
+  }
+  print('═══════════════════════════════════════════════════════');
 
   runApp(
     MultiProvider(
@@ -24,6 +45,8 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LocationService()),
         ChangeNotifierProvider(create: (_) => WebSocketService()),
         ChangeNotifierProvider(create: (_) => AppBlockerService()),
+        ChangeNotifierProvider(create: (_) => ChatService()),
+        ChangeNotifierProvider(create: (_) => TimeExtensionService()),
       ],
       child: GuardianAIApp(prefsManager: prefsManager),
     ),
@@ -87,8 +110,3 @@ class GuardianAIApp extends StatelessWidget {
     );
   }
 }
-
-
-
-
-

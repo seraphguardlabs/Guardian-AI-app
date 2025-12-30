@@ -19,4 +19,8 @@ urlpatterns = [
     path('child/<str:child_hash>/locations/', mobile_api_views.location_history, name='location_history'),
     path('child/<str:child_hash>/site-access/', mobile_api_views.site_access_logs, name='site_access_logs'),
     path('child/<str:child_hash>/restricted-apps/', mobile_api_views.restricted_apps, name='restricted_apps'),
+    path('child/<str:child_hash>/public-key/', mobile_api_views.child_public_key_update, name='child_public_key_update'),
+    
+    # Guardian endpoints
+    path('guardian/public-key/', mobile_api_views.guardian_public_key_update, name='guardian_public_key_update'),
 ]

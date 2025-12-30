@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../services/encryption_service.dart';
 import '../utils/preferences_manager.dart';
 import '../models/child.dart';
 import 'profile_selection_screen.dart';
@@ -62,13 +63,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (result['success']) {
       // Save parent credentials for API calls
+      print('═══════════════════════════════════════════════════════');
+      print('💾 LOGIN: Saving credentials...');
       await prefs.setParentEmail(_emailController.text.trim());
       await prefs.setParentPassword(_passwordController.text);
+      print('✅ LOGIN: Email saved: ${_emailController.text.trim()}');
+      print('✅ LOGIN: Password saved: [PRESENT]');
       
       // Save token if available
       final token = result['token'] as String?;
       if (token != null && token.isNotEmpty) {
         await prefs.setAuthToken(token);
+        print('✅ LOGIN: Token saved');
+      }
+      print('═══════════════════════════════════════════════════════');
+      
+      // Initialize encryption and upload public key to server
+      debugPrint('🔐 Login: Initializing encryption service...');
+      await EncryptionService.instance.initialize();
+      if (EncryptionService.instance.hasKeys) {
+        debugPrint('🔐 Login: Uploading public key to server...');
+        await EncryptionService.instance.uploadPublicKeyToServer();
       }
 
       // Navigate to profile selection, passing the children list

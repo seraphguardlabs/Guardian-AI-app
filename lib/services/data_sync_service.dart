@@ -199,7 +199,7 @@ class DataSyncService extends ChangeNotifier {
   
   /// Disconnect
   Future<void> disconnect() async {
-    await _webSocketService._disconnect();
+    await _webSocketService.disconnect();
   }
   
   @override

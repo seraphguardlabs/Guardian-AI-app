@@ -41,6 +41,8 @@ dependencies:
   device_apps: ^2.2.0
   intl: ^0.18.1
   web_socket_channel: ^3.0.1
+  pointycastle: ^3.9.1
+  encrypt: ^5.0.3
 
 dev_dependencies:
   flutter_test:
