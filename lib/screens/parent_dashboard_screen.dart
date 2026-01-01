@@ -99,18 +99,60 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         elevation: 0,
         leading: Builder(
           builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white),
+            icon: const Icon(Icons.menu, color: Colors.white, size: 28),
             onPressed: () {
               Scaffold.of(context).openDrawer();
             },
           ),
         ),
+        title: Text(
+          _selectedChild != null
+              ? "${_selectedChild!.firstName}'s Dashboard"
+              : "Parent Dashboard",
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: false,
         actions: [
-          if (_selectedChild != null)
+          if (_selectedChild != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on, color: Colors.white, size: 16),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Location',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.access_time, color: Colors.white),
               onPressed: () {
-                // Connect to time extension WebSocket before showing requests
                 final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
                 timeExtService.connect();
                 
@@ -125,6 +167,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               },
               tooltip: 'Time Extension Requests',
             ),
+          ],
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: CircleAvatar(
@@ -1208,16 +1251,25 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                service.isConnected && service.isAuthenticated
-                                    ? 'Connected • ${service.pendingRequests.length} pending' 
-                                    : 'Offline',
-                                style: TextStyle(
-                                  color: service.isConnected && service.isAuthenticated
-                                      ? Colors.greenAccent.withOpacity(0.8)
-                                      : Colors.white60,
-                                  fontSize: 11,
-                                ),
+                              Builder(
+                                builder: (context) {
+                                  final filteredCount = _selectedChild != null
+                                      ? service.pendingRequests
+                                          .where((req) => req.childHash == _selectedChild!.childHash)
+                                          .length
+                                      : service.pendingRequests.length;
+                                  return Text(
+                                    service.isConnected && service.isAuthenticated
+                                        ? 'Connected • $filteredCount pending' 
+                                        : 'Offline',
+                                    style: TextStyle(
+                                      color: service.isConnected && service.isAuthenticated
+                                          ? Colors.greenAccent.withOpacity(0.8)
+                                          : Colors.white60,
+                                      fontSize: 11,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           );
@@ -1242,35 +1294,48 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
           // Request List
           Expanded(
-            child: timeExtService.pendingRequests.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 64,
-                          color: Colors.white24,
+            child: Builder(
+              builder: (context) {
+                // Filter requests by selected child
+                final filteredRequests = _selectedChild != null
+                    ? timeExtService.pendingRequests
+                        .where((req) => req.childHash == _selectedChild!.childHash)
+                        .toList()
+                    : timeExtService.pendingRequests;
+                
+                return filteredRequests.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              size: 64,
+                              color: Colors.white24,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _selectedChild != null
+                                  ? 'No pending requests from ${_selectedChild!.firstName}'
+                                  : 'No pending requests',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No pending requests',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: timeExtService.pendingRequests.length,
-                    itemBuilder: (context, index) {
-                      final request = timeExtService.pendingRequests[index];
-                      return _buildRequestCard(request, timeExtService);
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredRequests.length,
+                        itemBuilder: (context, index) {
+                          final request = filteredRequests[index];
+                          return _buildRequestCard(request, timeExtService);
+                        },
+                      );
+              },
+            ),
           ),
         ],
         ),
@@ -1434,22 +1499,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 flex: 2,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    final success = await service.respondToRequest(
-                      requestId: request.requestId,
-                      action: 'approve',
-                      grantedHours: request.requestedHours,
-                    );
-                    if (success && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Granted ${request.requestedHours}h extra time'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
+                    await _showGrantTimeDialog(context, request, service);
                   },
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Approve'),
+                  icon: const Icon(Icons.add_alarm, size: 18),
+                  label: const Text('Grant Time'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5B4A9F),
                     foregroundColor: Colors.white,
@@ -1726,6 +1779,166 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ),
         ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showGrantTimeDialog(BuildContext context, TimeExtensionRequest request, TimeExtensionService service) async {
+    final hoursController = TextEditingController(text: request.requestedHours.toString());
+    
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.add_alarm, color: Color(0xFF5B4A9F)),
+            const SizedBox(width: 8),
+            const Text(
+              'Grant Extra Time',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Grant extra time to ${request.childName} for:',
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F0F),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.apps, color: Colors.white70, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      request.getAppName(),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Hours to grant:',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: hoursController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Enter hours (e.g., 1.5)',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF0F0F0F),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                prefixIcon: const Icon(Icons.schedule, color: Color(0xFF5B4A9F)),
+                suffixText: 'hours',
+                suffixStyle: const TextStyle(color: Colors.white54),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildQuickTimeButton(context, hoursController, 0.5),
+                const SizedBox(width: 8),
+                _buildQuickTimeButton(context, hoursController, 1.0),
+                const SizedBox(width: 8),
+                _buildQuickTimeButton(context, hoursController, 2.0),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final hoursText = hoursController.text.trim();
+              final hours = double.tryParse(hoursText);
+              
+              if (hours == null || hours <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid number of hours'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.pop(context);
+              
+              final success = await service.respondToRequest(
+                requestId: request.requestId,
+                action: 'approve',
+                grantedHours: hours,
+              );
+              
+              if (success && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.white),
+                        const SizedBox(width: 8),
+                        Text('Granted ${hours}h to ${request.childName}'),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to grant time. Please try again.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Grant Time'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5B4A9F),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickTimeButton(BuildContext context, TextEditingController controller, double hours) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: () {
+          controller.text = hours.toString();
+        },
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF5B4A9F),
+          side: const BorderSide(color: Color(0xFF5B4A9F)),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        child: Text('${hours}h', style: const TextStyle(fontSize: 12)),
       ),
     );
   }
