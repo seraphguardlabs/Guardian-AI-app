@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 import '../models/time_extension_request.dart';
+import 'encryption_service.dart';
 
 class TimeExtensionService extends ChangeNotifier {
   static const String baseUrl = 'https://seraphguardlabs.com';
@@ -354,6 +355,123 @@ class TimeExtensionService extends ChangeNotifier {
     if (_isConnected && _isAuthenticated && _channel != null) {
       debugPrint('📡 TimeExt: Requesting pending requests update');
       _channel!.sink.add(json.encode({'type': 'get_pending_requests'}));
+    }
+  }
+
+  // Fetch parent's public key for encryption
+  Future<String?> _fetchParentPublicKey(String childHash) async {
+    try {
+      debugPrint('\n🔑 TimeExt: Fetching parent public key...');
+      final url = '$baseUrl/api/mobile/child/$childHash/guardian-public-key/';
+      
+      final prefs = await SharedPreferences.getInstance();
+      final childHashStored = prefs.getString('child_hash') ?? '';
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Child-Hash': childHashStored,
+        },
+      );
+
+      debugPrint('📥 TimeExt: Response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final publicKey = data['public_key'] as String?;
+        if (publicKey != null && publicKey.isNotEmpty) {
+          debugPrint('✅ TimeExt: Parent public key fetched successfully');
+          return publicKey;
+        }
+      }
+      
+      debugPrint('❌ TimeExt: Failed to fetch parent public key');
+      return null;
+    } catch (e) {
+      debugPrint('❌ TimeExt: Error fetching parent public key: $e');
+      return null;
+    }
+  }
+
+  // Create a new time extension request (from child side)
+  Future<bool> createRequest({
+    required String childHash,
+    required double requestedHours,
+    required String reason,
+    String? packageName,
+    String? appName,
+    String? messageEncrypted,
+  }) async {
+    try {
+      debugPrint('\n📤 TimeExt: Creating new time extension request');
+      debugPrint('📤 TimeExt: Child: $childHash');
+      debugPrint('📤 TimeExt: Hours: $requestedHours');
+      debugPrint('📤 TimeExt: Reason (plaintext): $reason');
+
+      // Fetch parent's public key and encrypt the message
+      String? encryptedMessage = messageEncrypted;
+      
+      if (encryptedMessage == null) {
+        debugPrint('🔐 TimeExt: Fetching parent public key for encryption...');
+        final parentPublicKey = await _fetchParentPublicKey(childHash);
+        
+        if (parentPublicKey != null && parentPublicKey.isNotEmpty) {
+          try {
+            debugPrint('🔐 TimeExt: Encrypting message with parent public key...');
+            final encryptionService = EncryptionService.instance;
+            encryptedMessage = encryptionService.encryptWithPublicKey(reason, parentPublicKey);
+            debugPrint('✅ TimeExt: Message encrypted successfully');
+            debugPrint('🔐 TimeExt: Encrypted message (base64): ${encryptedMessage.substring(0, 50)}...');
+          } catch (e) {
+            debugPrint('❌ TimeExt: Encryption failed: $e');
+            debugPrint('⚠️ TimeExt: Sending message in plaintext as fallback');
+          }
+        } else {
+          debugPrint('⚠️ TimeExt: Parent public key not available, sending message in plaintext');
+        }
+      }
+
+      final url = '$baseUrl/api/mobile/time-extension-requests/create/';
+      
+      final body = {
+        'child_hash': childHash,
+        'requested_hours': requestedHours,
+        'reason': reason,
+        if (packageName != null) 'package_name': packageName,
+        if (appName != null) 'app_name': appName,
+        if (encryptedMessage != null) 'message_encrypted': encryptedMessage,
+      };
+      
+      debugPrint('📡 TimeExt: Sending to: $url');
+      debugPrint('📦 TimeExt: Body: $body');
+      
+      final prefs = await SharedPreferences.getInstance();
+      final childHashStored = prefs.getString('child_hash') ?? '';
+      
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Child-Hash': childHashStored,
+        },
+        body: json.encode(body),
+      );
+
+      debugPrint('📥 TimeExt: Response status: ${response.statusCode}');
+      debugPrint('📥 TimeExt: Response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('✅ TimeExt: Request created successfully');
+        return true;
+      }
+      
+      debugPrint('❌ TimeExt: Failed to create request');
+      return false;
+    } catch (e, stackTrace) {
+      debugPrint('❌ TimeExt: Error creating request: $e');
+      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
+      return false;
     }
   }
 

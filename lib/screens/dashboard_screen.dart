@@ -11,6 +11,7 @@ import '../services/websocket_service.dart';
 import '../services/api_service.dart';
 import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
+import '../services/time_extension_service.dart';
 import '../models/restrictions_data.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -417,50 +418,125 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childName = prefsManager.getChildName() ?? 'Child';
     
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        title: const Text('Guardian AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1A1A1A),
         elevation: 0,
-        actions: [
-          // WebSocket connection status indicator
-          Consumer<WebSocketService>(
-            builder: (context, wsService, child) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      wsService.isConnected ? Icons.cloud_done : Icons.cloud_off,
-                      color: wsService.isConnected ? Colors.green : Colors.grey,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      wsService.isConnected ? 'LIVE' : 'OFFLINE',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: wsService.isConnected ? Colors.green : Colors.grey,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              );
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _refreshData,
-            tooltip: 'Refresh',
+        ),
+        title: Text(
+          "$childName's Dashboard",
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-            onSelected: (value) async {
-              if (value == 'logout') {
+        ),
+        centerTitle: false,
+        actions: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A2A2A),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_on, color: Colors.white, size: 16),
+                const SizedBox(width: 4),
+                const Text(
+                  'Location',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Consumer<WebSocketService>(
+                  builder: (context, wsService, child) {
+                    return Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: wsService.isConnected ? Colors.green : Colors.grey,
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.grey.shade700,
+              child: const Icon(Icons.person, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  CircleAvatar(
+                    radius: 32,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    child: const Icon(Icons.person, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "$childName's Dashboard",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.refresh, color: Colors.white70),
+              title: const Text('Refresh Data', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _refreshData();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.white70),
+              title: const Text('Logout', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
@@ -490,22 +566,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Navigator.pushReplacementNamed(context, '/login');
                   }
                 }
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout_rounded, color: Colors.white70),
-                    SizedBox(width: 8),
-                    Text('Logout', style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
+              },
+            ),
+          ],
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
@@ -1255,6 +1319,313 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showRequestTimeDialog(context),
+        backgroundColor: const Color(0xFF5B4A9F),
+        icon: const Icon(Icons.access_time, color: Colors.white),
+        label: const Text(
+          'Request Time',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  void _showRequestTimeDialog(BuildContext context) {
+    final TextEditingController hoursController = TextEditingController();
+    final TextEditingController reasonController = TextEditingController();
+    String? selectedPackageName;
+    String? selectedAppName;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.access_time, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Request Extra Time',
+              style: TextStyle(color: Colors.white, fontSize: 18),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select app (optional):',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    hint: const Text(
+                      'All apps (general request)',
+                      style: TextStyle(color: Colors.white30),
+                    ),
+                    value: selectedPackageName,
+                    dropdownColor: const Color(0xFF2A2A2A),
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                    style: const TextStyle(color: Colors.white),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text(
+                          'All apps (general request)',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                      ..._usageStats.take(10).map((usage) {
+                        final app = _apps[usage.packageName];
+                        final appName = app?.appName ?? usage.packageName ?? 'Unknown';
+                        return DropdownMenuItem<String>(
+                          value: usage.packageName,
+                          child: Row(
+                            children: [
+                              if (app is ApplicationWithIcon)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.memory(
+                                    app.icon,
+                                    width: 24,
+                                    height: 24,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              else
+                                const Icon(Icons.android, size: 24, color: Colors.white54),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  appName,
+                                  style: const TextStyle(color: Colors.white),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        selectedPackageName = value;
+                        if (value != null) {
+                          final app = _apps[value];
+                          selectedAppName = app?.appName ?? value;
+                        } else {
+                          selectedAppName = null;
+                        }
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'How many extra hours do you need?',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: hoursController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'e.g., 1.5',
+                  hintStyle: const TextStyle(color: Colors.white30),
+                  filled: true,
+                  fillColor: const Color(0xFF2A2A2A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.timer, color: Colors.white54),
+                  suffixText: 'hours',
+                  suffixStyle: const TextStyle(color: Colors.white54),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Reason for request:',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Tell your parent why you need extra time...',
+                  hintStyle: const TextStyle(color: Colors.white30),
+                  filled: true,
+                  fillColor: const Color(0xFF2A2A2A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final hoursText = hoursController.text.trim();
+              final reason = reasonController.text.trim();
+              
+              if (hoursText.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter the number of hours'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              final hours = double.tryParse(hoursText);
+              if (hours == null || hours <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid number'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              if (reason.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please provide a reason for your request'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.pop(context);
+              
+              // Get child hash from preferences
+              final prefsManager = context.read<PreferencesManager>();
+              final childHash = prefsManager.getChildHash();
+              
+              if (childHash == null || childHash.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Error: Child profile not found'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              // Send request with encryption
+              final timeExtService = context.read<TimeExtensionService>();
+              
+              // Show loading indicator
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text('Encrypting and sending request...'),
+                      ],
+                    ),
+                    backgroundColor: Color(0xFF5B4A9F),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+              
+              final success = await timeExtService.createRequest(
+                childHash: childHash,
+                requestedHours: hours,
+                reason: reason,
+                packageName: selectedPackageName,
+                appName: selectedAppName,
+              );
+              
+              if (success && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.white),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text('Request sent! Your parent will be notified.'),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              } else if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to send request. Please try again.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5B4A9F),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Send Request',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+        ),
+      ),
     );
   }
   
