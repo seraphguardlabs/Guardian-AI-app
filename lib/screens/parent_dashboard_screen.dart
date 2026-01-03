@@ -370,6 +370,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                               if (_metrics != null) _buildMetricsCard(),
                               const SizedBox(height: 16),
 
+                              // Pending Requests inline section
+                              Consumer<TimeExtensionService>(
+                                builder: (context, timeExtService, _) {
+                                  return _buildPendingRequestsSection(timeExtService);
+                                },
+                              ),
+                              const SizedBox(height: 16),
+
                               // Weekly Activity Section
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -407,8 +415,72 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  Widget _buildPendingRequestsSection(TimeExtensionService service) {
+    // Filter requests to current child and pending status
+    final filteredRequests = _selectedChild != null
+        ? service.pendingRequests
+            .where((req) =>
+                req.childHash == _selectedChild!.childHash &&
+                (req.status == 'pending' || req.status.isEmpty))
+            .toList()
+        : service.pendingRequests
+            .where((req) => req.status == 'pending' || req.status.isEmpty)
+            .toList();
+
+    if (filteredRequests.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Pending Requests',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Text(
+                  '${filteredRequests.length} pending',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Show up to 3 requests inline
+          ...filteredRequests
+              .take(3)
+              .map((req) => _buildRequestCard(req, service))
+              .toList(),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetricsCard() {
     final metrics = _metrics!['metrics'];
+    final dailyFormatted = metrics['daily_average_formatted'] ?? metrics['total_screen_time_formatted'] ?? '--';
+    final dailySeconds = (metrics['daily_average_seconds'] ?? metrics['total_screen_time_seconds'] ?? 0).toDouble();
+    final percentOfLimit = ((dailySeconds / 10800) * 100).clamp(0, 999).toStringAsFixed(0);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
@@ -435,54 +507,55 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: EdgeInsets.all(12),
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(
-                    Icons.phone_android,
-                    color: Colors.white,
-                    size: 24,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'resources/robot.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-                Spacer(),
-                Text(
-                  '/3h',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
+                const Spacer(),
+                const Icon(
+                  Icons.more_horiz,
+                  color: Colors.white70,
                 ),
               ],
             ),
-            SizedBox(height: 16),
-            Text(
-              metrics['total_screen_time_formatted'],
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                decoration: TextDecoration.underline,
-                decorationColor: Colors.white,
-                decorationThickness: 2,
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '$dailyFormatted/3h',
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 4),
+            const Text(
               'Screen Time',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 color: Colors.white,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
-              '${((metrics['total_screen_time_seconds'] ?? 0) / 10800 * 100).toStringAsFixed(0)}% of daily limit',
-              style: TextStyle(
+              '$percentOfLimit% of daily limit',
+              style: const TextStyle(
                 fontSize: 13,
                 color: Colors.white70,
               ),
@@ -498,42 +571,58 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF00473E), Color(0xFF012C25)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Screen Time Trends',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Last 7 Days',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Screen Time Trends',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
-                    SizedBox(width: 4),
-                    Icon(Icons.arrow_drop_down, size: 18, color: Colors.white70),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Daily Limit: 3 hr',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            SizedBox(height: 16),
-            _buildInfoRow('Total', summary['total_formatted'], Colors.purple),
-            _buildInfoRow('Daily Average', summary['average_formatted'], Colors.blue),
-            _buildInfoRow('Peak Day', '${summary['max_formatted']} on ${summary['max_date']}', Colors.orange),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.calendar_today_outlined, size: 14, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text(
+                    'This Week',
+                    style: TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -542,78 +631,78 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _buildAppUsageCard() {
     final apps = _appUsage!['apps'] as List;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Top Apps', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                TextButton.icon(
-                  onPressed: () => _showAllApps(apps),
-                  icon: const Icon(Icons.list, size: 18),
-                  label: const Text('View All'),
-                ),
-              ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'App Usage Details',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF101010),
+              borderRadius: BorderRadius.circular(18),
             ),
-            const SizedBox(height: 16),
-            ...apps.take(5).map((app) => _buildAppItem(app)),
-          ],
-        ),
+            child: Column(
+              children: apps.take(5).map((app) => _buildAppItem(app)).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton(
+              onPressed: () => _showAllApps(apps),
+              child: const Text(
+                'Load Earlier Activities',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildAppItem(Map<String, dynamic> app) {
-    final totalSeconds = app['total_seconds'] ?? 0;
+    // Use average daily seconds instead of total
+    final totalSeconds = app['daily_average_seconds'] ?? app['total_seconds'] ?? 0;
     final maxSeconds = _appUsage!['apps'].isNotEmpty 
-        ? (_appUsage!['apps'][0]['total_seconds'] ?? 1) 
+      ? (_appUsage!['apps'][0]['daily_average_seconds'] ?? _appUsage!['apps'][0]['total_seconds'] ?? 1) 
         : 1;
     final percentage = totalSeconds / maxSeconds;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF222222), width: 1),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              // App Icon
               Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
                   color: Color(0xFF2A2A2A),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: app['icon_url'] != null
-                      ? Image.network(
-                          app['icon_url'],
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(Icons.android, color: Colors.white54, size: 24);
-                          },
-                        )
-                      : Icon(Icons.android, color: Colors.white54, size: 24),
-                ),
+                child: const Icon(Icons.apps, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 12),
-              // App Name and Package
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       app['name'] ?? app['domain'],
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
                         fontSize: 14,
                         color: Colors.white,
                       ),
@@ -622,90 +711,57 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      app['domain'],
-                      style: TextStyle(
+                      app['category'] ?? app['domain'],
+                      style: const TextStyle(
                         fontSize: 11,
                         color: Colors.white54,
                       ),
-                      overflow: TextOverflow.ellipsis,
                       maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              // Usage Time
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.purple.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.purple.withOpacity(0.3),
-                    width: 1,
-                  ),
+              Text(
+                app['daily_average_formatted'] ?? app['formatted'] ?? '--',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  fontSize: 13,
                 ),
-                child: Text(
-                  app['formatted'],
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purple.shade300,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Set Limit Button
-              IconButton(
-                icon: Icon(Icons.timer_outlined, size: 20, color: Colors.white54),
-                tooltip: 'Set Daily Limit',
-                onPressed: () => _showSetLimitDialog(app),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          // Animated horizontal bar graph
+          const SizedBox(height: 8),
           Row(
             children: [
-              const SizedBox(width: 56), // Align with app name
               Expanded(
                 child: TweenAnimationBuilder<double>(
-                  duration: const Duration(milliseconds: 1000),
-                  curve: Curves.easeOutCubic,
-                  tween: Tween<double>(begin: 0, end: percentage),
+                  duration: const Duration(milliseconds: 700),
+                  tween: Tween<double>(begin: 0, end: percentage.clamp(0.0, 1.0)),
                   builder: (context, value, child) {
                     return Stack(
                       children: [
-                        // Background bar
                         Container(
-                          height: 6,
+                          height: 5,
                           decoration: BoxDecoration(
-                            color: Color(0xFF2A2A2A),
+                            color: const Color(0xFF242424),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         ),
-                        // Animated progress bar
                         FractionallySizedBox(
                           widthFactor: value,
                           child: Container(
-                            height: 6,
+                            height: 5,
                             decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(3),
                               gradient: LinearGradient(
                                 colors: [
-                                  Colors.purple.shade400,
-                                  Colors.purple.shade600,
+                                  const Color(0xFF48B3FF),
+                                  const Color(0xFF3E6BFF),
                                 ],
                               ),
-                              borderRadius: BorderRadius.circular(3),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.purple.withOpacity(0.4),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
                             ),
                           ),
                         ),
@@ -715,21 +771,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Percentage indicator
-              TweenAnimationBuilder<double>(
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.easeOutCubic,
-                tween: Tween<double>(begin: 0, end: app['percentage'] ?? 0),
-                builder: (context, value, child) {
-                  return Text(
-                    '${value.toStringAsFixed(0)}%',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white54,
-                    ),
-                  );
-                },
+              Text(
+                '${(percentage * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white70,
+                ),
               ),
             ],
           ),
@@ -1346,37 +1394,33 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _buildRequestCard(TimeExtensionRequest request, TimeExtensionService service) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        color: const Color(0xFF151515),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Child name and time
+          // Header: avatar, title, time, status chip
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
-                  ),
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
+                  color: Color(0xFF2A2A2A),
                 ),
-                child: Center(
-                  child: Text(
-                    request.childName[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
+                child: const Icon(Icons.person, color: Colors.white, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1384,13 +1428,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      request.childName,
+                      'Request From ${request.childName}',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       request.getFormattedTime(),
                       style: const TextStyle(
@@ -1401,72 +1446,58 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4B6E),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Pending',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           
           // App info
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F0F0F),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.apps, color: Colors.white70, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        request.getAppName(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        request.appDomain,
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF5B4A9F).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF5B4A9F).withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    '+${request.requestedHours}h',
-                    style: const TextStyle(
-                      color: Color(0xFFB8A4E8),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
+          Text(
+            'Want ${(request.requestedHours * 60).round()} mins on ${request.getAppName()}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
             ),
           ),
-          
+          const SizedBox(height: 6),
+          Text(
+            'Reason: Parent controls request',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'AI Suggestion: Approval seems reasonable based on past behaviour and current time usage',
+            style: TextStyle(
+              color: Color(0xFF8AB4FF),
+              fontSize: 12,
+            ),
+          ),
           const SizedBox(height: 16),
-          
+
           // Action buttons
           Row(
             children: [
               Expanded(
-                child: ElevatedButton.icon(
+                child: ElevatedButton(
                   onPressed: () async {
                     final success = await service.respondToRequest(
                       requestId: request.requestId,
@@ -1481,35 +1512,39 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                       );
                     }
                   },
-                  icon: const Icon(Icons.close, size: 18),
-                  label: const Text('Deny'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withOpacity(0.2),
-                    foregroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(30),
                     ),
+                  ),
+                  child: const Text(
+                    'Approve',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
+                flex: 1,
+                child: OutlinedButton(
                   onPressed: () async {
                     await _showGrantTimeDialog(context, request, service);
                   },
-                  icon: const Icon(Icons.add_alarm, size: 18),
-                  label: const Text('Grant Time'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5B4A9F),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFE4E6),
+                    foregroundColor: const Color(0xFFBE123C),
+                    side: BorderSide.none,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(30),
                     ),
+                  ),
+                  child: const Text(
+                    'Decline',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
