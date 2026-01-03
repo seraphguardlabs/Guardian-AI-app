@@ -70,12 +70,33 @@ class TimeExtensionRequest {
   }
 
   String getAppName() {
-    // Extract app name from domain
-    final parts = appDomain.split('.');
+    if (appDomain.isEmpty) return 'Unknown app';
+
+    final parts = appDomain.split('.').where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'Unknown app';
+
+    String candidate;
     if (parts.length >= 2) {
-      return parts[parts.length - 1].replaceAll('android', '').trim();
+      final last = parts.last.toLowerCase();
+      // If last segment is a common TLD, use the one before it
+      const tlds = ['com', 'org', 'net', 'io', 'app'];
+      if (tlds.contains(last)) {
+        candidate = parts[parts.length - 2];
+      } else {
+        candidate = parts.last;
+      }
+    } else {
+      candidate = parts.first;
     }
-    return appDomain;
+
+    // Clean up typical android/package suffixes and symbols
+    candidate = candidate.replaceAll('android', '');
+    candidate = candidate.replaceAll(RegExp(r'[^a-zA-Z0-9]+'), ' ').trim();
+    if (candidate.isEmpty) {
+      return appDomain;
+    }
+
+    return candidate[0].toUpperCase() + candidate.substring(1);
   }
 
   String getFormattedTime() {

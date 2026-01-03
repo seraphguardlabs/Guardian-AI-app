@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/time_extension_service.dart';
+import '../services/encryption_service.dart';
 import '../models/time_extension_request.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
@@ -27,10 +28,19 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Map<String, dynamic>? _appUsage;
   Map<String, dynamic>? _locations;
   Map<String, dynamic>? _siteAccess;
+  late final PageController _metricsPageController;
+  double _metricsPage = 0;
 
   @override
   void initState() {
     super.initState();
+    _metricsPageController = PageController(viewportFraction: 0.9);
+    _metricsPageController.addListener(() {
+      if (!mounted) return;
+      setState(() {
+        _metricsPage = _metricsPageController.page ?? 0;
+      });
+    });
     _loadChildren();
   }
 
@@ -63,6 +73,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _metricsPageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadChildData(String childHash) async {
@@ -366,8 +382,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                                 ),
                               )
                             else ...[
-                              // Main metrics cards
-                              if (_metrics != null) _buildMetricsCard(),
+                              // Main metrics cards (horizontal scroll banners)
+                              if (_metrics != null) _buildMetricsSection(),
                               const SizedBox(height: 16),
 
                               // Pending Requests inline section
@@ -427,10 +443,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             .where((req) => req.status == 'pending' || req.status.isEmpty)
             .toList();
 
-    if (filteredRequests.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0),
       child: Column(
@@ -465,13 +477,82 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          // Show up to 3 requests inline
-          ...filteredRequests
-              .take(3)
-              .map((req) => _buildRequestCard(req, service))
-              .toList(),
+          if (filteredRequests.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF151515),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.check_circle_outline, color: Colors.white54, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'No pending time extension requests',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...filteredRequests
+                .take(3)
+                .map((req) => _buildRequestCard(req, service))
+                .toList(),
         ],
       ),
+    );
+  }
+
+  Widget _buildMetricsSection() {
+    final cards = <Widget>[_buildMetricsCard()];
+    if (_screenTime != null && _screenTime!['summary'] != null) {
+      cards.add(_buildWeeklySummaryCard());
+    }
+
+    if (cards.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 220,
+          child: PageView.builder(
+            controller: _metricsPageController,
+            itemCount: cards.length,
+            itemBuilder: (context, index) {
+              final left = index == 0 ? 20.0 : 10.0;
+              final right = index == cards.length - 1 ? 20.0 : 10.0;
+              return Padding(
+                padding: EdgeInsets.only(left: left, right: right),
+                child: cards[index],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(cards.length, (index) {
+            final isActive = (_metricsPage - index).abs() < 0.5;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              height: 6,
+              width: isActive ? 22 : 8,
+              decoration: BoxDecoration(
+                color: isActive ? Colors.white : Colors.white24,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 
@@ -480,88 +561,159 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final dailyFormatted = metrics['daily_average_formatted'] ?? metrics['total_screen_time_formatted'] ?? '--';
     final dailySeconds = (metrics['daily_average_seconds'] ?? metrics['total_screen_time_seconds'] ?? 0).toDouble();
     final percentOfLimit = ((dailySeconds / 10800) * 100).clamp(0, 999).toStringAsFixed(0);
+    final progress = (dailySeconds / 10800).clamp(0.0, 1.0);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF5B4A9F),
-              Color(0xFF4A3280),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.purple.withOpacity(0.3),
-              blurRadius: 20,
-              offset: Offset(0, 10),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.asset(
-                      'resources/robot.png',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withOpacity(0.25),
+            blurRadius: 25,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const Spacer(),
-                const Icon(
-                  Icons.more_horiz,
-                  color: Colors.white70,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.asset('resources/robot.png', fit: BoxFit.cover),
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '$dailyFormatted/3h',
+              ),
+              const Spacer(),
+              const Icon(Icons.more_horiz, color: Colors.white70),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                dailyFormatted,
                 style: const TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
               ),
+              const SizedBox(width: 4),
+              const Text(
+                '/3h',
+                style: TextStyle(fontSize: 16, color: Color(0xFFE0D4FF)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Screen Time',
-              style: TextStyle(
-                fontSize: 15,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: progress,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '$percentOfLimit% of daily limit',
-              style: const TextStyle(
-                fontSize: 13,
-                color: Colors.white70,
-              ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Screen Time',
+            style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '$percentOfLimit%',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const TextSpan(
+                  text: ' of daily limit',
+                  style: TextStyle(fontSize: 15, color: Colors.white70),
+                ),
+              ],
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklySummaryCard() {
+    final summary = _screenTime!['summary'];
+    final total = summary['total_formatted'] ?? '--';
+    final average = summary['average_formatted'] ?? '--';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF244969), Color(0xFF122438)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Weekly Screen Time',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            total,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Daily average: $average',
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.white70,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1392,6 +1544,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildRequestCard(TimeExtensionRequest request, TimeExtensionService service) {
+    String? messageText;
+    if (request.messageEncrypted != null && request.messageEncrypted!.isNotEmpty) {
+      // Try to decrypt with guardian private key; fall back to raw text
+      final encryptionService = EncryptionService.instance;
+      final decrypted = encryptionService.decryptWithPrivateKey(request.messageEncrypted!);
+      messageText = decrypted ?? request.messageEncrypted;
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(18),
@@ -1468,29 +1628,43 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           
           // App info
           Text(
-            'Want ${(request.requestedHours * 60).round()} mins on ${request.getAppName()}',
+            'App: ${request.getAppName()}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w600,
               fontSize: 14,
             ),
           ),
-          const SizedBox(height: 6),
+          if (request.appDomain.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              request.appDomain,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 4),
           Text(
-            'Reason: Parent controls request',
+            'Requested: ${(request.requestedHours * 60).round()} mins extra',
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 13,
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'AI Suggestion: Approval seems reasonable based on past behaviour and current time usage',
-            style: TextStyle(
-              color: Color(0xFF8AB4FF),
-              fontSize: 12,
+          if (messageText != null && messageText.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Message: $messageText',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 16),
 
           // Action buttons
