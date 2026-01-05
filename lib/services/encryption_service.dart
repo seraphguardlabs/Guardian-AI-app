@@ -187,7 +187,29 @@ class EncryptionService {
         return false;
       }
       
+      // Create JSON payload
+      final jsonPayload = {
+        'public_key': _publicKey,
+      };
+      
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('📋 EXACT JSON PAYLOAD BEING SENT:');
+      debugPrint('══════════════════════════════════════════════════════');
+      final requestBody = json.encode(jsonPayload);
+      debugPrint(requestBody);
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('📋 PRETTY-PRINTED JSON:');
+      debugPrint('══════════════════════════════════════════════════════');
+      const JsonEncoder encoder = JsonEncoder.withIndent('  ');
+      debugPrint(encoder.convert(jsonPayload));
+      debugPrint('══════════════════════════════════════════════════════');
+      
       debugPrint('📡 Sending HTTP POST request...');
+      debugPrint('📋 Request Details:');
+      debugPrint('   - URL: $baseUrl/api/mobile/guardian/public-key/');
+      debugPrint('   - Headers: {"Content-Type": "application/json", "X-Email": "$email", "X-Password": "***"}');
+      debugPrint('   - Body Length: ${requestBody.length} bytes');
+      
       final response = await http.post(
         Uri.parse('$baseUrl/api/mobile/guardian/public-key/'),
         headers: {
@@ -195,9 +217,7 @@ class EncryptionService {
           'X-Email': email,
           'X-Password': password,
         },
-        body: json.encode({
-          'public_key': _publicKey,
-        }),
+        body: requestBody,
       );
       
       debugPrint('📥 Server Response:');
@@ -208,7 +228,7 @@ class EncryptionService {
         debugPrint('══════════════════════════════════════════════════════');
         debugPrint('✅ PUBLIC KEY SUCCESSFULLY UPLOADED TO SERVER!');
         debugPrint('   Device Type: PARENT (Guardian)');
-        debugPrint('   Endpoint: $baseUrl/api/mobile/guardian/public-key/update/');
+        debugPrint('   Endpoint: $baseUrl/api/mobile/guardian/public-key/');
         debugPrint('   Status: ${response.statusCode}');
         debugPrint('   Email: $email');
         debugPrint('   Response: ${response.body}');
@@ -218,7 +238,7 @@ class EncryptionService {
         debugPrint('══════════════════════════════════════════════════════');
         debugPrint('❌ PUBLIC KEY UPLOAD FAILED!');
         debugPrint('   Device Type: PARENT (Guardian)');
-        debugPrint('   Endpoint: $baseUrl/api/mobile/guardian/public-key/update/');
+        debugPrint('   Endpoint: $baseUrl/api/mobile/guardian/public-key/');
         debugPrint('   Status: ${response.statusCode}');
         debugPrint('   Email: $email');
         debugPrint('   Response: ${response.body}');
@@ -248,16 +268,46 @@ class EncryptionService {
   String? decryptWithPrivateKey(String encryptedBase64) {
     if (_privateKey == null) {
       debugPrint('❌ Encryption: No private key available for decryption');
+      debugPrint('   Call initialize() first to load keys');
       return null;
     }
     
     try {
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('🔓 DECRYPTING MESSAGE WITH PRIVATE KEY');
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('📋 Encrypted Message (Base64):');
+      debugPrint('   Length: ${encryptedBase64.length} characters');
+      debugPrint('   Preview: ${encryptedBase64.substring(0, encryptedBase64.length > 50 ? 50 : encryptedBase64.length)}...');
+      debugPrint('   Full: $encryptedBase64');
+      debugPrint('──────────────────────────────────────────────────────');
+      debugPrint('🔐 Using Private Key:');
+      debugPrint(_privateKey!);
+      debugPrint('══════════════════════════════════════════════════════');
+      
       final privateKey = encrypt.RSAKeyParser().parse(_privateKey!) as RSAPrivateKey;
       final encrypter = encrypt.Encrypter(encrypt.RSA(privateKey: privateKey));
       final encrypted = encrypt.Encrypted.fromBase64(encryptedBase64);
-      return encrypter.decrypt(encrypted);
-    } catch (e) {
-      debugPrint('❌ Encryption: Decryption error: $e');
+      final decrypted = encrypter.decrypt(encrypted);
+      
+      debugPrint('✅ DECRYPTION SUCCESSFUL!');
+      debugPrint('   Decrypted Message: $decrypted');
+      debugPrint('══════════════════════════════════════════════════════');
+      
+      return decrypted;
+    } catch (e, stackTrace) {
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('❌ DECRYPTION FAILED!');
+      debugPrint('   Error: $e');
+      debugPrint('   Stack Trace:');
+      debugPrint('$stackTrace');
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('💡 Troubleshooting:');
+      debugPrint('   1. Check if message was encrypted with matching public key');
+      debugPrint('   2. Verify padding scheme matches (PKCS1 v1.5)');
+      debugPrint('   3. Ensure base64 encoding is correct');
+      debugPrint('   4. Check if private key format is valid PEM');
+      debugPrint('══════════════════════════════════════════════════════');
       return null;
     }
   }
@@ -280,7 +330,9 @@ class EncryptionService {
     topLevelSeq.add(publicKeySeqBitString);
 
     final dataBase64 = base64.encode(topLevelSeq.encodedBytes);
-    return '-----BEGIN PUBLIC KEY-----\n$dataBase64\n-----END PUBLIC KEY-----';
+    // Split base64 into 64-character lines per PEM standard
+    final formattedBase64 = _splitIntoLines(dataBase64, 64);
+    return '-----BEGIN PUBLIC KEY-----\n$formattedBase64\n-----END PUBLIC KEY-----';
   }
   
   /// Convert RSA private key to PEM format
@@ -308,9 +360,34 @@ class EncryptionService {
     topLevelSeq.add(ASN1Integer(iQ));
 
     final dataBase64 = base64.encode(topLevelSeq.encodedBytes);
-    return '-----BEGIN RSA PRIVATE KEY-----\n$dataBase64\n-----END RSA PRIVATE KEY-----';
+    // Split base64 into 64-character lines per PEM standard
+    final formattedBase64 = _splitIntoLines(dataBase64, 64);
+    return '-----BEGIN RSA PRIVATE KEY-----\n$formattedBase64\n-----END RSA PRIVATE KEY-----';
   }
   
+  /// Split string into lines of specified length
+  String _splitIntoLines(String str, int lineLength) {
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i += lineLength) {
+      final end = (i + lineLength < str.length) ? i + lineLength : str.length;
+      buffer.write(str.substring(i, end));
+      if (end < str.length) {
+        buffer.write('\n');
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// Regenerate keys (for testing/troubleshooting)
+  Future<void> regenerateKeys() async {
+    debugPrint('🔐 Encryption: Regenerating keys...');
+    await clearKeys();
+    _isInitialized = false;
+    await _generateAndStoreKeys();
+    _isInitialized = true;
+    debugPrint('✅ Encryption: Keys regenerated successfully');
+  }
+
   /// Clear all keys (for logout)
   Future<void> clearKeys() async {
     debugPrint('🔐 Encryption: Clearing all keys...');
