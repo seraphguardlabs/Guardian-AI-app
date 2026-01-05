@@ -78,13 +78,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       print('═══════════════════════════════════════════════════════');
       
-      // Initialize encryption and upload public key to server
+      // Initialize encryption (upload will happen when parent dashboard is selected)
       debugPrint('🔐 Login: Initializing encryption service...');
       await EncryptionService.instance.initialize();
-      if (EncryptionService.instance.hasKeys) {
-        debugPrint('🔐 Login: Uploading public key to server...');
-        await EncryptionService.instance.uploadPublicKeyToServer();
-      }
 
       // Navigate to profile selection, passing the children list
       if (mounted) {

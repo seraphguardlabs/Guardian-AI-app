@@ -41,7 +41,25 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         _metricsPage = _metricsPageController.page ?? 0;
       });
     });
+    
+    // Upload public key to server when parent dashboard is opened
+    _uploadPublicKey();
+    
     _loadChildren();
+  }
+  
+  Future<void> _uploadPublicKey() async {
+    debugPrint('🔐 Parent Dashboard: Uploading public key to server...');
+    if (EncryptionService.instance.hasKeys) {
+      final success = await EncryptionService.instance.uploadPublicKeyToServer();
+      if (success) {
+        debugPrint('✅ Parent Dashboard: Public key uploaded successfully');
+      } else {
+        debugPrint('❌ Parent Dashboard: Failed to upload public key');
+      }
+    } else {
+      debugPrint('⚠️ Parent Dashboard: No encryption keys available');
+    }
   }
 
   Future<void> _loadChildren() async {
