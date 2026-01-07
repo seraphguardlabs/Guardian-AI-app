@@ -1691,18 +1691,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () async {
-                    final success = await service.respondToRequest(
-                      requestId: request.requestId,
-                      action: 'deny',
-                    );
-                    if (success && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Request denied'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
+                    await _showGrantTimeDialog(context, request, service);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF16A34A),
@@ -1723,7 +1712,18 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 flex: 1,
                 child: OutlinedButton(
                   onPressed: () async {
-                    await _showGrantTimeDialog(context, request, service);
+                    final success = await service.respondToRequest(
+                      requestId: request.requestId,
+                      action: 'deny',
+                    );
+                    if (success && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Request denied'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     backgroundColor: const Color(0xFFFFE4E6),
