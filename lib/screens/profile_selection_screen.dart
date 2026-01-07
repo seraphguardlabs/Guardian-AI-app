@@ -193,8 +193,8 @@ class ProfileSelectionScreen extends StatelessWidget {
     await prefs.setChildName(child.firstName);
 
     if (context.mounted) {
-      // Navigate to Dashboard
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      // Navigate to Child Screen
+      Navigator.pushReplacementNamed(context, '/child');
     }
   }
 }

@@ -14,14 +14,14 @@ import '../services/background_monitoring_service.dart';
 import '../services/time_extension_service.dart';
 import '../models/restrictions_data.dart';
 
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+class ChildScreen extends StatefulWidget {
+  const ChildScreen({super.key});
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  State<ChildScreen> createState() => _ChildScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _ChildScreenState extends State<ChildScreen> {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
@@ -37,25 +37,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    
-    // Start background monitoring service
     BackgroundMonitoringService.start();
-    
     _refreshData();
-    // Auto-refresh every 30 seconds
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshData();
     });
-    
-    // Start location tracking
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationService = Provider.of<LocationService>(context, listen: false);
       locationService.startTracking();
-      
-      // Initialize WebSocket connection
       _initializeWebSocket();
-      
-      // Fetch restrictions
       _fetchRestrictions();
     });
   }
@@ -65,7 +56,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
     _wsRestrictionsSubscription?.cancel();
-    // Stop location tracking
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
     super.dispose();
@@ -77,42 +67,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _initUsageStats(),
       _getBrowserHistory(),
     ]);
-    
-    // Send data via WebSocket after collecting
     _sendDataViaWebSocket();
   }
-  
+
   Future<void> _initializeWebSocket() async {
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefsManager.getChildHash();
-    
+
     if (childHash != null && childHash.isNotEmpty) {
       final wsService = Provider.of<WebSocketService>(context, listen: false);
       await wsService.connect(childHash);
       debugPrint('🔌 WebSocket connected for child: $childHash');
-      
-      // Listen for incoming messages from server
+
       _wsMessageSubscription = wsService.messages.listen((message) {
         if (message['type'] == 'restrictions_update') {
           debugPrint('🚫 Received restrictions update via WebSocket');
           _fetchRestrictions();
         }
       });
-      
-      // Listen for restrictions updates from dedicated WSS connection
+
       _wsRestrictionsSubscription = wsService.restrictions.listen((message) {
         if (message['type'] == 'restrictions_update') {
           debugPrint('🚫 Received restrictions from WSS');
           final restrictedApps = message['restricted_apps'] as Map<String, dynamic>? ?? {};
-          
-          // Update app blocker service
+
           final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
           appBlocker.updateRestrictions(restrictedApps);
-          
-          // Update background monitoring service
           BackgroundMonitoringService.updateRestrictions(restrictedApps);
-          
-          // Also update local restrictions data for UI
+
           if (mounted) {
             setState(() {
               _restrictions = RestrictionsData.fromJson(restrictedApps);
@@ -124,105 +106,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
       debugPrint('⚠️ No child hash found, skipping WebSocket connection');
     }
   }
-  
+
   Future<void> _fetchRestrictions() async {
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefsManager.getChildHash();
-    
+
     if (childHash == null || childHash.isEmpty) {
       debugPrint('⚠️ No child hash, skipping restrictions fetch');
       return;
     }
-    
+
     final apiService = Provider.of<ApiService>(context, listen: false);
     final result = await apiService.fetchRestrictions(childHash);
-    
+
     if (result['success'] == true && mounted) {
       final restrictions = result['restrictions'] as RestrictionsData;
       setState(() {
         _restrictions = restrictions;
       });
       debugPrint('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
-      
-      // Update app blocker service
+
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
       appBlocker.updateRestrictions(_restrictions!.restrictedApps);
-      
-      // Update background monitoring service
       BackgroundMonitoringService.updateRestrictions(_restrictions!.restrictedApps);
     }
   }
-  
+
   Future<void> _sendDataViaWebSocket() async {
     final wsService = Provider.of<WebSocketService>(context, listen: false);
-    
+
     if (!wsService.isConnected) {
       debugPrint('⚠️ WebSocket not connected, skipping data send');
       return;
     }
-    
-    // Send screen time data
+
     await _sendScreenTimeData();
-    
-    // Send location data
     await _sendLocationData();
-    
-    // Send website access data
     await _sendWebsiteData();
   }
-  
+
   Future<void> _sendScreenTimeData() async {
     if (_usageStats.isEmpty) return;
-    
+
     final wsService = Provider.of<WebSocketService>(context, listen: false);
-    
-    // Calculate total screen time in seconds
+
     int totalSeconds = 0;
     final appWiseData = <String, Map<String, int>>{};
-    
+
     for (var usage in _usageStats) {
       final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
       final seconds = millis ~/ 1000;
       totalSeconds += seconds;
-      
-      // Get current hour for hourly breakdown
       final hour = DateTime.now().hour.toString().padLeft(2, '0');
-      
       final packageName = usage.packageName ?? 'unknown';
       appWiseData[packageName] = {hour: seconds};
     }
-    
+
     final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    
+
     await wsService.sendScreenTime(
       date: dateStr,
       totalScreenTime: totalSeconds,
       appWiseData: appWiseData,
     );
-    
+
     debugPrint('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
   }
-  
+
   Future<void> _sendLocationData() async {
     final locationService = Provider.of<LocationService>(context, listen: false);
     final wsService = Provider.of<WebSocketService>(context, listen: false);
-    
+
     if (locationService.currentPosition != null) {
       await wsService.sendLocation(
         timestamp: DateTime.now().toUtc().toIso8601String(),
         latitude: locationService.currentPosition!.latitude,
         longitude: locationService.currentPosition!.longitude,
       );
-      
+
       debugPrint('📍 Sent location: ${locationService.currentPosition!.latitude}, ${locationService.currentPosition!.longitude}');
     }
   }
-  
+
   Future<void> _sendWebsiteData() async {
     if (_browserHistory.isEmpty) return;
-    
+
     final wsService = Provider.of<WebSocketService>(context, listen: false);
-    
+
     final logs = _browserHistory.map((entry) {
       return {
         'timestamp': DateTime.now().toUtc().toIso8601String(),
@@ -230,9 +200,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'accessed': true,
       };
     }).toList();
-    
+
     await wsService.sendSiteAccess(logs: logs);
-    
+
     debugPrint('🌐 Sent ${logs.length} website visits');
   }
 
@@ -255,11 +225,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _initUsageStats() async {
     try {
-      // Check if permission is granted
       bool? isPermissionGranted = await UsageStats.checkUsagePermission();
       if (isPermissionGranted == null || !isPermissionGranted) {
         await UsageStats.grantUsagePermission();
-        // Check again after user comes back
         isPermissionGranted = await UsageStats.checkUsagePermission();
         if (isPermissionGranted == null || !isPermissionGranted) {
           if (mounted) {
@@ -271,18 +239,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
-      // Get installed apps for names and icons
       List<Application> apps = await DeviceApps.getInstalledApplications(
         includeAppIcons: true,
         includeSystemApps: true,
         onlyAppsWithLaunchIntent: true,
       );
-      
+
       Map<String, Application> appMap = {
         for (var app in apps) app.packageName: app
       };
 
-      // Query usage stats for today
       DateTime now = DateTime.now();
       DateTime startOfDay = DateTime(now.year, now.month, now.day);
       DateTime endOfDay = now;
@@ -292,13 +258,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         endOfDay,
       );
 
-      // Filter out apps with 0 usage and sort by time
       usageStats = usageStats
-          .where((info) => 
+          .where((info) =>
               double.parse(info.totalTimeInForeground ?? '0') > 0 &&
               appMap.containsKey(info.packageName))
           .toList();
-      
+
       usageStats.sort((a, b) {
         double timeA = double.parse(a.totalTimeInForeground ?? '0');
         double timeB = double.parse(b.totalTimeInForeground ?? '0');
@@ -344,15 +309,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool _isBrowserApp(String packageName, String appName) {
     final browserKeywords = [
-      'browser', 'chrome', 'firefox', 'opera', 'edge', 'safari', 'brave',
-      'duck', 'samsung internet', 'uc browser', 'dolphin', 'maxthon',
-      'puffin', 'kiwi', 'vivaldi', 'tor', 'duckduckgo'
+      'browser',
+      'chrome',
+      'firefox',
+      'opera',
+      'edge',
+      'safari',
+      'brave',
+      'duck',
+      'samsung internet',
+      'uc browser',
+      'dolphin',
+      'maxthon',
+      'puffin',
+      'kiwi',
+      'vivaldi',
+      'tor',
+      'duckduckgo'
     ];
     final lowerPackage = packageName.toLowerCase();
     final lowerName = appName.toLowerCase();
-    return browserKeywords.any((keyword) => 
-      lowerPackage.contains(keyword) || lowerName.contains(keyword)
-    );
+    return browserKeywords.any((keyword) =>
+        lowerPackage.contains(keyword) || lowerName.contains(keyword));
   }
 
   List<UsageInfo> get _browserUsageStats {
@@ -377,7 +355,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final List<dynamic> result = await browserChannel.invokeMethod('getBrowserHistory');
       if (mounted) {
         setState(() {
-          _browserHistory = result.map((item) => Map<String, String>.from(item)).toList();
+          _browserHistory =
+              result.map((item) => Map<String, String>.from(item)).toList();
         });
       }
     } catch (e) {
@@ -394,24 +373,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final timestamp = int.tryParse(timestampStr) ?? 0;
       if (timestamp == 0) return 'Unknown';
-      
-      // Chrome timestamps are in microseconds since 1601, convert to milliseconds since epoch
-      final chromeEpochStart = 11644473600000000; // Microseconds
+
+      final chromeEpochStart = 11644473600000000;
       final millisSinceEpoch = (timestamp - chromeEpochStart) ~/ 1000;
-      
+
       final date = DateTime.fromMillisecondsSinceEpoch(millisSinceEpoch);
       final now = DateTime.now();
       final diff = now.difference(date);
-      
+
       if (diff.inMinutes < 1) return 'Just now';
       if (diff.inHours < 1) return '${diff.inMinutes}m ago';
       if (diff.inDays < 1) return '${diff.inHours}h ago';
       if (diff.inDays < 7) return '${diff.inDays}d ago';
-      
+
       return DateFormat('MMM d').format(date);
     } catch (e) {
       return 'Unknown';
     }
+  }
+
+  String _calculateScreenTimePercentage() {
+    // Parse the screen time (e.g., "2h 15m" or "45m")
+    final timeStr = _screenTime;
+    final dailyLimitHours = 3.0; // Default 3 hour limit
+    
+    try {
+      double totalHours = 0.0;
+      
+      // Extract hours
+      final hoursMatch = RegExp(r'(\d+)h').firstMatch(timeStr);
+      if (hoursMatch != null) {
+        totalHours += double.parse(hoursMatch.group(1)!);
+      }
+      
+      // Extract minutes
+      final minutesMatch = RegExp(r'(\d+)m').firstMatch(timeStr);
+      if (minutesMatch != null) {
+        totalHours += double.parse(minutesMatch.group(1)!) / 60;
+      }
+      
+      final percentage = ((totalHours / dailyLimitHours) * 100).clamp(0, 100).toInt();
+      return '$percentage% of daily limit';
+    } catch (e) {
+      return '0% of daily limit';
+    }
+  }
+
+  bool _hasExceededApps() {
+    if (_restrictions == null || _usageStats.isEmpty) return false;
+    
+    for (var usage in _usageStats) {
+      final packageName = usage.packageName ?? '';
+      final hasLimit = _restrictions!.restrictedApps.containsKey(packageName);
+      if (hasLimit) {
+        final limitHours = _restrictions!.restrictedApps[packageName];
+        if (limitHours != null) {
+          final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+          final usedHours = millis / 1000 / 3600;
+          if (usedHours >= limitHours) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   @override
@@ -420,11 +445,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final colorScheme = theme.colorScheme;
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
     final childName = prefsManager.getChildName() ?? 'Child';
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF0F0F0F),
         elevation: 0,
         leading: Builder(
           builder: (context) => IconButton(
@@ -444,48 +469,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         centerTitle: false,
         actions: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2A),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.location_on, color: Colors.white, size: 16),
-                const SizedBox(width: 4),
-                const Text(
-                  'Location',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
+          Consumer<LocationService>(
+            builder: (context, locationService, child) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                const SizedBox(width: 6),
-                Consumer<WebSocketService>(
-                  builder: (context, wsService, child) {
-                    return Container(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.location_on, color: Colors.white, size: 12),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Location',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: wsService.isConnected ? Colors.green : Colors.grey,
+                        color: locationService.isTracking ? Colors.green : Colors.grey,
                         shape: BoxShape.circle,
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: CircleAvatar(
               radius: 18,
               backgroundColor: Colors.grey.shade700,
-              child: const Icon(Icons.person, color: Colors.white),
+              child: const Icon(Icons.person, color: Colors.white, size: 20),
             ),
           ),
         ],
@@ -572,7 +604,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
           : RefreshIndicator(
               color: const Color(0xFF5B4A9F),
               onRefresh: _refreshData,
@@ -582,197 +615,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Screen Time Card
-                    Card(
-                      color: const Color(0xFF1A1A1A),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 4,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
+                    // Screen Time Card - Modern Design
+                    Container(
+                      height: 215,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.access_time_rounded,
-                              size: 48,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.access_time_outlined,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _screenTime.split(' ')[0],
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 4, left: 4),
+                                child: Text(
+                                  '/3h',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Screen Time',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Today\'s Screen Time',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _screenTime,
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Location Tracking Card
-                    Consumer<LocationService>(
-                      builder: (context, locationService, child) {
-                        return Card(
-                          color: const Color(0xFF1A1A1A),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 4,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      locationService.isTracking
-                                          ? Icons.my_location_rounded
-                                          : Icons.location_off_rounded,
-                                      size: 32,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      'Live Location',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      if (locationService.currentPosition != null) ...[
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.place_rounded,
-                                              size: 20,
-                                              color: Colors.white,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                locationService.getLocationString(),
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontFamily: 'monospace',
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.speed_rounded,
-                                              size: 16,
-                                              color: Colors.white70,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Speed: ${locationService.currentPosition!.speed.toStringAsFixed(1)} m/s',
-                                              style: TextStyle(
-                                                color: Colors.white70,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.radar_rounded,
-                                              size: 16,
-                                              color: Colors.white70,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Accuracy: ±${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
-                                              style: TextStyle(
-                                                color: Colors.white70,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Container(
-                                              width: 8,
-                                              height: 8,
-                                              decoration: BoxDecoration(
-                                                color: Colors.greenAccent,
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Live Tracking',
-                                              style: TextStyle(
-                                                color: Colors.greenAccent,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ] else ...[
-                                        Text(
-                                          locationService.locationStatus,
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _calculateScreenTimePercentage(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.white70,
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 24),
                     
@@ -814,9 +726,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     if (_browserUsageStats.isNotEmpty) ...[
                       Row(
                         children: [
-                          Icon(Icons.language_rounded, size: 20, color: Color(0xFF9C27B0)),
+                          const Icon(Icons.language_rounded, size: 20, color: Color(0xFF9C27B0)),
                           const SizedBox(width: 8),
-                          Text(
+                          const Text(
                             'Browser Activity',
                             style: TextStyle(
                               fontSize: 20,
@@ -831,12 +743,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Color(0xFF5B4A9F),
+                              color: const Color(0xFF5B4A9F),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               _totalBrowserTime,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
@@ -876,7 +788,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     height: 48,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
-                                      color: Color(0xFF2A2A2A),
+                                      color: const Color(0xFF2A2A2A),
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
@@ -887,7 +799,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               height: 48,
                                               fit: BoxFit.cover,
                                             )
-                                          : Icon(
+                                          : const Icon(
                                               Icons.language_rounded,
                                               color: Color(0xFF9C27B0),
                                             ),
@@ -895,12 +807,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                   title: Text(
                                     app.appName,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white,
                                     ),
                                   ),
-                                  subtitle: Text(
+                                  subtitle: const Text(
                                     'Browser app',
                                     style: TextStyle(
                                       color: Colors.white60,
@@ -912,12 +824,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Color(0xFF5B4A9F),
+                                      color: const Color(0xFF5B4A9F),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       _formatDuration(usage.totalTimeInForeground),
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
                                       ),
@@ -932,12 +844,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 24),
                     ],
                     
-                    // Browser History Section - Always show
+                    // Browser History Section
                     Row(
                       children: [
-                        Icon(Icons.history_rounded, size: 20, color: Color(0xFF9C27B0)),
+                        const Icon(Icons.history_rounded, size: 20, color: Color(0xFF9C27B0)),
                         const SizedBox(width: 8),
-                        Text(
+                        const Text(
                           'Browsing History',
                           style: TextStyle(
                             fontSize: 20,
@@ -949,7 +861,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         if (_browserHistory.isNotEmpty)
                           Text(
                             '${_browserHistory.length} ${_browserHistory.length == 1 ? 'entry' : 'entries'}',
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 12,
                             ),
@@ -973,13 +885,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(
+                                      const Icon(
                                         Icons.info_outline_rounded,
                                         size: 48,
                                         color: Color(0xFF9C27B0),
                                       ),
                                       const SizedBox(height: 16),
-                                      Text(
+                                      const Text(
                                         'No browsing history available',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
@@ -988,7 +900,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 8),
-                                      Text(
+                                      const Text(
                                         'Enable Accessibility Service to track visited websites',
                                         style: TextStyle(
                                           color: Colors.white60,
@@ -1006,7 +918,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           }
                                         },
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: Color(0xFF5B4A9F),
+                                          backgroundColor: const Color(0xFF5B4A9F),
                                           foregroundColor: Colors.white,
                                         ),
                                         icon: const Icon(Icons.settings, size: 18),
@@ -1032,86 +944,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   return Card(
                                     color: const Color(0xFF0F0F0F),
                                     margin: const EdgeInsets.only(bottom: 8),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  leading: Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: isErrorMessage 
-                                          ? Color(0xFF5B4A9F).withOpacity(0.3)
-                                          : Color(0xFF5B4A9F),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Icon(
-                                      isErrorMessage ? Icons.info_outline_rounded : Icons.public_rounded,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    title,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        url,
-                                        style: TextStyle(
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      leading: Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
                                           color: isErrorMessage 
-                                              ? Colors.white 
-                                              : Color(0xFF9C27B0),
-                                          fontSize: 12,
+                                              ? const Color(0xFF5B4A9F).withOpacity(0.3)
+                                              : const Color(0xFF5B4A9F),
+                                          borderRadius: BorderRadius.circular(10),
                                         ),
-                                        maxLines: 3,
+                                        child: Icon(
+                                          isErrorMessage ? Icons.info_outline_rounded : Icons.public_rounded,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        title,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                        maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      if (!isErrorMessage) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _formatTimestamp(timestamp),
-                                          style: TextStyle(
-                                            color: Colors.white60,
-                                            fontSize: 11,
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            url,
+                                            style: TextStyle(
+                                              color: isErrorMessage 
+                                                  ? Colors.white 
+                                                  : const Color(0xFF9C27B0),
+                                              fontSize: 12,
+                                            ),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                      ] else ...[
-                                        const SizedBox(height: 8),
-                                        ElevatedButton.icon(
-                                          onPressed: () async {
-                                            try {
-                                              await platform.invokeMethod('openAccessibilitySettings');
-                                            } catch (e) {
-                                              debugPrint('Error opening settings: $e');
-                                            }
-                                          },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Color(0xFF5B4A9F),
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            minimumSize: const Size(0, 32),
-                                          ),
-                                          icon: const Icon(Icons.settings, size: 16),
-                                          label: const Text('Enable Accessibility Service'),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  isThreeLine: true,
-                                ),
-                              );
-                            },
-                          ),
+                                          if (!isErrorMessage) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              _formatTimestamp(timestamp),
+                                              style: const TextStyle(
+                                                color: Colors.white60,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ] else ...[
+                                            const SizedBox(height: 8),
+                                            ElevatedButton.icon(
+                                              onPressed: () async {
+                                                try {
+                                                  await platform.invokeMethod('openAccessibilitySettings');
+                                                } catch (e) {
+                                                  debugPrint('Error opening settings: $e');
+                                                }
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFF5B4A9F),
+                                                foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                minimumSize: const Size(0, 32),
+                                              ),
+                                              icon: const Icon(Icons.settings, size: 16),
+                                              label: const Text('Enable Accessibility Service'),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      isThreeLine: true,
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -1119,7 +1031,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // App Usage List Header
                     Row(
                       children: [
-                        Text(
+                        const Text(
                           'App Usage',
                           style: TextStyle(
                             fontSize: 20,
@@ -1130,7 +1042,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const Spacer(),
                         Text(
                           DateFormat('MMM d').format(DateTime.now()),
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white60,
                             fontSize: 12,
                           ),
@@ -1139,12 +1051,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 12),
                     
-                    // App Usage List in scrollable box
+                    // App Usage List
                     Card(
                       color: const Color(0xFF1A1A1A),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Container(
-                        height: 400,
+                        height: _hasExceededApps() ? 425 : 400,
                         decoration: BoxDecoration(
                           color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(16),
@@ -1155,20 +1067,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   padding: const EdgeInsets.all(32),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
+                                    children: const [
                                       Icon(
                                         Icons.hourglass_empty_rounded,
                                         size: 48,
                                         color: Colors.white60,
                                       ),
-                                      const SizedBox(height: 16),
+                                      SizedBox(height: 16),
                                       Text(
                                         'No usage data available',
                                         style: TextStyle(
                                           color: Colors.white,
                                         ),
                                       ),
-                                      const SizedBox(height: 8),
+                                      SizedBox(height: 8),
                                       Text(
                                         'Grant usage access permission to see statistics',
                                         style: TextStyle(
@@ -1203,7 +1115,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   final isExceeded = hasLimit && limitHours != null && usedHours >= limitHours;
 
                                   return Card(
-                                    color: isExceeded ? Color(0xFF5B4A9F).withOpacity(0.3) : Color(0xFF0F0F0F),
+                                    color: isExceeded ? const Color(0xFF5B4A9F).withOpacity(0.3) : const Color(0xFF0F0F0F),
                                     margin: const EdgeInsets.only(bottom: 8),
                                     child: ListTile(
                                       contentPadding: const EdgeInsets.symmetric(
@@ -1215,7 +1127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         height: 48,
                                         decoration: BoxDecoration(
                                           borderRadius: BorderRadius.circular(12),
-                                          color: Color(0xFF2A2A2A),
+                                          color: const Color(0xFF2A2A2A),
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(12),
@@ -1226,7 +1138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   height: 48,
                                                   fit: BoxFit.cover,
                                                 )
-                                              : Icon(
+                                              : const Icon(
                                                   Icons.android,
                                                   color: Color(0xFF9C27B0),
                                                 ),
@@ -1237,14 +1149,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           Expanded(
                                             child: Text(
                                               app.appName,
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                 fontWeight: FontWeight.w600,
                                                 color: Colors.white,
                                               ),
                                             ),
                                           ),
                                           if (isExceeded)
-                                            Icon(
+                                            const Icon(
                                               Icons.block_rounded,
                                               size: 16,
                                               color: Colors.redAccent,
@@ -1256,7 +1168,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         children: [
                                           Text(
                                             usage.packageName ?? '',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               color: Colors.white60,
                                               fontSize: 11,
                                             ),
@@ -1272,7 +1184,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   size: 14,
                                                   color: isExceeded 
                                                       ? Colors.redAccent
-                                                      : Color(0xFF9C27B0),
+                                                      : const Color(0xFF9C27B0),
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
@@ -1280,7 +1192,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   style: TextStyle(
                                                     color: isExceeded 
                                                         ? Colors.redAccent
-                                                        : Color(0xFF9C27B0),
+                                                        : const Color(0xFF9C27B0),
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 12,
                                                   ),
@@ -1290,24 +1202,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ],
                                         ],
                                       ),
-                                      trailing: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: isExceeded
-                                              ? Colors.redAccent
-                                              : Color(0xFF5B4A9F),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          _formatDuration(usage.totalTimeInForeground),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                      trailing: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isExceeded
+                                                  ? Colors.redAccent
+                                                  : const Color(0xFF5B4A9F),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              _formatDuration(usage.totalTimeInForeground),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                          if (isExceeded) ...[
+                                            const SizedBox(height: 4),
+                                            TextButton.icon(
+                                              onPressed: () => _showRequestTimeDialog(
+                                                context,
+                                                packageName: packageName,
+                                                appName: app.appName,
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                minimumSize: const Size(0, 0),
+                                                backgroundColor: Colors.orangeAccent.withOpacity(0.2),
+                                              ),
+                                              icon: const Icon(
+                                                Icons.add_alarm_rounded,
+                                                size: 14,
+                                                color: Colors.orangeAccent,
+                                              ),
+                                              label: const Text(
+                                                'Request',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.orangeAccent,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ),
                                   );
@@ -1319,31 +1265,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showRequestTimeDialog(context),
-        backgroundColor: const Color(0xFF5B4A9F),
-        icon: const Icon(Icons.access_time, color: Colors.white),
-        label: const Text(
-          'Request Time',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
     );
   }
   
-  void _showRequestTimeDialog(BuildContext context) {
+  void _showRequestTimeDialog(BuildContext context, {String? packageName, String? appName}) {
     final TextEditingController hoursController = TextEditingController();
     final TextEditingController reasonController = TextEditingController();
-    String? selectedPackageName;
-    String? selectedAppName;
     
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+      builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -1370,83 +1301,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Select app (optional):',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(12),
+              if (appName != null) ...[
+                const Text(
+                  'Requesting time for:',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    hint: const Text(
-                      'All apps (general request)',
-                      style: TextStyle(color: Colors.white30),
-                    ),
-                    value: selectedPackageName,
-                    dropdownColor: const Color(0xFF2A2A2A),
-                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
-                    style: const TextStyle(color: Colors.white),
-                    items: [
-                      const DropdownMenuItem<String>(
-                        value: null,
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.apps, color: Color(0xFF9C27B0), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: Text(
-                          'All apps (general request)',
-                          style: TextStyle(color: Colors.white70),
+                          appName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      ..._usageStats.take(10).map((usage) {
-                        final app = _apps[usage.packageName];
-                        final appName = app?.appName ?? usage.packageName ?? 'Unknown';
-                        return DropdownMenuItem<String>(
-                          value: usage.packageName,
-                          child: Row(
-                            children: [
-                              if (app is ApplicationWithIcon)
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.memory(
-                                    app.icon,
-                                    width: 24,
-                                    height: 24,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                              else
-                                const Icon(Icons.android, size: 24, color: Colors.white54),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  appName,
-                                  style: const TextStyle(color: Colors.white),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
                     ],
-                    onChanged: (value) {
-                      setState(() {
-                        selectedPackageName = value;
-                        if (value != null) {
-                          final app = _apps[value];
-                          selectedAppName = app?.appName ?? value;
-                        } else {
-                          selectedAppName = null;
-                        }
-                      });
-                    },
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
+              ],
               const Text(
                 'How many extra hours do you need?',
                 style: TextStyle(color: Colors.white70, fontSize: 14),
@@ -1501,8 +1385,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              debugPrint('\n🎯 CHILD SCREEN: Send Request button clicked');
               final hoursText = hoursController.text.trim();
               final reason = reasonController.text.trim();
+              
+              debugPrint('🎯 Hours input: $hoursText');
+              debugPrint('🎯 Reason input: $reason');
+              debugPrint('🎯 Package: $packageName');
+              debugPrint('🎯 App: $appName');
               
               if (hoursText.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1582,24 +1472,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 childHash: childHash,
                 requestedHours: hours,
                 reason: reason,
-                packageName: selectedPackageName,
-                appName: selectedAppName,
+                packageName: packageName,
+                appName: appName,
               );
               
               if (success && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.white),
-                        const SizedBox(width: 12),
+                        Icon(Icons.check_circle, color: Colors.white),
+                        SizedBox(width: 12),
                         Expanded(
                           child: Text('Request sent! Your parent will be notified.'),
                         ),
                       ],
                     ),
                     backgroundColor: Colors.green,
-                    duration: const Duration(seconds: 3),
+                    duration: Duration(seconds: 3),
                   ),
                 );
               } else if (context.mounted) {
@@ -1624,7 +1514,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
-        ),
       ),
     );
   }
@@ -1632,11 +1521,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
     return Column(
       children: [
-        Icon(icon, color: Color(0xFF9C27B0), size: 28),
+        Icon(icon, color: const Color(0xFF9C27B0), size: 28),
         const SizedBox(height: 8),
         Text(
           value,
-          style: TextStyle(
+          style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
             fontSize: 22,
@@ -1645,7 +1534,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 4),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white70,
             fontSize: 12,
           ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/child_screen.dart';
 import 'screens/profile_selection_screen.dart';
 import 'screens/parent_dashboard_screen.dart';
 import 'services/api_service.dart';
@@ -105,6 +106,7 @@ class GuardianAIApp extends StatelessWidget {
         '/login': (context) => const LoginScreen(),
         '/profile_selection': (context) => const ProfileSelectionScreen(),
         '/dashboard': (context) => const DashboardScreen(),
+        '/child': (context) => const ChildScreen(),
         '/parent_dashboard': (context) => const ParentDashboardScreen(),
       },
     );

@@ -358,10 +358,169 @@ class TimeExtensionService extends ChangeNotifier {
     }
   }
 
-  // Fetch parent's public key for encryption
-  Future<String?> _fetchParentPublicKey(String childHash) async {
+  // Create a new time extension request (from child side)
+  Future<bool> createRequest({
+    required String childHash,
+    required double requestedHours,
+    required String reason,
+    String? packageName,
+    String? appName,
+    String? messageEncrypted,
+  }) async {
     try {
-      debugPrint('\n🔑 TimeExt: Fetching parent public key...');
+      debugPrint('\n📤 TimeExt: Creating new time extension request');
+      debugPrint('📤 TimeExt: Child: $childHash');
+      debugPrint('📤 TimeExt: Hours: $requestedHours');
+      debugPrint('📤 TimeExt: Reason (plaintext): $reason');
+      debugPrint('📤 TimeExt: Package: $packageName');
+      debugPrint('📤 TimeExt: App: $appName');
+
+      // Fetch parent's public key and encrypt the message
+      String? encryptedMessage = messageEncrypted;
+      int? guardianId;
+      
+      if (encryptedMessage == null) {
+        debugPrint('🔐 TimeExt: Fetching parent public key for encryption...');
+        final parentData = await _fetchParentPublicKeyAndId(childHash);
+        final parentPublicKey = parentData['public_key'];
+        guardianId = parentData['guardian_id'];
+        
+        if (parentPublicKey != null && parentPublicKey.isNotEmpty) {
+          try {
+            debugPrint('🔐 TimeExt: Encrypting message with parent public key...');
+            final encryptionService = EncryptionService.instance;
+            encryptedMessage = encryptionService.encryptWithPublicKey(reason, parentPublicKey);
+            debugPrint('✅ TimeExt: Message encrypted successfully');
+            debugPrint('🔐 TimeExt: Encrypted message (base64): ${encryptedMessage.substring(0, 50)}...');
+          } catch (e) {
+            debugPrint('❌ TimeExt: Encryption failed: $e');
+            debugPrint('⚠️ TimeExt: Sending base64-encoded plaintext as fallback');
+            encryptedMessage = base64.encode(utf8.encode(reason));
+          }
+        } else {
+          debugPrint('⚠️ TimeExt: Parent public key not available');
+          debugPrint('⚠️ TimeExt: Sending base64-encoded plaintext as fallback');
+          encryptedMessage = base64.encode(utf8.encode(reason));
+        }
+      }
+
+      // Ensure we always have a message to send (server requires NOT NULL)
+      if (encryptedMessage == null || encryptedMessage.isEmpty) {
+        debugPrint('⚠️ TimeExt: No encrypted message, using base64-encoded plaintext');
+        encryptedMessage = base64.encode(utf8.encode(reason));
+      }
+
+      // Use WebSocket for sending time extension request
+      debugPrint('📡 TimeExt: Sending via WebSocket...');
+      final wsUrl = 'wss://seraphguardlabs.com/ws/child/$childHash/time-extension/';
+      debugPrint('📡 TimeExt: Connecting to: $wsUrl');
+      
+      try {
+        final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+        
+        final payload = {
+          'type': 'time_extension_request',
+          'data': {
+            'app_domain': packageName ?? '',
+            'requested_hours': requestedHours,
+            'message_encrypted': encryptedMessage,
+            if (guardianId != null) 'guardian_id': guardianId,
+          }
+        };
+        
+        debugPrint('📦 TimeExt: Sending payload: ${json.encode(payload)}');
+        
+        // Set up listeners before sending
+        bool success = false;
+        final completer = Completer<bool>();
+        
+        final subscription = channel.stream.listen(
+          (message) {
+            try {
+              debugPrint('📨 TimeExt: Received response: $message');
+              final data = json.decode(message as String);
+              final messageType = data['type'];
+              
+              debugPrint('📨 TimeExt: Message type: $messageType');
+              
+              // Ignore pending_requests message as it's for parent, not child
+              if (messageType == 'pending_requests') {
+                debugPrint('ℹ️ TimeExt: Ignoring pending_requests message (not relevant for child)');
+                return;
+              }
+              
+              if (messageType == 'success' || messageType == 'request_received' || messageType == 'request_created') {
+                debugPrint('✅ TimeExt: Request sent successfully');
+                success = true;
+                if (!completer.isCompleted) {
+                  completer.complete(true);
+                }
+              } else if (messageType == 'error') {
+                debugPrint('❌ TimeExt: Error from server: ${data['message']}');
+                if (!completer.isCompleted) {
+                  completer.complete(false);
+                }
+              } else {
+                debugPrint('ℹ️ TimeExt: Unknown message type: $messageType');
+              }
+            } catch (e) {
+              debugPrint('❌ TimeExt: Error parsing response: $e');
+              if (!completer.isCompleted) {
+                completer.complete(false);
+              }
+            }
+          },
+          onError: (error) {
+            debugPrint('❌ TimeExt: WebSocket error: $error');
+            if (!completer.isCompleted) {
+              completer.complete(false);
+            }
+          },
+          onDone: () {
+            debugPrint('🔌 TimeExt: WebSocket closed');
+            if (!completer.isCompleted) {
+              completer.complete(success);
+            }
+          },
+        );
+        
+        // Wait a moment for connection to establish
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Send the payload
+        channel.sink.add(json.encode(payload));
+        debugPrint('✅ TimeExt: Payload sent, waiting for response...');
+        
+        // Wait a bit for response, but don't fail if we don't get one
+        final result = await completer.future.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            debugPrint('⏱️ TimeExt: No response received, but assuming success since message was sent');
+            return true; // Assume success if message was sent
+          },
+        );
+        
+        // Clean up
+        await subscription.cancel();
+        await channel.sink.close();
+        debugPrint('✅ TimeExt: Request completed with result: $result');
+        return result;
+        
+      } catch (e) {
+        debugPrint('❌ TimeExt: WebSocket connection error: $e');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ TimeExt: Error creating request: $e');
+      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  // Fetch parent's public key and guardian ID for encryption
+  Future<Map<String, dynamic>> _fetchParentPublicKeyAndId(String childHash) async {
+    try {
+      debugPrint('\n🔑 TimeExt: Fetching parent public key and guardian ID...');
       final url = '$baseUrl/api/mobile/child/$childHash/guardian-public-key/';
       
       final prefs = await SharedPreferences.getInstance();
@@ -380,98 +539,23 @@ class TimeExtensionService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final publicKey = data['public_key'] as String?;
+        final guardianId = data['guardian_id'] as int?;
+        
         if (publicKey != null && publicKey.isNotEmpty) {
           debugPrint('✅ TimeExt: Parent public key fetched successfully');
-          return publicKey;
+          debugPrint('✅ TimeExt: Guardian ID: $guardianId');
+          return {
+            'public_key': publicKey,
+            'guardian_id': guardianId,
+          };
         }
       }
       
       debugPrint('❌ TimeExt: Failed to fetch parent public key');
-      return null;
+      return {};
     } catch (e) {
       debugPrint('❌ TimeExt: Error fetching parent public key: $e');
-      return null;
-    }
-  }
-
-  // Create a new time extension request (from child side)
-  Future<bool> createRequest({
-    required String childHash,
-    required double requestedHours,
-    required String reason,
-    String? packageName,
-    String? appName,
-    String? messageEncrypted,
-  }) async {
-    try {
-      debugPrint('\n📤 TimeExt: Creating new time extension request');
-      debugPrint('📤 TimeExt: Child: $childHash');
-      debugPrint('📤 TimeExt: Hours: $requestedHours');
-      debugPrint('📤 TimeExt: Reason (plaintext): $reason');
-
-      // Fetch parent's public key and encrypt the message
-      String? encryptedMessage = messageEncrypted;
-      
-      if (encryptedMessage == null) {
-        debugPrint('🔐 TimeExt: Fetching parent public key for encryption...');
-        final parentPublicKey = await _fetchParentPublicKey(childHash);
-        
-        if (parentPublicKey != null && parentPublicKey.isNotEmpty) {
-          try {
-            debugPrint('🔐 TimeExt: Encrypting message with parent public key...');
-            final encryptionService = EncryptionService.instance;
-            encryptedMessage = encryptionService.encryptWithPublicKey(reason, parentPublicKey);
-            debugPrint('✅ TimeExt: Message encrypted successfully');
-            debugPrint('🔐 TimeExt: Encrypted message (base64): ${encryptedMessage.substring(0, 50)}...');
-          } catch (e) {
-            debugPrint('❌ TimeExt: Encryption failed: $e');
-            debugPrint('⚠️ TimeExt: Sending message in plaintext as fallback');
-          }
-        } else {
-          debugPrint('⚠️ TimeExt: Parent public key not available, sending message in plaintext');
-        }
-      }
-
-      final url = '$baseUrl/api/mobile/time-extension-requests/create/';
-      
-      final body = {
-        'child_hash': childHash,
-        'requested_hours': requestedHours,
-        'reason': reason,
-        if (packageName != null) 'package_name': packageName,
-        if (appName != null) 'app_name': appName,
-        if (encryptedMessage != null) 'message_encrypted': encryptedMessage,
-      };
-      
-      debugPrint('📡 TimeExt: Sending to: $url');
-      debugPrint('📦 TimeExt: Body: $body');
-      
-      final prefs = await SharedPreferences.getInstance();
-      final childHashStored = prefs.getString('child_hash') ?? '';
-      
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Child-Hash': childHashStored,
-        },
-        body: json.encode(body),
-      );
-
-      debugPrint('📥 TimeExt: Response status: ${response.statusCode}');
-      debugPrint('📥 TimeExt: Response body: ${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint('✅ TimeExt: Request created successfully');
-        return true;
-      }
-      
-      debugPrint('❌ TimeExt: Failed to create request');
-      return false;
-    } catch (e, stackTrace) {
-      debugPrint('❌ TimeExt: Error creating request: $e');
-      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
-      return false;
+      return {};
     }
   }
 
