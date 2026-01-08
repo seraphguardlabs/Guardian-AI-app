@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/time_extension_service.dart';
@@ -8,6 +9,8 @@ import '../services/encryption_service.dart';
 import '../models/time_extension_request.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
+import 'weekly_activity_screen.dart';
+import '../widgets/app_bottom_nav.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -28,8 +31,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Map<String, dynamic>? _appUsage;
   Map<String, dynamic>? _locations;
   Map<String, dynamic>? _siteAccess;
+  Map<String, dynamic>? _todayScreenTime; // Today's actual screen time data
   late final PageController _metricsPageController;
   double _metricsPage = 0;
+  bool _examMode = false;
+  List<String> _examModeApps = [];
+  bool _loadingExamMode = false;
+  StreamSubscription<TimeExtensionRequest>? _newRequestSubscription;
 
   @override
   void initState() {
@@ -46,6 +54,25 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     _uploadPublicKey();
     
     _loadChildren();
+    
+    // Listen for new time extension requests
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      prefs.setViewMode('parent');
+      prefs.setLastRoute('/parent_dashboard');
+      
+      final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
+      _newRequestSubscription = timeExtService.newRequestStream.listen((request) {
+        _showNewRequestNotification(request);
+      });
+    });
+  }
+  
+  @override
+  void dispose() {
+    _metricsPageController.dispose();
+    _newRequestSubscription?.cancel();
+    super.dispose();
   }
   
   Future<void> _uploadPublicKey() async {
@@ -84,6 +111,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       });
       if (_selectedChild != null) {
         _loadChildData(_selectedChild!.childHash);
+        _loadExamMode(_selectedChild!.childHash);
       }
     } else {
       setState(() {
@@ -93,10 +121,78 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _metricsPageController.dispose();
-    super.dispose();
+  Future<void> _loadExamMode(String childHash) async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    final result = await _apiService.getExamMode(
+      email: email,
+      password: password,
+      childHash: childHash,
+    );
+
+    if (result['success'] == true && mounted) {
+      final data = result['data'] as Map<String, dynamic>;
+      setState(() {
+        _examMode = data['exam_mode'] ?? false;
+        _examModeApps = List<String>.from(data['exam_mode_apps'] ?? []);
+      });
+      debugPrint('✅ Exam mode loaded: $_examMode, Apps: ${_examModeApps.length}');
+    }
+  }
+
+  Future<void> _toggleExamMode(bool value) async {
+    if (_selectedChild == null) return;
+
+    setState(() {
+      _loadingExamMode = true;
+    });
+
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    final result = await _apiService.updateExamMode(
+      email: email,
+      password: password,
+      childHash: _selectedChild!.childHash,
+      examMode: value,
+    );
+
+    setState(() {
+      _loadingExamMode = false;
+    });
+
+    if (result['success'] == true && mounted) {
+      final data = result['data'] as Map<String, dynamic>;
+      setState(() {
+        _examMode = data['exam_mode'] ?? false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                _examMode ? Icons.school : Icons.check_circle,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 12),
+              Text(_examMode ? 'Exam mode enabled' : 'Exam mode disabled'),
+            ],
+          ),
+          backgroundColor: _examMode ? Colors.orange : Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to toggle exam mode: ${result['error']}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _loadChildData(String childHash) async {
@@ -106,9 +202,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
     setState(() => _isLoadingData = true);
 
+    // Get today's date for fetching current screen time
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
     final results = await Future.wait([
       _apiService.fetchChildMetrics(email, password, childHash),
-      _apiService.fetchScreenTime(email, password, childHash),
+      _apiService.fetchScreenTime(email, password, childHash, startDate: today, endDate: today), // Today only
       _apiService.fetchAppUsage(email, password, childHash),
       _apiService.fetchLocations(email, password, childHash, limit: 50),
       _apiService.fetchSiteAccess(email, password, childHash, filter: 'all', limit: 50),
@@ -120,6 +219,26 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       _appUsage = results[2]['success'] == true ? results[2]['data'] : null;
       _locations = results[3]['success'] == true ? results[3]['data'] : null;
       _siteAccess = results[4]['success'] == true ? results[4]['data'] : null;
+      
+      // Extract today's screen time from trend data
+      if (_screenTime != null && _screenTime!['trend'] != null) {
+        final trend = _screenTime!['trend'] as List;
+        if (trend.isNotEmpty) {
+          // The API returns trend data, today should be the first/last entry
+          final todayData = trend.firstWhere(
+            (item) => item['date'] == today,
+            orElse: () => null,
+          );
+          if (todayData != null) {
+            _todayScreenTime = {
+              'screen_time_formatted': todayData['formatted'],
+              'screen_time_seconds': todayData['total_seconds'],
+            };
+            debugPrint('📊 Today screen time: ${_todayScreenTime!['screen_time_formatted']} (${_todayScreenTime!['screen_time_seconds']}s)');
+          }
+        }
+      }
+      
       _isLoadingData = false;
     });
   }
@@ -200,6 +319,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 );
               },
               tooltip: 'Time Extension Requests',
+            ),
+            IconButton(
+              icon: Icon(
+                _examMode ? Icons.school : Icons.school_outlined,
+                color: _examMode ? Colors.orange : Colors.white,
+              ),
+              onPressed: () => _showExamModeDialog(),
+              tooltip: _examMode ? 'Exam Mode: ON' : 'Exam Mode: OFF',
             ),
           ],
           Padding(
@@ -446,6 +573,97 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         ],
                       ),
                     ),
+      bottomNavigationBar: AppBottomNav(
+        currentIndex: 2,
+        onTap: _handleBottomNavTap,
+        isParent: true,
+      ),
+    );
+  }
+
+  void _handleBottomNavTap(int index) {
+    if (index == 2) {
+      // Already on dashboard, do nothing
+      return;
+    }
+    
+    // Show coming soon dialog for other tabs
+    final titles = [
+      'Chat',
+      'Rewards',
+      'Dashboard',
+      'Activities',
+      'Profile',
+    ];
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF5B4A9F).withOpacity(0.3),
+                    const Color(0xFF4A3280).withOpacity(0.3),
+                  ],
+                ),
+              ),
+              child: const Icon(
+                Icons.rocket_launch_outlined,
+                size: 50,
+                color: Color(0xFF5B4A9F),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              titles[index],
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Coming Soon',
+              style: TextStyle(
+                color: Color(0xFF5B4A9F),
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'We\'re working hard to bring you this feature. Stay tuned!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFF5B4A9F),
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -575,9 +793,28 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildMetricsCard() {
-    final metrics = _metrics!['metrics'];
-    final dailyFormatted = metrics['daily_average_formatted'] ?? metrics['total_screen_time_formatted'] ?? '--';
-    final dailySeconds = (metrics['daily_average_seconds'] ?? metrics['total_screen_time_seconds'] ?? 0).toDouble();
+    // Use today's screen time from _todayScreenTime which is fetched from /screen-time/ endpoint
+    String dailyFormatted = '--';
+    double dailySeconds = 0.0;
+    
+    if (_todayScreenTime != null) {
+      dailyFormatted = _todayScreenTime!['screen_time_formatted'] ?? '--';
+      dailySeconds = (_todayScreenTime!['screen_time_seconds'] ?? 0).toDouble();
+      debugPrint('✅ Using today\'s screen time: $dailyFormatted ($dailySeconds seconds)');
+    } else if (_metrics != null) {
+      // Fallback to metrics endpoint if today's data not available
+      final metrics = _metrics!['metrics'];
+      debugPrint('⚠️ No today screen time data, falling back to metrics');
+      
+      if (metrics['today_screen_time_formatted'] != null && metrics['today_screen_time_formatted'] != '--') {
+        dailyFormatted = metrics['today_screen_time_formatted'];
+        dailySeconds = (metrics['today_screen_time_seconds'] ?? 0).toDouble();
+      } else if (metrics['daily_average_formatted'] != null) {
+        dailyFormatted = metrics['daily_average_formatted'];
+        dailySeconds = (metrics['daily_average_seconds'] ?? 0).toDouble();
+      }
+    }
+    
     final percentOfLimit = ((dailySeconds / 10800) * 100).clamp(0, 999).toStringAsFixed(0);
     final progress = (dailySeconds / 10800).clamp(0.0, 1.0);
 
@@ -632,11 +869,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(width: 4),
-              const Text(
-                '/3h',
-                style: TextStyle(fontSize: 16, color: Color(0xFFE0D4FF)),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -690,7 +922,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _buildWeeklySummaryCard() {
     final summary = _screenTime!['summary'];
-    final total = summary['total_formatted'] ?? '--';
     final average = summary['average_formatted'] ?? '--';
 
     return Container(
@@ -707,7 +938,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Weekly Screen Time',
+            'Daily Average',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -716,16 +947,16 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            total,
+            average,
             style: const TextStyle(
-              fontSize: 22,
+              fontSize: 28,
               fontWeight: FontWeight.w700,
               color: Colors.white,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Daily average: $average',
+            'Screen time per day',
             style: const TextStyle(
               fontSize: 13,
               color: Colors.white70,
@@ -775,22 +1006,34 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.calendar_today_outlined, size: 14, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text(
-                    'This Week',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                ],
+            GestureDetector(
+              onTap: () {
+                if (_selectedChild != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => WeeklyActivityScreen(child: _selectedChild!),
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.calendar_today_outlined, size: 14, color: Colors.white),
+                    SizedBox(width: 6),
+                    Text(
+                      'This Week',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -2166,6 +2409,412 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8),
         ),
         child: Text('${hours}h', style: const TextStyle(fontSize: 12)),
+      ),
+    );
+  }
+
+  void _showExamModeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _examMode
+                        ? [Colors.orange, Colors.deepOrange]
+                        : [const Color(0xFF5B4A9F), const Color(0xFF4A3280)],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  _examMode ? Icons.school : Icons.school_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Exam Mode',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: _examMode
+                        ? Border.all(color: Colors.orange.withOpacity(0.5), width: 2)
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _examMode ? 'Exam Mode Active' : 'Exam Mode Inactive',
+                              style: TextStyle(
+                                color: _examMode ? Colors.orange : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _examMode
+                                  ? 'All selected apps are currently blocked'
+                                  : 'Enable to block distracting apps during study time',
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _loadingExamMode
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.orange,
+                              ),
+                            )
+                          : Switch(
+                              value: _examMode,
+                              onChanged: (value) async {
+                                setDialogState(() {});
+                                await _toggleExamMode(value);
+                                setDialogState(() {});
+                              },
+                              activeColor: Colors.orange,
+                            ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    const Icon(Icons.block, color: Colors.white70, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Apps to Block (${_examModeApps.length})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_examModeApps.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A2A),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No apps selected.\nAdd apps to block during exam mode.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  ...List.generate(_examModeApps.length, (index) {
+                    final packageName = _examModeApps[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.android, color: Color(0xFF9C27B0), size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _getAppNameFromPackage(packageName),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                            onPressed: () async {
+                              await _removeAppFromExamMode(packageName);
+                              setDialogState(() {});
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showAddAppToExamModeDialog(setDialogState),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add App to Block'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF5B4A9F),
+                      side: const BorderSide(color: Color(0xFF5B4A9F)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getAppNameFromPackage(String packageName) {
+    final appNames = {
+      'com.instagram.android': 'Instagram',
+      'com.zhiliaoapp.musically': 'TikTok',
+      'com.snapchat.android': 'Snapchat',
+      'com.google.android.youtube': 'YouTube',
+      'com.facebook.katana': 'Facebook',
+      'com.whatsapp': 'WhatsApp',
+      'com.twitter.android': 'Twitter/X',
+      'com.facebook.orca': 'Messenger',
+    };
+    return appNames[packageName] ?? packageName.split('.').last;
+  }
+
+  Future<void> _removeAppFromExamMode(String packageName) async {
+    if (_selectedChild == null) return;
+
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    final result = await _apiService.updateExamMode(
+      email: email,
+      password: password,
+      childHash: _selectedChild!.childHash,
+      action: 'remove_app',
+      package: packageName,
+    );
+
+    if (result['success'] == true && mounted) {
+      final data = result['data'] as Map<String, dynamic>;
+      setState(() {
+        _examModeApps = List<String>.from(data['exam_mode_apps'] ?? []);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('App removed from exam mode'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  void _showAddAppToExamModeDialog(StateSetter parentSetState) {
+    final commonApps = {
+      'com.instagram.android': 'Instagram',
+      'com.zhiliaoapp.musically': 'TikTok',
+      'com.snapchat.android': 'Snapchat',
+      'com.google.android.youtube': 'YouTube',
+      'com.facebook.katana': 'Facebook',
+      'com.whatsapp': 'WhatsApp',
+      'com.twitter.android': 'Twitter/X',
+      'com.facebook.orca': 'Messenger',
+    };
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Select App to Block', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: commonApps.entries.map((entry) {
+              final isAlreadyAdded = _examModeApps.contains(entry.key);
+              return ListTile(
+                leading: const Icon(Icons.android, color: Color(0xFF9C27B0)),
+                title: Text(entry.value, style: const TextStyle(color: Colors.white)),
+                trailing: isAlreadyAdded
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : const Icon(Icons.add_circle_outline, color: Colors.white70),
+                enabled: !isAlreadyAdded,
+                onTap: isAlreadyAdded
+                    ? null
+                    : () async {
+                        Navigator.pop(context);
+                        await _addAppToExamMode(entry.key);
+                        parentSetState(() {});
+                      },
+              );
+            }).toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addAppToExamMode(String packageName) async {
+    if (_selectedChild == null) return;
+
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    final result = await _apiService.updateExamMode(
+      email: email,
+      password: password,
+      childHash: _selectedChild!.childHash,
+      action: 'add_app',
+      package: packageName,
+    );
+
+    if (result['success'] == true && mounted) {
+      final data = result['data'] as Map<String, dynamic>;
+      setState(() {
+        _examModeApps = List<String>.from(data['exam_mode_apps'] ?? []);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Text('${_getAppNameFromPackage(packageName)} added to exam mode'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  void _showNewRequestNotification(TimeExtensionRequest request) {
+    if (!mounted) return;
+    
+    // Show snackbar notification
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF1A1A1A),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 5),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF5B4A9F),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.access_time,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'New Time Extension Request',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${request.childName} wants ${request.requestedHours}h more for ${request.appDomain}',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+            if (request.messageEncrypted != null && request.messageEncrypted!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Request includes a message',
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: const Color(0xFF5B4A9F),
+          onPressed: () {
+            // Scroll to pending requests section
+          },
+        ),
       ),
     );
   }

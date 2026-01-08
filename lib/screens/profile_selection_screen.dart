@@ -30,14 +30,14 @@ class ProfileSelectionScreen extends StatelessWidget {
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                colors: [Color(0xFF1A3C8B), Color(0xFF0F2B6B)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Color(0xFF5B4A9F).withOpacity(0.3),
+                  color: Color(0xFF1A3C8B).withOpacity(0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -147,7 +147,7 @@ class ProfileSelectionScreen extends StatelessWidget {
                           contentPadding: const EdgeInsets.all(16),
                           leading: CircleAvatar(
                             radius: 30,
-                            backgroundColor: Color(0xFF5B4A9F).withOpacity(0.3),
+                            backgroundColor: Color(0xFF1A3C8B).withOpacity(0.3),
                             backgroundImage: child.profileImageUrl != null
                                 ? NetworkImage(child.profileImageUrl!)
                                 : null,
@@ -157,7 +157,7 @@ class ProfileSelectionScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: Color(0xFF9C27B0),
+                                      color: Color(0xFF1A3C8B),
                                     ),
                                   )
                                 : null,
@@ -171,7 +171,7 @@ class ProfileSelectionScreen extends StatelessWidget {
                             ),
                           ),
                           subtitle: const Text('Tap to monitor this device', style: TextStyle(color: Colors.white60)),
-                          trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF9C27B0)),
+                          trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF1A3C8B)),
                           onTap: () async {
                             await _selectChild(context, child);
                           },

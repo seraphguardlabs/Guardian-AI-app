@@ -251,8 +251,21 @@ class ApiService {
   }
 
   /// Fetch screen time trend data
-  Future<Map<String, dynamic>> fetchScreenTime(String email, String password, String childHash) async {
-    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/screen-time/');
+  Future<Map<String, dynamic>> fetchScreenTime(
+    String email, 
+    String password, 
+    String childHash, 
+    {String? startDate, String? endDate}
+  ) async {
+    var url = Uri.parse('$baseUrl/api/mobile/child/$childHash/screen-time/');
+    
+    // Add date parameters if provided
+    if (startDate != null || endDate != null) {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      url = url.replace(queryParameters: queryParams);
+    }
     
     try {
       final response = await http.get(
@@ -543,6 +556,135 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('❌ Get restrictions error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Get exam mode settings for a child
+  Future<Map<String, dynamic>> getExamMode({
+    required String email,
+    required String password,
+    required String childHash,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/exam-mode/');
+    
+    debugPrint('\n🎓 ===== API SERVICE: GET EXAM MODE =====');
+    debugPrint('🎓 URL: $url');
+    debugPrint('🎓 Child Hash: $childHash');
+    debugPrint('🎓 Email provided: ${email.isNotEmpty}');
+    debugPrint('🎓 Password provided: ${password.isNotEmpty}');
+    
+    try {
+      // Build headers - only add auth if provided (child devices don't need auth for their own data)
+      final headers = <String, String>{};
+      if (email.isNotEmpty && password.isNotEmpty) {
+        headers['X-Email'] = email;
+        headers['X-Password'] = password;
+        debugPrint('🎓 Using authenticated request');
+      } else {
+        debugPrint('🎓 Using unauthenticated request (child device)');
+      }
+      
+      debugPrint('🎓 Sending GET request...');
+      final response = await http.get(
+        url,
+        headers: headers,
+      );
+
+      debugPrint('🎓 Response status code: ${response.statusCode}');
+      debugPrint('🎓 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ Exam mode retrieved successfully:');
+        debugPrint('   - exam_mode: ${data['exam_mode']}');
+        debugPrint('   - exam_mode_apps: ${data['exam_mode_apps']}');
+        debugPrint('🎓 ===== API CALL COMPLETE =====\n');
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        debugPrint('❌ HTTP Error: ${response.statusCode}');
+        debugPrint('   Response body: ${response.body}');
+        debugPrint('🎓 ===== API CALL FAILED =====\n');
+        return {
+          'success': false,
+          'error': 'HTTP ${response.statusCode}: ${response.body}',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Get exam mode error: $e');
+      debugPrint('🎓 ===== API CALL EXCEPTION =====\n');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Update exam mode settings for a child
+  /// Can toggle exam mode on/off and/or update the list of apps to block
+  Future<Map<String, dynamic>> updateExamMode({
+    required String email,
+    required String password,
+    required String childHash,
+    bool? examMode,
+    List<String>? examModeApps,
+    String? action,  // 'add_app', 'remove_app'
+    String? package,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/exam-mode/');
+    
+    try {
+      Map<String, dynamic> requestBody = {};
+      
+      if (action != null) {
+        requestBody['action'] = action;
+        if (package != null) {
+          requestBody['package'] = package;
+        }
+      } else {
+        if (examMode != null) {
+          requestBody['exam_mode'] = examMode;
+        }
+        if (examModeApps != null) {
+          requestBody['exam_mode_apps'] = examModeApps;
+        }
+      }
+      
+      debugPrint('📤 Updating exam mode for: $childHash');
+      debugPrint('   Request body: $requestBody');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ Exam mode updated successfully');
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Update failed',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Update exam mode error: $e');
       return {
         'success': false,
         'error': 'Network error: $e',

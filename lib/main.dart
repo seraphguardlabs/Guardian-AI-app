@@ -61,6 +61,25 @@ class GuardianAIApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine initial route based on login status
+    Widget initialScreen = const LoginScreen();
+    
+    if (prefsManager.isLoggedIn()) {
+      final lastRoute = prefsManager.getLastRoute();
+      final viewMode = prefsManager.getViewMode();
+      
+      if (lastRoute == '/parent_dashboard' || viewMode == 'parent') {
+        // Parent was viewing parent dashboard
+        initialScreen = const ParentDashboardScreen();
+      } else if (prefsManager.hasSelectedChild()) {
+        // Child screen
+        initialScreen = const ChildScreen();
+      } else {
+        // Logged in but no child selected - go to profile selection
+        initialScreen = const LoginScreen();
+      }
+    }
+    
     return MaterialApp(
       title: 'Guardian AI',
       debugShowCheckedModeBanner: false,
@@ -99,9 +118,7 @@ class GuardianAIApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: prefsManager.hasSelectedChild()
-          ? const DashboardScreen()
-          : const LoginScreen(),
+      home: initialScreen,
       routes: {
         '/login': (context) => const LoginScreen(),
         '/profile_selection': (context) => const ProfileSelectionScreen(),
