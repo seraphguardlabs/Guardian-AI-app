@@ -6,7 +6,28 @@ import '../services/api_service.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
 
+/// Weekly Activity Screen
+/// 
+/// Displays a comprehensive view of a child's screen time activity over a 3-week period.
+/// 
+/// Features:
+/// - Line chart showing screen time trends for current week, last week, and two weeks ago
+/// - Today's usage summary with progress bar against daily limit
+/// - Weekly totals comparison
+/// - Pull-to-refresh functionality
+/// - Conditional rendering (only shows weeks with actual data)
+/// 
+/// API Integration:
+/// - Uses /api/mobile/child/<hash>/screen-time/ endpoint
+/// - Fetches data with date range parameters for each week
+/// - Requires parent email/password authentication via headers
+/// 
+/// Color Scheme:
+/// - Current week: Bright blue (#2196F3)
+/// - Last week: Medium blue (#64B5F6)
+/// - Two weeks ago: Light blue (#90CAF9)
 class WeeklyActivityScreen extends StatefulWidget {
+  /// The child whose weekly activity is being displayed
   final Child child;
 
   const WeeklyActivityScreen({super.key, required this.child});
@@ -16,14 +37,21 @@ class WeeklyActivityScreen extends StatefulWidget {
 }
 
 class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
+  // Loading state
   bool _loading = true;
+  
+  // Currently selected time period (for future filtering feature)
   String _selectedPeriod = 'This Week';
   
-  // Weekly data from API
+  // Screen time data for each week (date string -> hours as double)
   Map<String, double> _currentWeekData = {};
   Map<String, double> _previousWeekData = {};
   Map<String, double> _twoWeeksAgoData = {};
-  double _dailyLimit = 3.0; // hours
+  
+  // Configuration
+  static const double _dailyLimitHours = 3.0;
+  
+  // Today's usage in hours
   double _todayUsage = 0.0;
 
   @override
@@ -32,6 +60,12 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     _fetchWeeklyData();
   }
 
+  /// Fetches screen time data for the current week, previous week, and two weeks ago
+  /// 
+  /// Makes parallel API calls to /api/mobile/child/<hash>/screen-time/ endpoint
+  /// with different date ranges for each week (Monday to Sunday).
+  /// 
+  /// Updates state with processed data and calculates today's usage.
   Future<void> _fetchWeeklyData() async {
     setState(() => _loading = true);
     
@@ -42,7 +76,13 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
       final email = prefs.getParentEmail() ?? '';
       final password = prefs.getParentPassword() ?? '';
       
-      // Calculate date ranges
+      if (email.isEmpty || password.isEmpty) {
+        debugPrint('⚠️ Missing parent credentials for API call');
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      
+      // Calculate date ranges (all weeks start on Monday)
       final now = DateTime.now();
       final currentWeekStart = now.subtract(Duration(days: now.weekday - 1));
       final currentWeekEnd = currentWeekStart.add(const Duration(days: 6));
@@ -51,45 +91,45 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
       final twoWeeksAgoStart = currentWeekStart.subtract(const Duration(days: 14));
       final twoWeeksAgoEnd = twoWeeksAgoStart.add(const Duration(days: 6));
       
-      // Fetch data for each week from API
-      final currentWeekResult = await apiService.fetchScreenTime(
-        email,
-        password,
-        widget.child.childHash,
-        startDate: DateFormat('yyyy-MM-dd').format(currentWeekStart),
-        endDate: DateFormat('yyyy-MM-dd').format(currentWeekEnd),
-      );
-      
-      final previousWeekResult = await apiService.fetchScreenTime(
-        email,
-        password,
-        widget.child.childHash,
-        startDate: DateFormat('yyyy-MM-dd').format(previousWeekStart),
-        endDate: DateFormat('yyyy-MM-dd').format(previousWeekEnd),
-      );
-      
-      final twoWeeksAgoResult = await apiService.fetchScreenTime(
-        email,
-        password,
-        widget.child.childHash,
-        startDate: DateFormat('yyyy-MM-dd').format(twoWeeksAgoStart),
-        endDate: DateFormat('yyyy-MM-dd').format(twoWeeksAgoEnd),
-      );
+      // Fetch data for each week from API in parallel
+      final results = await Future.wait([
+        apiService.fetchScreenTime(
+          email,
+          password,
+          widget.child.childHash,
+          startDate: DateFormat('yyyy-MM-dd').format(currentWeekStart),
+          endDate: DateFormat('yyyy-MM-dd').format(currentWeekEnd),
+        ),
+        apiService.fetchScreenTime(
+          email,
+          password,
+          widget.child.childHash,
+          startDate: DateFormat('yyyy-MM-dd').format(previousWeekStart),
+          endDate: DateFormat('yyyy-MM-dd').format(previousWeekEnd),
+        ),
+        apiService.fetchScreenTime(
+          email,
+          password,
+          widget.child.childHash,
+          startDate: DateFormat('yyyy-MM-dd').format(twoWeeksAgoStart),
+          endDate: DateFormat('yyyy-MM-dd').format(twoWeeksAgoEnd),
+        ),
+      ]);
       
       // Process API responses
-      _currentWeekData = _processWeekData(currentWeekResult);
-      _previousWeekData = _processWeekData(previousWeekResult);
-      _twoWeeksAgoData = _processWeekData(twoWeeksAgoResult);
+      _currentWeekData = _processWeekData(results[0]);
+      _previousWeekData = _processWeekData(results[1]);
+      _twoWeeksAgoData = _processWeekData(results[2]);
       
       // Calculate today's usage
       final todayKey = DateFormat('yyyy-MM-dd').format(now);
       _todayUsage = _currentWeekData[todayKey] ?? 0.0;
       
-      debugPrint('📊 Weekly data fetched:');
+      debugPrint('📊 Weekly data fetched successfully:');
       debugPrint('  Current week: ${_currentWeekData.length} days');
       debugPrint('  Previous week: ${_previousWeekData.length} days');
       debugPrint('  Two weeks ago: ${_twoWeeksAgoData.length} days');
-      debugPrint('  Today usage: ${_todayUsage}h');
+      debugPrint('  Today usage: ${_formatDuration(_todayUsage)}');
       
       if (mounted) {
         setState(() => _loading = false);
@@ -102,26 +142,47 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     }
   }
 
+  /// Processes API response and converts to Map<String, double>
+  /// 
+  /// Extracts the 'trend' array from API response and converts each day's
+  /// total_seconds to hours for easier chart rendering.
+  /// 
+  /// Returns: Map with date strings (yyyy-MM-dd) as keys and hours as values
   Map<String, double> _processWeekData(Map<String, dynamic> apiResult) {
     final data = <String, double>{};
     
-    if (apiResult['success'] == true && apiResult['data'] != null) {
-      final responseData = apiResult['data'];
-      final trend = responseData['trend'] as List?;
+    if (apiResult['success'] != true || apiResult['data'] == null) {
+      return data;
+    }
+    
+    final responseData = apiResult['data'];
+    final trend = responseData['trend'] as List?;
+    
+    if (trend == null) return data;
+    
+    for (var dayData in trend) {
+      final date = dayData['date'] as String?;
+      final totalSeconds = dayData['total_seconds'] as int? ?? 0;
       
-      if (trend != null) {
-        for (var dayData in trend) {
-          final date = dayData['date'] as String;
-          final totalSeconds = dayData['total_seconds'] as int? ?? 0;
-          final hours = totalSeconds / 3600.0;
-          data[date] = hours;
-        }
+      if (date != null) {
+        final hours = totalSeconds / 3600.0;
+        data[date] = hours;
       }
     }
     
     return data;
   }
 
+  /// Converts week data to FlSpot list for chart rendering
+  /// 
+  /// Creates 7 data points (Monday to Sunday) for the line chart.
+  /// Uses 0.0 for days with no data.
+  /// 
+  /// Parameters:
+  /// - weekData: Map of date strings to hours
+  /// - weekStart: The Monday of the week
+  /// 
+  /// Returns: List of FlSpot with x=day_index (0-6) and y=hours
   List<FlSpot> _getWeekSpots(Map<String, double> weekData, DateTime weekStart) {
     final spots = <FlSpot>[];
     for (int i = 0; i < 7; i++) {
@@ -133,16 +194,28 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     return spots;
   }
 
+  /// Formats hours as "Xh Ym" string
+  /// 
+  /// Examples:
+  /// - 2.5 hours -> "2h 30m"
+  /// - 0.75 hours -> "0h 45m"
+  /// - 3.0 hours -> "3h 0m"
   String _formatDuration(double hours) {
     final totalMinutes = (hours * 60).round();
     final h = totalMinutes ~/ 60;
     final m = totalMinutes % 60;
-    return '${h}h${m}m';
+    return '${h}h ${m}m';
   }
 
+  /// Calculates the maximum Y-axis value for the chart
+  /// 
+  /// Ensures the chart has enough space to display all data points
+  /// by finding the max value across all weeks and adding 20% padding.
+  /// Always shows at least the daily limit.
+  /// 
+  /// Returns: Ceiling of (max_value * 1.2) or daily limit, whichever is greater
   double _calculateMaxY() {
-    // Find the maximum value across all weeks
-    double maxValue = _dailyLimit;
+    double maxValue = _dailyLimitHours;
     
     final allValues = [
       ..._currentWeekData.values,
@@ -159,10 +232,19 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     return (maxValue * 1.2).ceilToDouble();
   }
 
+  /// Checks if a week has any non-zero screen time data
+  /// 
+  /// Used to conditionally render weeks in the chart and legend.
+  /// Only weeks with actual usage are displayed.
   bool _hasWeekData(Map<String, double> weekData) {
     return weekData.isNotEmpty && weekData.values.any((value) => value > 0);
   }
 
+  /// Calculates total screen time for a week
+  /// 
+  /// Sums all daily hours in the week data.
+  /// 
+  /// Returns: Total hours for the week
   double _calculateWeekTotal(Map<String, double> weekData) {
     return weekData.values.fold(0.0, (sum, value) => sum + value);
   }
@@ -258,7 +340,7 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Daily Limit: ${_dailyLimit.toInt()} hr',
+                      'Daily Limit: ${_dailyLimitHours.toInt()} hr',
                       style: const TextStyle(
                         color: Colors.white60,
                         fontSize: 14,
@@ -304,7 +386,7 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
                                 ),
                               ),
                               FractionallySizedBox(
-                                widthFactor: (_todayUsage / _dailyLimit).clamp(0.0, 1.0),
+                                widthFactor: (_todayUsage / _dailyLimitHours).clamp(0.0, 1.0),
                                 child: Container(
                                   height: 8,
                                   decoration: BoxDecoration(
@@ -545,8 +627,16 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     );
   }
 
+  /// Builds a legend item showing a colored circle and label
+  /// 
+  /// Used in the today's usage card to show which line represents which week.
+  /// 
+  /// Parameters:
+  /// - color: The color of the circle and corresponding line in the chart
+  /// - label: Text label (e.g., "This Week", "Last Week")
   Widget _buildLegendItem(Color color, String label) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 12,
@@ -568,6 +658,14 @@ class _WeeklyActivityScreenState extends State<WeeklyActivityScreen> {
     );
   }
 
+  /// Builds a stat row showing weekly total with colored indicator
+  /// 
+  /// Used in the weekly summary section at the bottom of the screen.
+  /// 
+  /// Parameters:
+  /// - label: Week name (e.g., "This Week")
+  /// - value: Formatted duration string (e.g., "12h 30m")
+  /// - color: Color matching the week's line in the chart
   Widget _buildStatRow(String label, String value, Color color) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

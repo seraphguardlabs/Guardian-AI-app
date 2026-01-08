@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+/// AppBottomNav - Custom bottom navigation bar with 5 items
+/// 
+/// Features:
+/// - Center circular button for apps screen
+/// - Consistent #1A3C8B theme color
+/// - 5 navigation items: Chat, Starred, Apps, Hub, Profile
+/// - Visual feedback for selected state
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTap;
@@ -67,7 +74,7 @@ class AppBottomNav extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Icon(
           icon,
-          color: isSelected ? const Color(0xFF2196F3) : Colors.white70,
+          color: isSelected ? const Color(0xFF1A3C8B) : Colors.white70,
           size: 28,
         ),
       ),
@@ -86,13 +93,13 @@ class AppBottomNav extends StatelessWidget {
           shape: BoxShape.circle,
           gradient: isSelected
               ? const LinearGradient(
-                  colors: [Color(0xFF2196F3), Color(0xFF1976D2)],
+                  colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 )
               : null,
           border: Border.all(
-            color: isSelected ? const Color(0xFF2196F3) : Colors.white24,
+            color: isSelected ? const Color(0xFF1A3C8B) : Colors.white24,
             width: 2,
           ),
           color: isSelected ? null : const Color(0xFF1A1A1A),
