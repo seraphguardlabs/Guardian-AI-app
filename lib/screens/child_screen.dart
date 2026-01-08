@@ -13,6 +13,7 @@ import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
 import '../services/time_extension_service.dart';
 import '../models/restrictions_data.dart';
+import '../widgets/app_bottom_nav.dart';
 
 class ChildScreen extends StatefulWidget {
   const ChildScreen({super.key});
@@ -33,6 +34,8 @@ class _ChildScreenState extends State<ChildScreen> {
   RestrictionsData? _restrictions;
   StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
   StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
+  bool _examMode = false;
+  List<String> _examModeApps = [];
 
   @override
   void initState() {
@@ -44,10 +47,17 @@ class _ChildScreenState extends State<ChildScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('🎓 Child Screen: Post-frame callback starting...');
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      prefs.setViewMode('child');
+      prefs.setLastRoute('/child');
+      
       final locationService = Provider.of<LocationService>(context, listen: false);
       locationService.startTracking();
       _initializeWebSocket();
       _fetchRestrictions();
+      debugPrint('🎓 Child Screen: Calling _fetchExamMode() from initState');
+      _fetchExamMode();
     });
   }
 
@@ -83,6 +93,8 @@ class _ChildScreenState extends State<ChildScreen> {
         if (message['type'] == 'restrictions_update') {
           debugPrint('🚫 Received restrictions update via WebSocket');
           _fetchRestrictions();
+          debugPrint('🎓 Fetching exam mode after WebSocket restrictions update');
+          _fetchExamMode(); // Also check exam mode when restrictions update
         }
       });
 
@@ -91,9 +103,13 @@ class _ChildScreenState extends State<ChildScreen> {
           debugPrint('🚫 Received restrictions from WSS');
           final restrictedApps = message['restricted_apps'] as Map<String, dynamic>? ?? {};
 
-          final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
-          appBlocker.updateRestrictions(restrictedApps);
-          BackgroundMonitoringService.updateRestrictions(restrictedApps);
+          // Also fetch exam mode to get effective restrictions
+          _fetchExamMode().then((_) {
+            final effectiveRestrictions = _getEffectiveRestrictions();
+            final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
+            appBlocker.updateRestrictions(effectiveRestrictions);
+            BackgroundMonitoringService.updateRestrictions(effectiveRestrictions);
+          });
 
           if (mounted) {
             setState(() {
@@ -126,10 +142,88 @@ class _ChildScreenState extends State<ChildScreen> {
       });
       debugPrint('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
 
+      // Fetch exam mode to get the combined restrictions
+      await _fetchExamMode();
+
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
-      appBlocker.updateRestrictions(_restrictions!.restrictedApps);
-      BackgroundMonitoringService.updateRestrictions(_restrictions!.restrictedApps);
+      appBlocker.updateRestrictions(_getEffectiveRestrictions());
+      BackgroundMonitoringService.updateRestrictions(_getEffectiveRestrictions());
     }
+  }
+
+  Future<void> _fetchExamMode() async {
+    debugPrint('\n🎓 ===== FETCHING EXAM MODE =====');
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefsManager.getChildHash();
+    final parentEmail = prefsManager.getParentEmail();
+    final parentPassword = prefsManager.getParentPassword();
+
+    debugPrint('🎓 Child hash: $childHash');
+    debugPrint('🎓 Parent email available: ${parentEmail?.isNotEmpty ?? false}');
+    debugPrint('🎓 Parent password available: ${parentPassword?.isNotEmpty ?? false}');
+
+    if (childHash == null || childHash.isEmpty) {
+      debugPrint('⚠️ No child hash, skipping exam mode fetch');
+      return;
+    }
+
+    if (parentEmail == null || parentPassword == null) {
+      debugPrint('⚠️ No parent credentials found, skipping exam mode fetch');
+      return;
+    }
+
+    debugPrint('🎓 Calling API: GET /api/mobile/child/$childHash/exam-mode/');
+    final apiService = Provider.of<ApiService>(context, listen: false);
+    final result = await apiService.getExamMode(
+      email: parentEmail,
+      password: parentPassword,
+      childHash: childHash,
+    );
+
+    debugPrint('🎓 API Response: $result');
+    debugPrint('🎓 Success: ${result['success']}');
+    debugPrint('🎓 Data: ${result['data']}');
+
+    if (result['success'] == true && mounted) {
+      final data = result['data'] as Map<String, dynamic>;
+      final examModeValue = data['exam_mode'] ?? false;
+      final examModeAppsList = List<String>.from(data['exam_mode_apps'] ?? []);
+      
+      debugPrint('🎓 Parsed exam_mode: $examModeValue (type: ${examModeValue.runtimeType})');
+      debugPrint('🎓 Parsed exam_mode_apps: $examModeAppsList');
+      
+      setState(() {
+        _examMode = examModeValue;
+        _examModeApps = examModeAppsList;
+      });
+      
+      debugPrint('✅ EXAM MODE STATE UPDATED:');
+      debugPrint('   - Exam Mode Active: $_examMode');
+      debugPrint('   - Blocked Apps Count: ${_examModeApps.length}');
+      debugPrint('   - Blocked Apps: $_examModeApps');
+    } else {
+      debugPrint('❌ Failed to fetch exam mode or widget not mounted');
+      debugPrint('   - Success: ${result['success']}');
+      debugPrint('   - Mounted: $mounted');
+      debugPrint('   - Error: ${result['error']}');
+    }
+    debugPrint('🎓 ===== EXAM MODE FETCH COMPLETE =====\n');
+  }
+
+  Map<String, double> _getEffectiveRestrictions() {
+    if (_restrictions == null) return {};
+    
+    final effective = Map<String, double>.from(_restrictions!.restrictedApps);
+    
+    // If exam mode is active, set exam mode apps to 0 hours
+    if (_examMode) {
+      for (final packageName in _examModeApps) {
+        effective[packageName] = 0.0;
+        debugPrint('🎓 Exam mode: Blocking $packageName');
+      }
+    }
+    
+    return effective;
   }
 
   Future<void> _sendDataViaWebSocket() async {
@@ -419,6 +513,41 @@ class _ChildScreenState extends State<ChildScreen> {
     }
   }
 
+  String _getAppCategory(String packageName, String appName) {
+    final lower = packageName.toLowerCase();
+    final nameLower = appName.toLowerCase();
+    
+    // Social Media
+    if (lower.contains('instagram') || nameLower.contains('instagram')) return 'Entertainment';
+    if (lower.contains('facebook') || nameLower.contains('facebook')) return 'Chatting App';
+    if (lower.contains('whatsapp') || nameLower.contains('whatsapp')) return 'Chatting App';
+    if (lower.contains('messenger') || nameLower.contains('messenger')) return 'Job Portal';
+    if (lower.contains('snapchat') || nameLower.contains('snapchat')) return 'Entertainment';
+    if (lower.contains('twitter') || lower.contains('x.com') || nameLower.contains('twitter')) return 'Social Media';
+    if (lower.contains('tiktok') || nameLower.contains('tiktok')) return 'Entertainment';
+    if (lower.contains('linkedin') || nameLower.contains('linkedin')) return 'Job Portal';
+    
+    // Entertainment & Video
+    if (lower.contains('youtube') || nameLower.contains('youtube')) return 'Entertainment';
+    if (lower.contains('netflix') || nameLower.contains('netflix')) return 'Entertainment';
+    if (lower.contains('spotify') || nameLower.contains('spotify')) return 'Music';
+    if (lower.contains('prime') || lower.contains('amazon') && nameLower.contains('video')) return 'Entertainment';
+    if (lower.contains('disney') || nameLower.contains('disney')) return 'Entertainment';
+    
+    // Games
+    if (lower.contains('game') || nameLower.contains('game')) return 'Gaming';
+    if (lower.contains('play') && nameLower.contains('game')) return 'Gaming';
+    
+    // Productivity
+    if (lower.contains('chrome') || lower.contains('browser')) return 'Browser';
+    if (lower.contains('gmail') || lower.contains('mail')) return 'Email';
+    if (lower.contains('calendar')) return 'Productivity';
+    if (lower.contains('docs') || lower.contains('sheets') || lower.contains('drive')) return 'Productivity';
+    
+    // Default
+    return 'Other';
+  }
+
   bool _hasExceededApps() {
     if (_restrictions == null || _usageStats.isEmpty) return false;
     
@@ -439,8 +568,95 @@ class _ChildScreenState extends State<ChildScreen> {
     return false;
   }
 
+  void _handleBottomNavTap(int index) {
+    if (index == 2) {
+      // Already on dashboard, do nothing
+      return;
+    }
+    
+    // Show coming soon dialog for other tabs
+    final titles = [
+      'Chat',
+      'Rewards',
+      'Dashboard',
+      'Activities',
+      'Profile',
+    ];
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF5B4A9F).withOpacity(0.3),
+                    const Color(0xFF4A3280).withOpacity(0.3),
+                  ],
+                ),
+              ),
+              child: const Icon(
+                Icons.rocket_launch_outlined,
+                size: 50,
+                color: Color(0xFF5B4A9F),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              titles[index],
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Coming Soon',
+              style: TextStyle(
+                color: Color(0xFF5B4A9F),
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'We\'re working hard to bring you this feature. Stay tuned!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFF5B4A9F),
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    debugPrint('🎓 BUILD: Exam Mode = $_examMode, Apps = ${_examModeApps.length}');
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
@@ -469,6 +685,31 @@ class _ChildScreenState extends State<ChildScreen> {
         ),
         centerTitle: false,
         actions: [
+          if (_examMode)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                border: Border.all(color: Colors.orange, width: 1.5),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.school, color: Colors.orange, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Exam Mode',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Consumer<LocationService>(
             builder: (context, locationService, child) {
               return Container(
@@ -654,16 +895,6 @@ class _ChildScreenState extends State<ChildScreen> {
                                   color: Colors.white,
                                 ),
                               ),
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 4, left: 4),
-                                child: Text(
-                                  '/3h',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -781,7 +1012,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                 child: ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
-                                    vertical: 16,
+                                    vertical: 8,
                                   ),
                                   leading: Container(
                                     width: 48,
@@ -1052,219 +1283,277 @@ class _ChildScreenState extends State<ChildScreen> {
                     const SizedBox(height: 12),
                     
                     // App Usage List
-                    Card(
-                      color: const Color(0xFF1A1A1A),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Container(
-                        height: _hasExceededApps() ? 425 : 400,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: _usageStats.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(32),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: const [
-                                      Icon(
-                                        Icons.hourglass_empty_rounded,
-                                        size: 48,
-                                        color: Colors.white60,
-                                      ),
-                                      SizedBox(height: 16),
-                                      Text(
-                                        'No usage data available',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Grant usage access permission to see statistics',
-                                        style: TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 12,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
+                    _usageStats.isEmpty
+                        ? Container(
+                            padding: const EdgeInsets.all(32),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A1A1A),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              children: const [
+                                Icon(
+                                  Icons.hourglass_empty_rounded,
+                                  size: 48,
+                                  color: Colors.white60,
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  'No usage data available',
+                                  style: TextStyle(
+                                    color: Colors.white,
                                   ),
                                 ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.all(8),
-                                itemCount: _usageStats.length,
-                                itemBuilder: (context, index) {
-                                  final usage = _usageStats[index];
-                                  final app = _apps[usage.packageName];
-                                  
-                                  if (app == null) return const SizedBox.shrink();
+                                SizedBox(height: 8),
+                                Text(
+                                  'Grant usage access permission to see statistics',
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              ..._usageStats.take(10).map((usage) {
+                                final app = _apps[usage.packageName];
+                                if (app == null) return const SizedBox.shrink();
 
-                                  // Check if this app has a time limit
-                                  final packageName = usage.packageName ?? '';
-                                  final hasLimit = _restrictions?.restrictedApps.containsKey(packageName) ?? false;
-                                  final limitHours = hasLimit ? _restrictions!.restrictedApps[packageName] : null;
-                                  
-                                  // Calculate time used in hours
-                                  final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
-                                  final usedHours = millis / 1000 / 3600;
-                                  
-                                  // Check if limit is exceeded
-                                  final isExceeded = hasLimit && limitHours != null && usedHours >= limitHours;
+                                // Check if this app has a time limit
+                                final packageName = usage.packageName ?? '';
+                                final hasLimit = _restrictions?.restrictedApps.containsKey(packageName) ?? false;
+                                final limitHours = hasLimit ? _restrictions!.restrictedApps[packageName] : null;
+                                
+                                // Check if blocked by exam mode
+                                final isBlockedByExamMode = _examMode && _examModeApps.contains(packageName);
+                                final effectiveLimit = isBlockedByExamMode ? 0.0 : limitHours;
+                                
+                                // Calculate time used
+                                final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+                                final usedHours = millis / 1000 / 3600;
+                                final usedMinutes = (millis / 1000 / 60).round();
+                                
+                                // Check if limit is exceeded
+                                final isExceeded = (hasLimit && effectiveLimit != null && usedHours >= effectiveLimit) || isBlockedByExamMode;
+                                
+                                // Calculate percentage for progress bar (based on daily limit or relative to top app)
+                                final totalMillis = _usageStats.isEmpty ? 1 : int.tryParse(_usageStats.first.totalTimeInForeground ?? '1') ?? 1;
+                                final percentage = ((millis / totalMillis) * 100).clamp(0, 100).toInt();
+                                
+                                // Get app category
+                                String category = _getAppCategory(packageName, app.appName);
 
-                                  return Card(
-                                    color: isExceeded ? const Color(0xFF5B4A9F).withOpacity(0.3) : const Color(0xFF0F0F0F),
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                      ),
-                                      leading: Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
-                                          color: const Color(0xFF2A2A2A),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: app is ApplicationWithIcon
-                                              ? Image.memory(
-                                                  app.icon,
-                                                  width: 48,
-                                                  height: 48,
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : const Icon(
-                                                  Icons.android,
-                                                  color: Color(0xFF9C27B0),
-                                                ),
-                                        ),
-                                      ),
-                                      title: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              app.appName,
+                                return GestureDetector(
+                                  onTap: isExceeded ? () => _showRequestTimeDialog(
+                                    context,
+                                    packageName: packageName,
+                                    appName: app.appName,
+                                  ) : null,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: isExceeded 
+                                          ? const Color(0xFF5B4A9F).withOpacity(0.15)
+                                          : const Color(0xFF0F0F0F),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: isExceeded
+                                          ? Border.all(color: Colors.redAccent.withOpacity(0.3), width: 1)
+                                          : null,
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          children: [
+                                            // App Icon
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                borderRadius: BorderRadius.circular(10),
+                                                color: const Color(0xFF2A2A2A),
+                                              ),
+                                              child: ClipRRect(
+                                                borderRadius: BorderRadius.circular(10),
+                                                child: app is ApplicationWithIcon
+                                                    ? Image.memory(
+                                                        app.icon,
+                                                        width: 40,
+                                                        height: 40,
+                                                        fit: BoxFit.cover,
+                                                      )
+                                                    : const Icon(
+                                                        Icons.android,
+                                                        color: Color(0xFF9C27B0),
+                                                        size: 24,
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            // App Name and Category
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          app.appName,
+                                                          style: const TextStyle(
+                                                            fontSize: 16,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.white,
+                                                          ),
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                      if (isBlockedByExamMode) ...[
+                                                        const SizedBox(width: 4),
+                                                        const Icon(
+                                                          Icons.school,
+                                                          size: 14,
+                                                          color: Colors.orange,
+                                                        ),
+                                                      ] else if (isExceeded) ...[
+                                                        const SizedBox(width: 4),
+                                                        const Icon(
+                                                          Icons.block_rounded,
+                                                          size: 14,
+                                                          color: Colors.redAccent,
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    children: [
+                                                      Text(
+                                                        category,
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.white60,
+                                                        ),
+                                                      ),
+                                                      if (isBlockedByExamMode) ...[
+                                                        const SizedBox(width: 8),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.orange.withOpacity(0.2),
+                                                            borderRadius: BorderRadius.circular(4),
+                                                          ),
+                                                          child: const Text(
+                                                            'Exam Mode',
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: Colors.orange,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            // Time
+                                            Text(
+                                              '$usedMinutes mins',
                                               style: const TextStyle(
+                                                fontSize: 14,
                                                 fontWeight: FontWeight.w600,
                                                 color: Colors.white,
                                               ),
                                             ),
-                                          ),
-                                          if (isExceeded)
-                                            const Icon(
-                                              Icons.block_rounded,
-                                              size: 16,
-                                              color: Colors.redAccent,
-                                            ),
-                                        ],
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            usage.packageName ?? '',
-                                            style: const TextStyle(
-                                              color: Colors.white60,
-                                              fontSize: 11,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (hasLimit && limitHours != null) ...[
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.timer_outlined,
-                                                  size: 14,
-                                                  color: isExceeded 
-                                                      ? Colors.redAccent
-                                                      : const Color(0xFF9C27B0),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Limit: ${limitHours.toStringAsFixed(1)}h',
-                                                  style: TextStyle(
-                                                    color: isExceeded 
-                                                        ? Colors.redAccent
-                                                        : const Color(0xFF9C27B0),
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 12,
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        // Progress Bar
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Stack(
+                                                children: [
+                                                  Container(
+                                                    height: 6,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(3),
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      trailing: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: isExceeded
-                                                  ? Colors.redAccent
-                                                  : const Color(0xFF5B4A9F),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              _formatDuration(usage.totalTimeInForeground),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
+                                                  FractionallySizedBox(
+                                                    widthFactor: percentage / 100,
+                                                    child: Container(
+                                                      height: 6,
+                                                      decoration: BoxDecoration(
+                                                        gradient: LinearGradient(
+                                                          colors: isBlockedByExamMode
+                                                              ? [Colors.orange, Colors.deepOrange]
+                                                              : isExceeded
+                                                                  ? [Colors.redAccent, Colors.red]
+                                                                  : [const Color(0xFF00B4D8), const Color(0xFF0096C7)],
+                                                        ),
+                                                        borderRadius: BorderRadius.circular(3),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
-                                          ),
-                                          if (isExceeded) ...[
-                                            const SizedBox(height: 4),
-                                            TextButton.icon(
-                                              onPressed: () => _showRequestTimeDialog(
-                                                context,
-                                                packageName: packageName,
-                                                appName: app.appName,
-                                              ),
-                                              style: TextButton.styleFrom(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                minimumSize: const Size(0, 0),
-                                                backgroundColor: Colors.orangeAccent.withOpacity(0.2),
-                                              ),
-                                              icon: const Icon(
-                                                Icons.add_alarm_rounded,
-                                                size: 14,
-                                                color: Colors.orangeAccent,
-                                              ),
-                                              label: const Text(
-                                                'Request',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.orangeAccent,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              '$percentage%',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: isBlockedByExamMode 
+                                                    ? Colors.orange 
+                                                    : isExceeded 
+                                                        ? Colors.redAccent 
+                                                        : Colors.white70,
                                               ),
                                             ),
                                           ],
-                                        ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              // Load Earlier Activities Button
+                              if (_usageStats.length > 10)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  child: TextButton(
+                                    onPressed: () {
+                                      // TODO: Implement load more functionality
+                                    },
+                                    child: const Text(
+                                      'Load Earlier Activities',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14,
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
-                      ),
-                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                   ],
                 ),
               ),
             ),
+      bottomNavigationBar: AppBottomNav(
+        currentIndex: 2,
+        onTap: _handleBottomNavTap,
+        isParent: false,
+      ),
     );
   }
   
