@@ -1,7 +1,25 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
+/// PreferencesManager - Centralized local storage management
+/// 
+/// Handles all SharedPreferences operations for the app including:
+/// - Parent authentication credentials
+/// - Child profile data
+/// - Encryption keys (RSA public/private)
+/// - View mode and navigation state
+/// 
+/// Usage:
+/// ```dart
+/// final prefs = await PreferencesManager.init();
+/// await prefs.setParentEmail('parent@example.com');
+/// final email = prefs.getParentEmail();
+/// ```
+/// 
+/// Security Note: Passwords are stored in plain text in SharedPreferences.
+/// For production, consider using flutter_secure_storage for sensitive data.
 class PreferencesManager {
+  // Storage keys - centralized for consistency
   static const String _keyAuthToken = 'auth_token';
   static const String _keyChildHash = 'child_hash';
   static const String _keyChildName = 'child_name';
@@ -17,6 +35,7 @@ class PreferencesManager {
 
   PreferencesManager(this._prefs);
 
+  /// Initialize PreferencesManager - call once at app startup
   static Future<PreferencesManager> init() async {
     final prefs = await SharedPreferences.getInstance();
     return PreferencesManager(prefs);
