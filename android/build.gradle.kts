@@ -20,6 +20,7 @@ subprojects {
         if (project.extensions.findByName("android") != null) {
             try {
                 project.extensions.configure<com.android.build.gradle.BaseExtension>("android") {
+                    compileSdkVersion(36)
                     if (namespace == null) {
                         val manifest = file("src/main/AndroidManifest.xml")
                         if (manifest.exists()) {

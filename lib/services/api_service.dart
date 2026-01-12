@@ -9,6 +9,102 @@ class ApiService {
   static const String baseUrl = 'https://seraphguardlabs.com';
   static const String restrictionsBaseUrl = 'https://seraphguardlabs.com';
 
+  Future<Map<String, dynamic>> addChild(String email, String password, String firstName, String lastName, String dateOfBirth) async {
+    final url = Uri.parse('$baseUrl/api/mobile/children/add/');
+    
+    try {
+      debugPrint('📤 Adding child: $firstName $lastName');
+      debugPrint('   URL: $url');
+      debugPrint('   Email: $email');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Email': email,
+          'X-Auth-Password': password,
+        },
+        body: jsonEncode({
+          'first_name': firstName,
+          'last_name': lastName,
+          'date_of_birth': dateOfBirth,
+        }),
+      );
+
+      debugPrint('📥 Add child response status: ${response.statusCode}');
+      debugPrint('📥 Add child response body: ${response.body}');
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          debugPrint('✅ Child added successfully');
+          debugPrint('   Response data: $data');
+          return {
+            'success': true,
+            'message': data['message'] ?? 'Child added successfully',
+            'child': data['child'],
+          };
+        }
+      }
+      
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('❌ Failed to add child: $errorData');
+      return {
+        'success': false,
+        'error': errorData['message'] ?? 'Failed to add child',
+      };
+    } catch (e) {
+      debugPrint('❌ Add child error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> signup(String fullName, String email, String password) async {
+    final url = Uri.parse('$baseUrl/api/signup/');
+    
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          'full_name': fullName,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          return {
+            'success': true,
+            'message': data['message'] ?? 'Account created successfully',
+            'guardian': data['guardian'],
+          };
+        }
+      }
+      
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      return {
+        'success': false,
+        'error': errorData['message'] ?? 'Failed to create account',
+      };
+    } catch (e) {
+      debugPrint('Signup error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
   Future<Map<String, dynamic>> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/api/login/');
     

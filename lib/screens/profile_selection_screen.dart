@@ -15,172 +15,129 @@ class ProfileSelectionScreen extends StatelessWidget {
         (ModalRoute.of(context)?.settings.arguments as List<Child>? ?? []);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        title: const Text('Select Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1A1A1A),
-        elevation: 0,
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-      ),
-      body: Column(
-        children: [
-          // Parent Dashboard Option
-          Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1A3C8B), Color(0xFF0F2B6B)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0xFF1A3C8B).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            children: [
+              const SizedBox(height: 80),
+              
+              // Logo and Title
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2B4C8F),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  Navigator.pushReplacementNamed(context, '/parent_dashboard');
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.admin_panel_settings,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Parent Dashboard',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Monitor your children\'s activity',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.white,
-                      ),
-                    ],
+                child: const Icon(
+                  Icons.shield_outlined,
+                  color: Colors.white,
+                  size: 64,
+                ),
+              ),
+              
+              const SizedBox(height: 32),
+              
+              const Text(
+                'Welcome to the Guardian AI',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              const Text(
+                'Empowering your child\'s journey\ntoday for a successful tomorrow',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              
+              const Spacer(),
+              
+              // Parent Button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pushReplacementNamed(context, '/parent_dashboard');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2B4C8F),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
                   ),
-                ),
-              ),
-            ),
-          ),
-          
-          // Divider with text
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                const Expanded(child: Divider(color: Colors.white24)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'OR SELECT CHILD PROFILE',
+                  child: const Text(
+                    'Parent',
                     style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                const Expanded(child: Divider(color: Colors.white24)),
-              ],
-            ),
-          ),
-          
-          // Child profiles list
-          Expanded(
-            child: childrenList.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No child profiles found.\nPlease create a profile on the web dashboard.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.white60),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: childrenList.length,
-                    itemBuilder: (context, index) {
-                      final child = childrenList[index];
-                      return Card(
-                        color: const Color(0xFF1A1A1A),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 4,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(16),
-                          leading: CircleAvatar(
-                            radius: 30,
-                            backgroundColor: Color(0xFF1A3C8B).withOpacity(0.3),
-                            backgroundImage: child.profileImageUrl != null
-                                ? NetworkImage(child.profileImageUrl!)
-                                : null,
-                            child: child.profileImageUrl == null
-                                ? Text(
-                                    child.firstName[0].toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF1A3C8B),
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          title: Text(
-                            '${child.firstName} ${child.lastName}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          subtitle: const Text('Tap to monitor this device', style: TextStyle(color: Colors.white60)),
-                          trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF1A3C8B)),
-                          onTap: () async {
-                            await _selectChild(context, child);
-                          },
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Child Button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (childrenList.isNotEmpty) {
+                      // If there's only one child, select it automatically
+                      if (childrenList.length == 1) {
+                        _selectChild(context, childrenList[0]);
+                      } else {
+                        // Show child selection dialog
+                        _showChildSelectionDialog(context, childrenList);
+                      }
+                    } else {
+                      // Show message if no children found
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No child profiles found. Please create a profile on the web dashboard.'),
+                          backgroundColor: Colors.red,
                         ),
                       );
-                    },
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFF2B2B2B), width: 1),
+                    ),
+                    elevation: 0,
                   ),
+                  child: const Text(
+                    'Child',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 60),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -196,5 +153,66 @@ class ProfileSelectionScreen extends StatelessWidget {
       // Navigate to Child Screen
       Navigator.pushReplacementNamed(context, '/child');
     }
+  }
+
+  void _showChildSelectionDialog(BuildContext context, List<Child> children) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Select Child Profile',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ...children.map((child) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  tileColor: const Color(0xFF2B2B2B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF2B4C8F),
+                    backgroundImage: child.profileImageUrl != null
+                        ? NetworkImage(child.profileImageUrl!)
+                        : null,
+                    child: child.profileImageUrl == null
+                        ? Text(
+                            child.firstName[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : null,
+                  ),
+                  title: Text(
+                    '${child.firstName} ${child.lastName}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _selectChild(context, child);
+                  },
+                ),
+              )),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

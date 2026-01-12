@@ -21,6 +21,13 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _errorMessage;
   bool _obscurePassword = true;
 
+  // Signup form controllers
+  final _signupFormKey = GlobalKey<FormState>();
+  final _signupNameController = TextEditingController();
+  final _signupEmailController = TextEditingController();
+  final _signupPasswordController = TextEditingController();
+  bool _obscureSignupPassword = true;
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +117,50 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleSignup() async {
+    if (!_signupFormKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    final result = await apiService.signup(
+      _signupNameController.text.trim(),
+      _signupEmailController.text.trim(),
+      _signupPasswordController.text,
+    );
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (result['success']) {
+      // Close the signup dialog
+      if (mounted) {
+        Navigator.pop(context);
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Account created successfully! You can now login.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        
+        // Pre-fill the login email with the signup email
+        _emailController.text = _signupEmailController.text.trim();
+      }
+    } else {
+      setState(() {
+        _errorMessage = result['error'];
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,15 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               // Create Account Button
               TextButton(
-                onPressed: () {
-                  // TODO: Navigate to create account screen
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Account creation coming soon'),
-                      backgroundColor: Color(0xFF1A3C8B),
-                    ),
-                  );
-                },
+                onPressed: _isLoading ? null : _showSignupDialog,
                 child: const Text(
                   'Create an account',
                   style: TextStyle(
@@ -369,10 +412,218 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  void _showSignupDialog() {
+    // Reset error message when opening dialog
+    setState(() {
+      _errorMessage = null;
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _signupFormKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Create Account',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (_errorMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.redAccent),
+                    ),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.redAccent),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                // Full Name Field
+                TextFormField(
+                  controller: _signupNameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    prefixIcon: const Icon(Icons.person, color: Colors.white54),
+                    filled: true,
+                    fillColor: const Color(0xFF0F0F0F),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your full name';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Email Field
+                TextFormField(
+                  controller: _signupEmailController,
+                  keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Email',
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    prefixIcon: const Icon(Icons.email, color: Colors.white54),
+                    filled: true,
+                    fillColor: const Color(0xFF0F0F0F),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Password Field
+                TextFormField(
+                  controller: _signupPasswordController,
+                  obscureText: _obscureSignupPassword,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    prefixIcon: const Icon(Icons.lock, color: Colors.white54),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureSignupPassword ? Icons.visibility_off : Icons.visibility,
+                        color: Colors.white54,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscureSignupPassword = !_obscureSignupPassword;
+                        });
+                      },
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFF0F0F0F),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your password';
+                    }
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _handleSignup();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A3C8B),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Create Account',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _signupNameController.dispose();
+    _signupEmailController.dispose();
+    _signupPasswordController.dispose();
     super.dispose();
   }
 }
