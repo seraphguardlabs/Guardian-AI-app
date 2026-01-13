@@ -138,11 +138,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (result['success']) {
-      // Close the signup dialog
+      // Show success message and pre-fill login email
       if (mounted) {
-        Navigator.pop(context);
-        
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Account created successfully! You can now login.'),
@@ -153,6 +150,11 @@ class _LoginScreenState extends State<LoginScreen> {
         
         // Pre-fill the login email with the signup email
         _emailController.text = _signupEmailController.text.trim();
+        
+        // Clear signup form fields
+        _signupNameController.clear();
+        _signupEmailController.clear();
+        _signupPasswordController.clear();
       }
     } else {
       setState(() {
@@ -272,7 +274,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Parent Login',
+                  'Login',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 24,
