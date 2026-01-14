@@ -43,6 +43,7 @@ dependencies:
   web_socket_channel: ^3.0.1
   pointycastle: ^3.9.1
   encrypt: ^5.0.3
+  google_maps_flutter: ^2.7.0
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +71,7 @@ flutter:
   assets:
     - resources/robot.png
     - assets/images/shield_logo.png
+    - assets/images/screen_time_icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
