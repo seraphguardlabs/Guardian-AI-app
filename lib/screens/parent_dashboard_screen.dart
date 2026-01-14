@@ -10,7 +10,11 @@ import '../models/time_extension_request.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
 import 'weekly_activity_screen.dart';
+import 'location_map_screen.dart';
+import '../widgets/weekly_activity_chart.dart';
 import '../widgets/app_bottom_nav.dart';
+import 'exam_mode_screen.dart';
+import 'block_sites_apps_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -485,6 +489,153 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  void _showChildSwitcher() {
+    if (_children.isEmpty) {
+      _showAddChildDialog();
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F0F0F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Switch Child',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ..._children.map((child) {
+                  final isSelected = _selectedChild?.childHash == child.childHash;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.grey.shade700,
+                      child: child.profileImageUrl != null
+                          ? ClipOval(
+                              child: Image.network(
+                                'https://seraphguardlabs.com${child.profileImageUrl}',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(Icons.person, color: Colors.white);
+                                },
+                              ),
+                            )
+                          : const Icon(Icons.person, color: Colors.white),
+                    ),
+                    title: Text(
+                      child.firstName,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: isSelected
+                        ? const Icon(Icons.check_circle, color: Colors.greenAccent)
+                        : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (_selectedChild?.childHash != child.childHash) {
+                        setState(() {
+                          _selectedChild = child;
+                        });
+                        _loadChildData(child.childHash);
+                        _loadExamMode(child.childHash);
+                      }
+                    },
+                  );
+                }).toList(),
+                const Divider(color: Colors.white12, height: 24),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF5B4A9F), width: 2),
+                    ),
+                    child: const Icon(Icons.add, color: Color(0xFF5B4A9F)),
+                  ),
+                  title: const Text(
+                    'Add Child',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddChildDialog();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showMenuFeatureComingSoon(String title) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$title is coming soon'),
+        backgroundColor: const Color(0xFF5B4A9F),
+      ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    Navigator.pop(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Logout', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to logout?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5B4A9F),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final prefsManager = context.read<PreferencesManager>();
+      await prefsManager.clearAll();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -512,96 +663,41 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         ),
         centerTitle: false,
         actions: [
-          if (_selectedChild != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.white, size: 16),
-                  const SizedBox(width: 4),
-                  const Text(
-                    'Location',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+          if (_children.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 12.0),
+              child: GestureDetector(
+                onTap: _showChildSwitcher,
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.grey.shade700,
+                  child: _selectedChild?.profileImageUrl != null
+                      ? ClipOval(
+                          child: Image.network(
+                            'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(Icons.person, color: Colors.white);
+                            },
+                          ),
+                        )
+                      : const Icon(Icons.person, color: Colors.white),
+                ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.access_time, color: Colors.white),
-              onPressed: () {
-                final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
-                timeExtService.connect();
-                
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  isDismissible: true,
-                  enableDrag: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (context) => _buildTimeExtensionBottomSheet(),
-                );
-              },
-              tooltip: 'Time Extension Requests',
-            ),
-            IconButton(
-              icon: Icon(
-                _examMode ? Icons.school : Icons.school_outlined,
-                color: _examMode ? Colors.orange : Colors.white,
-              ),
-              onPressed: () => _showExamModeDialog(),
-              tooltip: _examMode ? 'Exam Mode: ON' : 'Exam Mode: OFF',
-            ),
-          ],
-          Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.grey.shade700,
-              child: _selectedChild?.profileImageUrl != null
-                  ? ClipOval(
-                      child: Image.network(
-                        'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
-                        width: 36,
-                        height: 36,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(Icons.person, color: Colors.white);
-                        },
-                      ),
-                    )
-                  : const Icon(Icons.person, color: Colors.white),
-            ),
-          ),
         ],
       ),
       drawer: Drawer(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF050608),
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  colors: [Color(0xFF101722), Color(0xFF050608)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -611,218 +707,225 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.white.withOpacity(0.2),
+                    radius: 28,
+                    backgroundColor: Colors.white.withOpacity(0.12),
                     child: _selectedChild?.profileImageUrl != null
                         ? ClipOval(
                             child: Image.network(
                               'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
-                              width: 64,
-                              height: 64,
+                              width: 56,
+                              height: 56,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) {
-                                return const Icon(Icons.person, color: Colors.white, size: 32);
+                                return const Icon(Icons.person, color: Colors.white, size: 26);
                               },
                             ),
                           )
-                        : const Icon(Icons.person, color: Colors.white, size: 32),
+                        : const Icon(Icons.person, color: Colors.white, size: 26),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Parent Dashboard',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                    _selectedChild != null
+                        ? "${_selectedChild!.firstName}'s profile"
+                        : 'Parent profile',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
                     ),
                   ),
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.person_add, color: Colors.white70),
-              title: const Text('Add Child', style: TextStyle(color: Colors.white)),
+            const SizedBox(height: 16),
+            _buildDrawerMenuItem(
+              icon: Icons.assignment_outlined,
+              label: 'Assign Task',
+              selected: true,
               onTap: () {
                 Navigator.pop(context);
-                _showAddChildDialog();
+                _showMenuFeatureComingSoon('Assign Task');
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.white70),
-              title: const Text('Logout', style: TextStyle(color: Colors.white)),
-              onTap: () async {
-                Navigator.pop(context); // Close drawer
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: const Color(0xFF1A1A1A),
-                    title: const Text('Logout', style: TextStyle(color: Colors.white)),
-                    content: const Text('Are you sure you want to logout?', style: TextStyle(color: Colors.white70)),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5B4A9F),
-                        ),
-                        child: const Text('Logout', style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed == true && mounted) {
-                  final prefsManager = context.read<PreferencesManager>();
-                  await prefsManager.clearAll();
-                  if (mounted) {
-                    Navigator.pushReplacementNamed(context, '/login');
-                  }
+            _buildDrawerMenuItem(
+              icon: Icons.block,
+              label: 'Block Sites and Apps',
+              onTap: () {
+                Navigator.pop(context);
+                if (_selectedChild != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BlockSitesAppsScreen(child: _selectedChild!),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please select a child first'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               },
             ),
+            _buildDrawerMenuItem(
+              icon: Icons.insights_outlined,
+              label: 'Growth Trends',
+              onTap: () {
+                Navigator.pop(context);
+                _showMenuFeatureComingSoon('Growth Trends');
+              },
+            ),
+            _buildDrawerMenuItem(
+              icon: Icons.headset_mic_outlined,
+              label: 'Support',
+              onTap: () {
+                Navigator.pop(context);
+                _showMenuFeatureComingSoon('Support');
+              },
+            ),
+            _buildDrawerMenuItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              onTap: () {
+                Navigator.pop(context);
+                _showMenuFeatureComingSoon('Settings');
+              },
+            ),
+            _buildDrawerMenuItem(
+              icon: Icons.notifications_none_outlined,
+              label: 'Notifications',
+              onTap: () {
+                Navigator.pop(context);
+                _showMenuFeatureComingSoon('Notifications');
+              },
+            ),
+            _buildDrawerMenuItem(
+              icon: Icons.info_outline,
+              label: 'Information',
+              onTap: () {
+                Navigator.pop(context);
+                _showMenuFeatureComingSoon('Information');
+              },
+            ),
+            const Divider(color: Colors.white12, height: 24),
+            _buildDrawerMenuItem(
+              icon: Icons.logout,
+              label: 'Logout',
+              isDestructive: true,
+              onTap: _handleLogout,
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Colors.purple),
-            )
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 60,
-                        color: Colors.red.shade300,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(fontSize: 16, color: Colors.white70),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: _loadChildren,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header with child name and location status
+              Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedChild != null
+                              ? "${_selectedChild!.firstName}'s Dashboard"
+                              : "Dashboard",
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF101722),
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                    ],
-                  ),
-                )
-              : _children.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No children found',
-                        style: TextStyle(fontSize: 16, color: Colors.white70),
-                      ),
-                    )
-                  : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Header with child name
-                          Padding(
-                            padding: const EdgeInsets.all(20.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _selectedChild != null
-                                      ? "${_selectedChild!.firstName}'s Dashboard"
-                                      : "Dashboard",
-                                  style: const TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                if (_metrics?['metrics']?['latest_location'] != null)
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.location_on,
-                                        size: 16,
-                                        color: Colors.white70,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Location',
-                                        style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: (_metrics?['metrics']?['latest_location'] != null)
+                                  ? const Color(0xFF317AF7)
+                                  : Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.location_on,
+                              size: 16,
+                              color: Colors.white,
                             ),
                           ),
-
-                          if (_selectedChild != null) ...[
-                            if (_isLoadingData)
-                              const Padding(
-                                padding: EdgeInsets.all(40.0),
-                                child: Center(
-                                  child: CircularProgressIndicator(color: Colors.purple),
-                                ),
-                              )
-                            else ...[
-                              // Main metrics cards (horizontal scroll banners)
-                              if (_metrics != null) _buildMetricsSection(),
-                              const SizedBox(height: 16),
-
-                              // Pending Requests inline section
-                              Consumer<TimeExtensionService>(
-                                builder: (context, timeExtService, _) {
-                                  return _buildPendingRequestsSection(timeExtService);
-                                },
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Weekly Activity Section
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                child: Text(
-                                  'Weekly Activity',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Screen Time Trends
-                              if (_screenTime != null) _buildScreenTimeCard(),
-                              const SizedBox(height: 16),
-
-                              // Top Apps
-                              if (_appUsage != null) _buildAppUsageCard(),
-                              const SizedBox(height: 16),
-
-                              // Recent Locations
-                              if (_locations != null) _buildLocationsCard(),
-                              const SizedBox(height: 16),
-
-                              // Site Access
-                              if (_siteAccess != null) _buildSiteAccessCard(),
-                              const SizedBox(height: 20),
-                            ],
-                          ],
                         ],
                       ),
                     ),
+                  ],
+                ),
+              ),
+
+              if (_selectedChild != null) ...[
+                if (_isLoadingData)
+                  const Padding(
+                    padding: EdgeInsets.all(40.0),
+                    child: Center(
+                      child: CircularProgressIndicator(color: Colors.purple),
+                    ),
+                  )
+                else ...[
+                  if (_metrics != null) _buildMetricsSection(),
+                  const SizedBox(height: 16),
+
+                  Consumer<TimeExtensionService>(
+                    builder: (context, timeExtService, _) {
+                      return _buildPendingRequestsSection(timeExtService);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: const Text(
+                      'Weekly Activity',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (_screenTime != null) _buildScreenTimeCard(),
+                  const SizedBox(height: 16),
+
+                  if (_appUsage != null) _buildAppUsageCard(),
+                  const SizedBox(height: 16),
+
+                  if (_locations != null) _buildLocationsCard(),
+                  const SizedBox(height: 16),
+
+                  if (_siteAccess != null) _buildSiteAccessCard(),
+                  const SizedBox(height: 20),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 2,
         onTap: _handleBottomNavTap,
@@ -836,8 +939,19 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       // Already on dashboard, do nothing
       return;
     }
-    
-    // Show coming soon dialog for other tabs
+
+    // Use the Activities (index 3) button to open Exam Mode.
+    if (index == 3 && _selectedChild != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ExamModeScreen(child: _selectedChild!),
+        ),
+      );
+      return;
+    }
+
+    // Show coming soon dialog for the remaining tabs.
     final titles = [
       'Chat',
       'Rewards',
@@ -845,7 +959,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       'Activities',
       'Profile',
     ];
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -913,6 +1027,66 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerMenuItem({
+    required IconData icon,
+    required String label,
+    bool selected = false,
+    bool isDestructive = false,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    final Color circleColor = selected
+        ? const Color(0xFF1E3A8A)
+        : const Color(0xFF151515);
+
+    final Color iconColor = selected
+        ? Colors.white
+        : isDestructive
+            ? const Color(0xFFF97373)
+            : Colors.white70;
+
+    final TextStyle textStyle = TextStyle(
+      color: isDestructive
+          ? const Color(0xFFF97373)
+          : Colors.white,
+      fontSize: 14,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: InkWell
+        (
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: circleColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: textStyle,
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1069,10 +1243,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final progress = (dailySeconds / 10800).clamp(0.0, 1.0);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+          colors: [Color(0xFF5B4A9F), Color(0xFF3D2E6B)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1091,76 +1265,114 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Screen time asset icon
               Container(
-                width: 44,
-                height: 44,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.asset('resources/robot.png', fit: BoxFit.cover),
-                ),
-              ),
-              const Spacer(),
-              const Icon(Icons.more_horiz, color: Colors.white70),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                dailyFormatted,
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            height: 6,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: progress,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    'assets/images/screen_time_icon.png',
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
+              const Spacer(),
+              // Time display with limit and progress bar
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Time with underline progress
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: dailyFormatted,
+                              style: const TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const TextSpan(
+                              text: '/3h',
+                              style: TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.white70,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Progress bar under the current time
+                      Positioned(
+                        bottom: -8,
+                        left: 0,
+                        child: Container(
+                          width: dailyFormatted.length * 20.0, // Approximate width based on text
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: progress,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            'Screen Time',
+            style: TextStyle(
+              fontSize: 24,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Screen Time',
-            style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 4),
           RichText(
             text: TextSpan(
               children: [
                 TextSpan(
                   text: '$percentOfLimit%',
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
                     color: Colors.white,
                   ),
                 ),
                 const TextSpan(
                   text: ' of daily limit',
-                  style: TextStyle(fontSize: 15, color: Colors.white70),
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ],
             ),
@@ -1218,77 +1430,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildScreenTimeCard() {
-    final summary = _screenTime!['summary'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF00473E), Color(0xFF012C25)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Screen Time Trends',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Daily Limit: 3 hr',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white.withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            GestureDetector(
-              onTap: () {
-                if (_selectedChild != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => WeeklyActivityScreen(child: _selectedChild!),
-                    ),
-                  );
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.25),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.calendar_today_outlined, size: 14, color: Colors.white),
-                    SizedBox(width: 6),
-                    Text(
-                      'This Week',
-                      style: TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: WeeklyActivityChart(child: _selectedChild!),
     );
   }
 
@@ -1705,60 +1849,99 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildLocationsCard() {
-    final locations = _locations!['locations'] as List;
+    final rawLocations = _locations!['locations'] as List? ?? [];
+    final locations = rawLocations
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
     final summary = _locations!['summary'];
+
+    // Derive last-updated time from the latest timestamp, if present.
+    DateTime? lastUpdated;
+    if (locations.isNotEmpty && locations.first['timestamp'] is String) {
+      try {
+        lastUpdated = DateTime.parse(locations.first['timestamp'] as String).toLocal();
+      } catch (_) {}
+    }
+
+    String lastUpdatedLabel = 'Unknown';
+    if (lastUpdated != null) {
+      lastUpdatedLabel = DateFormat('MMM d, h:mm a').format(lastUpdated!);
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Recent Locations',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${summary['total_count']} tracked',
-                    style: TextStyle(color: Colors.green, fontSize: 11),
-                  ),
-                ),
-              ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LocationMapScreen(
+                locations: locations,
+                lastUpdated: lastUpdated,
+              ),
             ),
-            SizedBox(height: 16),
-            ...locations.take(5).map((loc) => Padding(
-              padding: const EdgeInsets.only(bottom: 12.0),
-              child: Row(
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF101010),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.location_on, size: 18, color: Colors.green),
-                  SizedBox(width: 8),
-                  Expanded(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Location',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Last updated: $lastUpdatedLabel',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     child: Text(
-                      '${loc['latitude'].toStringAsFixed(4)}, ${loc['longitude'].toStringAsFixed(4)}',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                      '${summary['total_count']} tracked',
+                      style: const TextStyle(color: Colors.green, fontSize: 11),
                     ),
                   ),
                 ],
               ),
-            )),
-          ],
+              const SizedBox(height: 16),
+              if (locations.isEmpty)
+                const Text(
+                  'No recent locations yet',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                )
+              else
+                const Text(
+                  'Tap to view recent location path on map.',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1772,8 +1955,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(16),
+          color: const Color(0xFF101010),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
