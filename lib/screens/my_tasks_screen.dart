@@ -36,29 +36,20 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash() ?? '';
-    final email = prefs.getParentEmail() ?? '';
-    final password = prefs.getParentPassword() ?? '';
 
     debugPrint('📋 ========== MY_TASKS_SCREEN LOAD TASKS ==========');
     debugPrint('📋 Child Hash: ${childHash.isEmpty ? "EMPTY" : childHash}');
-    debugPrint('📋 Email: ${email.isEmpty ? "EMPTY" : email}');
-    debugPrint('📋 Password: ${password.isEmpty ? "EMPTY" : "[${password.length} chars]"}');
     debugPrint('📋 Filter: $_filter');
 
-    if (childHash.isEmpty || email.isEmpty || password.isEmpty) {
-      debugPrint('📋 ❌ CANNOT LOAD TASKS:');
-      debugPrint('📋    - Child Hash empty: ${childHash.isEmpty}');
-      debugPrint('📋    - Email empty: ${email.isEmpty}');
-      debugPrint('📋    - Password empty: ${password.isEmpty}');
+    if (childHash.isEmpty) {
+      debugPrint('📋 ❌ CANNOT LOAD TASKS: Child Hash is empty');
       setState(() => _loading = false);
       return;
     }
 
-    debugPrint('📋 ✅ Credentials OK, calling API...');
+    debugPrint('📋 ✅ Child Hash OK, calling API...');
     final result = await _apiService.getMyTasks(
       childHash: childHash,
-      email: email,
-      password: password,
       completed: _filter,
     );
 
@@ -124,17 +115,14 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash() ?? '';
-    final password = prefs.getChildPassword() ?? ''; // Empty string if not set
 
     final result = task.isCompleted
         ? await _apiService.incompleteTask(
             childHash: childHash,
-            password: password,
             taskId: task.id,
           )
         : await _apiService.completeTask(
             childHash: childHash,
-            password: password,
             taskId: task.id,
           );
 
@@ -152,10 +140,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 color: Colors.white,
               ),
               const SizedBox(width: 12),
-              Text(result['message'] ?? 'Task updated'),
+              Expanded(
+                child: Text(
+                  task.isCompleted ? 'Task reopened' : 'Task completed!',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
             ],
           ),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
       );
       _loadTasks();

@@ -31,6 +31,7 @@ class PreferencesManager {
   static const String _keyPrivateKey = 'private_key';
   static const String _keyViewMode = 'view_mode'; // 'parent' or 'child'
   static const String _keyLastRoute = 'last_route';
+  static const String _keyTaskMetadata = 'task_metadata'; // Stores unencrypted task titles/descriptions
 
   final SharedPreferences _prefs;
 
@@ -156,5 +157,47 @@ class PreferencesManager {
   bool hasSelectedChild() {
     final hash = getChildHash();
     return hash != null && hash.isNotEmpty;
+  }
+
+  // Task Metadata (store unencrypted task info for parent view)
+  /// Save unencrypted task metadata (title, description) by task ID
+  /// Format: { "taskId": { "title": "...", "description": "..." } }
+  Future<void> saveTaskMetadata(int taskId, String title, String description) async {
+    final metadata = getTaskMetadata();
+    metadata[taskId.toString()] = {
+      'title': title,
+      'description': description,
+    };
+    await _prefs.setString(_keyTaskMetadata, jsonEncode(metadata));
+  }
+
+  /// Get all task metadata
+  Map<String, dynamic> getTaskMetadata() {
+    final jsonString = _prefs.getString(_keyTaskMetadata);
+    if (jsonString == null || jsonString.isEmpty) {
+      return {};
+    }
+    try {
+      return jsonDecode(jsonString) as Map<String, dynamic>;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  /// Get task metadata by task ID
+  Map<String, dynamic>? getTaskMetadataById(int taskId) {
+    final metadata = getTaskMetadata();
+    final taskData = metadata[taskId.toString()];
+    if (taskData is Map<String, dynamic>) {
+      return taskData;
+    }
+    return null;
+  }
+
+  /// Remove task metadata (when task is deleted)
+  Future<void> removeTaskMetadata(int taskId) async {
+    final metadata = getTaskMetadata();
+    metadata.remove(taskId.toString());
+    await _prefs.setString(_keyTaskMetadata, jsonEncode(metadata));
   }
 }

@@ -47,8 +47,29 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
     if (!mounted) return;
 
     if (result['success'] == true) {
+      List<Task> tasks = result['tasks'] as List<Task>;
+      
+      // Replace encrypted titles/descriptions with unencrypted ones from local storage
+      List<Task> displayTasks = tasks.map((task) {
+        final metadata = prefs.getTaskMetadataById(task.id);
+        if (metadata != null) {
+          // We have unencrypted metadata, use it
+          return Task(
+            id: task.id,
+            title: metadata['title'] as String? ?? task.title,
+            description: metadata['description'] as String? ?? task.description,
+            isCompleted: task.isCompleted,
+            completedAt: task.completedAt,
+            created: task.created,
+            updated: task.updated,
+            assignedBy: task.assignedBy,
+          );
+        }
+        return task; // Return original if no metadata found
+      }).toList();
+      
       setState(() {
-        _tasks = result['tasks'] as List<Task>;
+        _tasks = displayTasks;
         _loading = false;
       });
     } else {

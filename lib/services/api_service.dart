@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/child.dart';
 import '../models/websocket_data.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
+import '../utils/preferences_manager.dart';
 import 'encryption_service.dart';
 
 class ApiService {
@@ -1068,9 +1070,21 @@ class ApiService {
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final task = Task.fromJson(data['task'] as Map<String, dynamic>);
+        
+        // Store unencrypted task metadata locally for parent view
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final prefsManager = PreferencesManager(prefs);
+          await prefsManager.saveTaskMetadata(task.id, title, description);
+          debugPrint('✅ Saved unencrypted task metadata for task ${task.id}');
+        } catch (e) {
+          debugPrint('⚠️ Failed to save task metadata: $e');
+        }
+        
         return {
           'success': true,
-          'task': Task.fromJson(data['task'] as Map<String, dynamic>),
+          'task': task,
         };
       } else {
         final errorData = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1137,32 +1151,26 @@ class ApiService {
     }
   }
 
-  /// Get tasks for the current child (Guardian view)
+  /// Get tasks for the current child (Child view)
   Future<Map<String, dynamic>> getMyTasks({
     required String childHash,
-    required String email,
-    required String password,
     String completed = 'all', // 'true', 'false', 'all'
   }) async {
-    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/list/?completed=$completed');
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/my-tasks/?completed=$completed');
     
     try {
-      debugPrint('📋 ========== GET TASKS REQUEST ==========');
+      debugPrint('📋 ========== GET MY TASKS REQUEST ==========');
       debugPrint('📋 BASE URL: $baseUrl');
       debugPrint('📋 FULL URL: $url');
-      debugPrint('📋 Endpoint: /api/mobile/child/$childHash/tasks/list/');
+      debugPrint('📋 Endpoint: /api/mobile/child/$childHash/my-tasks/');
       debugPrint('📋 Query: completed=$completed');
       debugPrint('📋 Child Hash: $childHash');
-      debugPrint('📋 Email: $email');
-      debugPrint('📋 Password: ${password.isEmpty ? "EMPTY" : "[${password.length} chars]"}');
-      debugPrint('📋 Headers: X-Child-Hash=$childHash, X-Email=$email, X-Password=[REDACTED]');
+      debugPrint('📋 Headers: X-Child-Hash=$childHash');
       
       final response = await http.get(
         url,
         headers: {
           'X-Child-Hash': childHash,
-          'X-Email': email,
-          'X-Password': password,
         },
       );
 
@@ -1206,7 +1214,6 @@ class ApiService {
   /// Mark a task as complete (Child only)
   Future<Map<String, dynamic>> completeTask({
     required String childHash,
-    required String password,
     required int taskId,
   }) async {
     final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/$taskId/complete/');
@@ -1218,7 +1225,6 @@ class ApiService {
         url,
         headers: {
           'X-Child-Hash': childHash,
-          'X-Password': password,
         },
       );
 
@@ -1226,7 +1232,7 @@ class ApiService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return {
           'success': true,
-          'message': data['message'],
+          'message': data['message'] ?? 'Task marked as completed',
           'task': Task.fromJson(data['task'] as Map<String, dynamic>),
         };
       } else {
@@ -1248,7 +1254,6 @@ class ApiService {
   /// Mark a task as incomplete (Child only)
   Future<Map<String, dynamic>> incompleteTask({
     required String childHash,
-    required String password,
     required int taskId,
   }) async {
     final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/$taskId/incomplete/');
@@ -1260,7 +1265,6 @@ class ApiService {
         url,
         headers: {
           'X-Child-Hash': childHash,
-          'X-Password': password,
         },
       );
 
@@ -1268,7 +1272,7 @@ class ApiService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return {
           'success': true,
-          'message': data['message'],
+          'message': data['message'] ?? 'Task marked as incomplete',
           'task': Task.fromJson(data['task'] as Map<String, dynamic>),
         };
       } else {
