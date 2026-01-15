@@ -135,10 +135,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     
     final apiService = Provider.of<ApiService>(context, listen: false);
-    final result = await apiService.fetchRestrictions(childHash);
+    // Use the mobile restricted-apps endpoint so this screen sees the same
+    // app limits configured in the Block Sites & Apps screen.
+    final result = await apiService.getAppRestrictions(
+      email: prefsManager.getParentEmail() ?? '',
+      password: prefsManager.getParentPassword() ?? '',
+      childHash: childHash,
+    );
     
     if (result['success'] == true && mounted) {
-      final restrictions = result['restrictions'] as RestrictionsData;
+      final data = result['data'] as Map<String, dynamic>;
+      final rawRestricted = data['restricted_apps'] as Map<String, dynamic>? ?? {};
+      final restrictions = RestrictionsData.fromJson(rawRestricted);
       setState(() {
         _restrictions = restrictions;
       });

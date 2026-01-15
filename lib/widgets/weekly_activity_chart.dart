@@ -27,8 +27,10 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
   Map<String, double> _previousWeekData = {};
   Map<String, double> _twoWeeksAgoData = {};
 
-  // Configuration
-  static const double _dailyLimitHours = 3.0;
+  // Global daily screen time limit in hours (fetched from API)
+  double? _dailyLimitHours;
+  // Default to 8 hours if the server does not provide a limit
+  static const double _fallbackDailyLimitHours = 8.0;
 
   // Today's usage in hours
   double _todayUsage = 0.0;
@@ -90,6 +92,11 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
           startDate: dateFormatter.format(twoWeeksAgoStart),
           endDate: dateFormatter.format(twoWeeksAgoEnd),
         ),
+        apiService.fetchDailyLimit(
+          email,
+          password,
+          widget.child.childHash,
+        ),
       ]);
 
       if (!mounted) return;
@@ -103,10 +110,26 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
       final twoWeeksAgo = results[2]['success'] == true
           ? (results[2]['data'] as Map<String, dynamic>)
           : null;
+        final dailyLimitResult = results[3];
 
       _currentWeekData = _processWeekData(currentWeek);
       _previousWeekData = _processWeekData(previousWeek);
       _twoWeeksAgoData = _processWeekData(twoWeeksAgo);
+
+      // Global daily limit
+      double? fetchedDailyLimitHours;
+      if (dailyLimitResult is Map<String, dynamic> &&
+          dailyLimitResult['success'] == true) {
+        final dailyLimitData = dailyLimitResult['data'] as Map<String, dynamic>?;
+        if (dailyLimitData != null) {
+          // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
+          final value = dailyLimitData['daily_screen_time_limit'] ??
+              dailyLimitData['daily_limit_hours'];
+          if (value is num) {
+            fetchedDailyLimitHours = value.toDouble();
+          }
+        }
+      }
 
       // Calculate today's usage from current week data
       final todayKey = dateFormatter.format(now);
@@ -114,6 +137,8 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
 
       setState(() {
         _loading = false;
+        _dailyLimitHours = fetchedDailyLimitHours;
+        debugPrint('📊 WeeklyActivityChart daily limit hours: ${_dailyLimitHours ?? _fallbackDailyLimitHours}');
       });
     } catch (e, stack) {
       debugPrint('❌ Error fetching weekly activity data: $e');
@@ -157,12 +182,14 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
       ..._twoWeeksAgoData.values,
     ];
 
+    final baseLimit = _dailyLimitHours ?? _fallbackDailyLimitHours;
+
     if (allValues.isEmpty) {
-      return _dailyLimitHours;
+      return baseLimit;
     }
 
     final maxVal = allValues.reduce((a, b) => a > b ? a : b);
-    final target = maxVal > _dailyLimitHours ? maxVal : _dailyLimitHours;
+    final target = maxVal > baseLimit ? maxVal : baseLimit;
     return (target + 0.5).ceilToDouble();
   }
 
@@ -239,7 +266,8 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Daily Limit: ${_dailyLimitHours.toInt()} hr',
+          // Show server limit when available, otherwise default 8 hours
+          'Daily Limit: ${_formatHours((_dailyLimitHours ?? _fallbackDailyLimitHours))} hr',
           style: const TextStyle(
             color: Colors.white60,
             fontSize: 14,
@@ -284,7 +312,11 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
                     ),
                   ),
                   FractionallySizedBox(
-                    widthFactor: (_todayUsage / _dailyLimitHours).clamp(0.0, 1.0),
+                    widthFactor: (() {
+                      final limit = _dailyLimitHours ?? _fallbackDailyLimitHours;
+                      if (limit <= 0) return 0.0;
+                      return (_todayUsage / limit).clamp(0.0, 1.0);
+                    })(),
                     child: Container(
                       height: 8,
                       decoration: BoxDecoration(
@@ -512,6 +544,13 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
         ),
       ],
     );
+  }
+
+  String _formatHours(double hours) {
+    if (hours == hours.roundToDouble()) {
+      return hours.toStringAsFixed(0);
+    }
+    return hours.toStringAsFixed(1);
   }
 
   Widget _buildLegendItem(Color color, String label) {

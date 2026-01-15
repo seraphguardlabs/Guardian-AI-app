@@ -4,9 +4,11 @@ import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
+import android.app.usage.UsageEvents
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
+import android.util.Log
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -165,11 +167,12 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun getScreenTime(): String? {
-        // Note: The user requested "root access". 
-        // Direct root access to usage stats files (/data/system/usagestats) is complex and brittle (binary formats).
-        // The standard and stable way to get this data (which requires a system-level permission) is UsageStatsManager.
-        // This provides the same data that "Digital Wellbeing" uses.
-        
+        // Use UsageEvents to compute today's foreground time per app.
+        // This is closer to how Digital Wellbeing measures "screen time":
+        // - Window: today from local midnight to now
+        // - Only user-launchable, non-system apps
+        // - Time between ACTIVITY_RESUMED/FOREGROUND and PAUSED/STOPPED/BACKGROUND.
+
         if (!hasUsageStatsPermission()) {
             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             startActivity(intent)
@@ -177,30 +180,105 @@ class MainActivity: FlutterActivity() {
         }
 
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+
+        // Use the device's local time zone and calendar day
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
-        // Set start time to beginning of the day
+        // Start at today's local midnight (not a rolling 24-hour window)
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
         val startTime = calendar.timeInMillis
 
-        val usageStatsList = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY, startTime, endTime
-        )
+        // Build a set of user-launchable, non-system app package names
+        val pm = packageManager
+        val installedApps = pm.getInstalledApplications(0)
+        val allowedPackages = mutableSetOf<String>()
 
-        if (usageStatsList == null || usageStatsList.isEmpty()) {
+        // Detect the default launcher (home) app so we can exclude it
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = pm.resolveActivity(homeIntent, 0)
+        val launcherPackage = resolveInfo?.activityInfo?.packageName
+
+        for (app in installedApps) {
+            val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
+            val isSystemApp = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            // Exclude system apps, the launcher, and our own app package
+            if (
+                launchIntent != null &&
+                !isSystemApp &&
+                app.packageName != launcherPackage &&
+                app.packageName != packageName
+            ) {
+                allowedPackages.add(app.packageName)
+            }
+        }
+
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        if (usageEvents == null) {
             return "No usage stats found."
         }
 
-        var totalTime: Long = 0
-        for (usageStats in usageStatsList) {
-            totalTime += usageStats.totalTimeInForeground
+        val lastForeground = mutableMapOf<String, Long>()
+        val totalPerPackage = mutableMapOf<String, Long>()
+        val event = UsageEvents.Event()
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val pkg = event.packageName ?: continue
+            if (!allowedPackages.contains(pkg)) continue
+
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    lastForeground[pkg] = event.timeStamp
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED -> {
+                    val startTs = lastForeground.remove(pkg)
+                    if (startTs != null && event.timeStamp >= startTs) {
+                        val diff = event.timeStamp - startTs
+                        totalPerPackage[pkg] = (totalPerPackage[pkg] ?: 0L) + diff
+                    }
+                }
+            }
+        }
+
+        // If any apps are still considered foreground at the end window, close them at endTime
+        for ((pkg, startTs) in lastForeground) {
+            if (!allowedPackages.contains(pkg)) continue
+            if (endTime > startTs) {
+                val diff = endTime - startTs
+                totalPerPackage[pkg] = (totalPerPackage[pkg] ?: 0L) + diff
+            }
+        }
+
+        val totalTime = totalPerPackage.values.fold(0L) { acc, v -> acc + v }
+
+        // Debug logging: show top apps contributing to screen time
+        if (totalPerPackage.isNotEmpty()) {
+            val sorted = totalPerPackage.toList()
+                .sortedByDescending { it.second }
+                .take(15)
+
+            Log.d("GuardianScreenTime", "===== Today app usage (foreground intervals) =====")
+            Log.d("GuardianScreenTime", "Window: start=$startTime end=$endTime")
+
+            for ((pkg, timeMs) in sorted) {
+                val h = timeMs / 1000 / 60 / 60
+                val m = (timeMs / 1000 / 60) % 60
+                Log.d("GuardianScreenTime", "$pkg -> ${h}h ${m}m")
+            }
+
+            val totalH = totalTime / 1000 / 60 / 60
+            val totalM = (totalTime / 1000 / 60) % 60
+            Log.d("GuardianScreenTime", "TOTAL (apps counted) = ${totalH}h ${totalM}m")
+            Log.d("GuardianScreenTime", "==============================================")
         }
 
         val hours = totalTime / 1000 / 60 / 60
         val minutes = (totalTime / 1000 / 60) % 60
-        
+
         return "${hours}h ${minutes}m today"
     }
 

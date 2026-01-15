@@ -4,10 +4,109 @@ import 'package:flutter/foundation.dart';
 import '../models/child.dart';
 import '../models/websocket_data.dart';
 import '../models/restrictions_data.dart';
+import '../models/task.dart';
+import 'encryption_service.dart';
 
 class ApiService {
   static const String baseUrl = 'https://seraphguardlabs.com';
   static const String restrictionsBaseUrl = 'https://seraphguardlabs.com';
+
+  /// Get the child's global daily screen time limit in hours.
+  /// Returns a map: { success, data: { 'daily_screen_time_limit': double?, 'limit_enabled': bool } | null, error }
+  Future<Map<String, dynamic>> fetchDailyLimit(
+    String email,
+    String password,
+    String childHash,
+  ) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/daily-limit/');
+
+    try {
+      debugPrint('📡 Fetching daily limit for child: $childHash');
+      debugPrint('   URL: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          // Use same auth headers as other mobile child endpoints
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      debugPrint('📥 Daily limit response status: ${response.statusCode}');
+      debugPrint('📥 Daily limit response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'data': data,
+        };
+      }
+
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      return {
+        'success': false,
+        'error': errorData['error'] ?? errorData['message'] ?? 'Failed to fetch daily limit',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Set or clear the child's global daily screen time limit.
+  /// Pass a double value to set, or null to remove the limit.
+  Future<Map<String, dynamic>> updateDailyLimit(
+    String email,
+    String password,
+    String childHash,
+    double? dailyLimitHours,
+  ) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/daily-limit/');
+
+    try {
+      debugPrint('📤 Updating daily limit for child: $childHash');
+      debugPrint('   URL: $url');
+      debugPrint('   New daily_screen_time_limit: $dailyLimitHours');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          // Use same auth headers as other mobile child endpoints
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode({
+          // Backend expects 'daily_screen_time_limit' in the payload
+          'daily_screen_time_limit': dailyLimitHours,
+        }),
+      );
+
+      debugPrint('📥 Update daily limit response status: ${response.statusCode}');
+      debugPrint('📥 Update daily limit response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'data': data,
+        };
+      }
+
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      return {
+        'success': false,
+        'error': errorData['error'] ?? errorData['message'] ?? 'Failed to update daily limit',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
 
   Future<Map<String, dynamic>> addChild(String email, String password, String firstName, String lastName, String dateOfBirth) async {
     final url = Uri.parse('$baseUrl/api/mobile/children/add/');
@@ -615,14 +714,15 @@ class ApiService {
     
     try {
       debugPrint('📥 Fetching app restrictions for: $childHash');
-      
-      final response = await http.get(
-        url,
-        headers: {
-          'X-Email': email,
-          'X-Password': password,
-        },
-      );
+      // Build headers conditionally so child devices can call this
+      // endpoint without parent credentials, similar to exam mode.
+      final headers = <String, String>{};
+      if (email.isNotEmpty && password.isNotEmpty) {
+        headers['X-Email'] = email;
+        headers['X-Password'] = password;
+      }
+
+      final response = await http.get(url, headers: headers);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -781,6 +881,405 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('❌ Update exam mode error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Upload child's public key to server
+  /// This is called when selecting a child profile to ensure encryption keys are synced
+  Future<Map<String, dynamic>> uploadChildPublicKey({
+    required String childHash,
+    required String publicKey,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
+    
+    try {
+      debugPrint('══════════════════════════════════════════════════════');
+      debugPrint('📤 UPLOADING CHILD PUBLIC KEY TO SERVER');
+      debugPrint('   Child Hash: $childHash');
+      debugPrint('   Endpoint: $url');
+      debugPrint('══════════════════════════════════════════════════════');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'public_key': publicKey,
+        }),
+      );
+
+      debugPrint('📥 Server Response:');
+      debugPrint('   - Status Code: \${response.statusCode}');
+      debugPrint('   - Response Body: \${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('══════════════════════════════════════════════════════');
+        debugPrint('✅ CHILD PUBLIC KEY SUCCESSFULLY UPLOADED!');
+        debugPrint('   Child Hash: $childHash');
+        debugPrint('   Status: \${response.statusCode}');
+        debugPrint('══════════════════════════════════════════════════════');
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('══════════════════════════════════════════════════════');
+        debugPrint('❌ CHILD PUBLIC KEY UPLOAD FAILED!');
+        debugPrint('   Status: \${response.statusCode}');
+        debugPrint('   Response: \${response.body}');
+        debugPrint('══════════════════════════════════════════════════════');
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Upload failed',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Upload child public key error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Get child's public key from server (for encryption)
+  Future<Map<String, dynamic>> getChildPublicKey({
+    required String childHash,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
+    
+    try {
+      debugPrint('🔑 Fetching child public key from server');
+      debugPrint('   Child Hash: $childHash');
+      debugPrint('   Endpoint: $url');
+      
+      final response = await http.get(url);
+
+      debugPrint('📥 Server Response:');
+      debugPrint('   - Status Code: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final publicKey = data['public_key'] as String?;
+        
+        if (publicKey != null && publicKey.isNotEmpty) {
+          debugPrint('✅ Child public key successfully retrieved');
+          return {
+            'success': true,
+            'public_key': publicKey,
+            'child_hash': data['child_hash'],
+            'child_name': data['child_name'],
+          };
+        } else {
+          debugPrint('⚠️ Public key is null or empty');
+          return {
+            'success': false,
+            'error': 'Public key not found',
+          };
+        }
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('❌ Failed to get child public key');
+        debugPrint('   Status: ${response.statusCode}');
+        debugPrint('   Response: ${response.body}');
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to get public key',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Get child public key error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  // ========== TASK API METHODS ==========
+
+  /// Create a new task for a child (Guardian only)
+  /// Encrypts title and description using child's public key for E2E encryption
+  Future<Map<String, dynamic>> createTask({
+    required String email,
+    required String password,
+    required String childHash,
+    required String title,
+    required String description,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/');
+    
+    try {
+      debugPrint('📝 Creating task for child: $childHash');
+      
+      // First, get the child's public key for encryption
+      debugPrint('🔑 Fetching child public key for encryption...');
+      final publicKeyResponse = await getChildPublicKey(childHash: childHash);
+      
+      String encryptedTitle;
+      String encryptedDescription;
+      
+      if (publicKeyResponse['success'] == true) {
+        final childPublicKey = publicKeyResponse['public_key'] as String;
+        debugPrint('✅ Child public key retrieved, encrypting task data...');
+        
+        // Encrypt title and description with child's public key
+        final encryptionService = EncryptionService.instance;
+        encryptedTitle = encryptionService.encryptWithPublicKey(title, childPublicKey) ?? '';
+        encryptedDescription = encryptionService.encryptWithPublicKey(description, childPublicKey) ?? '';
+        
+        if (encryptedTitle.isEmpty || encryptedDescription.isEmpty) {
+          debugPrint('⚠️ Encryption failed, sending plaintext instead');
+          encryptedTitle = title;
+          encryptedDescription = description;
+        } else {
+          debugPrint('✅ Task data encrypted successfully');
+        }
+      } else {
+        debugPrint('⚠️ Could not get child public key: ${publicKeyResponse['error']}');
+        debugPrint('⚠️ Sending task without encryption');
+        encryptedTitle = title;
+        encryptedDescription = description;
+      }
+      
+      final Map<String, dynamic> requestBody = {
+        'title': encryptedTitle,
+        'description': encryptedDescription,
+      };
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      debugPrint('📥 Create task response: ${response.statusCode}');
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'task': Task.fromJson(data['task'] as Map<String, dynamic>),
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to create task',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Create task error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Get all tasks for a child (Guardian view)
+  Future<Map<String, dynamic>> getChildTasks({
+    required String email,
+    required String password,
+    required String childHash,
+    String completed = 'all', // 'true', 'false', 'all'
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/list/?completed=$completed');
+    
+    try {
+      debugPrint('📋 Fetching tasks for child: $childHash');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final tasksList = (data['tasks'] as List)
+            .map((taskJson) => Task.fromJson(taskJson as Map<String, dynamic>))
+            .toList();
+        
+        return {
+          'success': true,
+          'child_hash': data['child_hash'],
+          'child_name': data['child_name'],
+          'total_tasks': data['total_tasks'],
+          'tasks': tasksList,
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to fetch tasks',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Get child tasks error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Get tasks for the current child (Guardian view)
+  Future<Map<String, dynamic>> getMyTasks({
+    required String childHash,
+    required String email,
+    required String password,
+    String completed = 'all', // 'true', 'false', 'all'
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/list/?completed=$completed');
+    
+    try {
+      debugPrint('📋 ========== GET TASKS REQUEST ==========');
+      debugPrint('📋 BASE URL: $baseUrl');
+      debugPrint('📋 FULL URL: $url');
+      debugPrint('📋 Endpoint: /api/mobile/child/$childHash/tasks/list/');
+      debugPrint('📋 Query: completed=$completed');
+      debugPrint('📋 Child Hash: $childHash');
+      debugPrint('📋 Email: $email');
+      debugPrint('📋 Password: ${password.isEmpty ? "EMPTY" : "[${password.length} chars]"}');
+      debugPrint('📋 Headers: X-Child-Hash=$childHash, X-Email=$email, X-Password=[REDACTED]');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Child-Hash': childHash,
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+
+      debugPrint('📋 Response status: ${response.statusCode}');
+      debugPrint('📋 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final tasksList = (data['tasks'] as List)
+            .map((taskJson) => Task.fromJson(taskJson as Map<String, dynamic>))
+            .toList();
+        
+        debugPrint('📋 ✅ Successfully loaded ${tasksList.length} tasks');
+        
+        return {
+          'success': true,
+          'child_hash': data['child_hash'],
+          'child_name': data['child_name'],
+          'total_tasks': data['total_tasks'],
+          'pending_tasks': data['pending_tasks'] ?? 0,
+          'completed_tasks': data['completed_tasks'] ?? 0,
+          'tasks': tasksList,
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('📋 ❌ Server error: ${errorData['message']}');
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to fetch tasks',
+        };
+      }
+    } catch (e) {
+      debugPrint('📋 ❌ Get my tasks error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Mark a task as complete (Child only)
+  Future<Map<String, dynamic>> completeTask({
+    required String childHash,
+    required String password,
+    required int taskId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/$taskId/complete/');
+    
+    try {
+      debugPrint('✅ Marking task $taskId as complete');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'X-Child-Hash': childHash,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'message': data['message'],
+          'task': Task.fromJson(data['task'] as Map<String, dynamic>),
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to complete task',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Complete task error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Mark a task as incomplete (Child only)
+  Future<Map<String, dynamic>> incompleteTask({
+    required String childHash,
+    required String password,
+    required int taskId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/tasks/$taskId/incomplete/');
+    
+    try {
+      debugPrint('↩️ Marking task $taskId as incomplete');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'X-Child-Hash': childHash,
+          'X-Password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'message': data['message'],
+          'task': Task.fromJson(data['task'] as Map<String, dynamic>),
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to mark task incomplete',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Incomplete task error: $e');
       return {
         'success': false,
         'error': 'Network error: $e',

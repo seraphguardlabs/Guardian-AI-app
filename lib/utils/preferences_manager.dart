@@ -23,6 +23,7 @@ class PreferencesManager {
   static const String _keyAuthToken = 'auth_token';
   static const String _keyChildHash = 'child_hash';
   static const String _keyChildName = 'child_name';
+  static const String _keyChildPassword = 'child_password';
   static const String _keyParentEmail = 'parent_email';
   static const String _keyParentPassword = 'parent_password';
   static const String _keyIsParentLoggedIn = 'is_parent_logged_in';
@@ -84,6 +85,15 @@ class PreferencesManager {
 
   String? getChildName() {
     return _prefs.getString(_keyChildName);
+  }
+
+  // Child Password
+  Future<void> setChildPassword(String password) async {
+    await _prefs.setString(_keyChildPassword, password);
+  }
+
+  String? getChildPassword() {
+    return _prefs.getString(_keyChildPassword);
   }
 
   // Parent Logged In Status

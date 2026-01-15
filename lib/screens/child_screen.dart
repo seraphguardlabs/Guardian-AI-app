@@ -9,11 +9,14 @@ import '../utils/preferences_manager.dart';
 import '../services/location_service.dart';
 import '../services/websocket_service.dart';
 import '../services/api_service.dart';
+import '../services/encryption_service.dart';
 import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
 import '../services/time_extension_service.dart';
 import '../models/restrictions_data.dart';
+import '../models/task.dart';
 import '../widgets/app_bottom_nav.dart';
+import 'my_tasks_screen.dart';
 
 class ChildScreen extends StatefulWidget {
   const ChildScreen({super.key});
@@ -26,6 +29,7 @@ class _ChildScreenState extends State<ChildScreen> {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
+  double? _dailyLimitHours; // Global daily limit from server or default
   bool _loading = true;
   List<UsageInfo> _usageStats = [];
   Map<String, Application> _apps = {};
@@ -36,6 +40,8 @@ class _ChildScreenState extends State<ChildScreen> {
   StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
   bool _examMode = false;
   List<String> _examModeApps = [];
+  List<Task> _pendingTasks = [];
+  bool _loadingTasks = false;
 
   @override
   void initState() {
@@ -52,13 +58,51 @@ class _ChildScreenState extends State<ChildScreen> {
       prefs.setViewMode('child');
       prefs.setLastRoute('/child');
       
+      // Upload child's public key to server
+      _uploadChildPublicKey();
+      
       final locationService = Provider.of<LocationService>(context, listen: false);
       locationService.startTracking();
       _initializeWebSocket();
       _fetchRestrictions();
       debugPrint('🎓 Child Screen: Calling _fetchExamMode() from initState');
       _fetchExamMode();
+      _loadDailyLimit();
+      _loadPendingTasks();
     });
+  }
+
+  Future<void> _uploadChildPublicKey() async {
+    debugPrint('🔐 Child Screen: Uploading child public key to server...');
+    
+    // Initialize encryption service if not already done
+    if (!EncryptionService.instance.isInitialized) {
+      await EncryptionService.instance.initialize();
+    }
+    
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefs.getChildHash();
+    
+    if (childHash == null || childHash.isEmpty) {
+      debugPrint('⚠️ Child Screen: No child hash available');
+      return;
+    }
+    
+    if (EncryptionService.instance.hasKeys && EncryptionService.instance.publicKey != null) {
+      final apiService = ApiService();
+      final result = await apiService.uploadChildPublicKey(
+        childHash: childHash,
+        publicKey: EncryptionService.instance.publicKey!,
+      );
+      
+      if (result['success'] == true) {
+        debugPrint('✅ Child Screen: Child public key uploaded successfully');
+      } else {
+        debugPrint('❌ Child Screen: Failed to upload child public key: ${result['error']}');
+      }
+    } else {
+      debugPrint('⚠️ Child Screen: No encryption keys available');
+    }
   }
 
   @override
@@ -76,6 +120,7 @@ class _ChildScreenState extends State<ChildScreen> {
       _getScreenTime(),
       _initUsageStats(),
       _getBrowserHistory(),
+      _loadPendingTasks(),
     ]);
     _sendDataViaWebSocket();
   }
@@ -133,10 +178,19 @@ class _ChildScreenState extends State<ChildScreen> {
     }
 
     final apiService = Provider.of<ApiService>(context, listen: false);
-    final result = await apiService.fetchRestrictions(childHash);
+
+    // Use the mobile restricted-apps endpoint so the child device
+    // enforces the same per-app limits configured in Block Sites & Apps.
+    final result = await apiService.getAppRestrictions(
+      email: prefsManager.getParentEmail() ?? '',
+      password: prefsManager.getParentPassword() ?? '',
+      childHash: childHash,
+    );
 
     if (result['success'] == true && mounted) {
-      final restrictions = result['restrictions'] as RestrictionsData;
+      final data = result['data'] as Map<String, dynamic>;
+      final rawRestricted = data['restricted_apps'] as Map<String, dynamic>? ?? {};
+      final restrictions = RestrictionsData.fromJson(rawRestricted);
       setState(() {
         _restrictions = restrictions;
       });
@@ -315,6 +369,215 @@ class _ChildScreenState extends State<ChildScreen> {
       _screenTime = screenTime;
       _loading = false;
     });
+    // After updating screen time, check if the global daily limit is exceeded
+    _checkAndApplyDailyLimitEnforcement();
+  }
+  
+  Future<void> _loadDailyLimit() async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefs.getChildHash();
+    final parentEmail = prefs.getParentEmail();
+    final parentPassword = prefs.getParentPassword();
+
+    // Default to 8 hours if we cannot fetch from server
+    double dailyLimit = 8.0;
+
+    if (childHash != null && parentEmail != null && parentPassword != null) {
+      try {
+        final api = Provider.of<ApiService>(context, listen: false);
+        final result = await api.fetchDailyLimit(parentEmail, parentPassword, childHash);
+        if (result['success'] == true) {
+          final data = result['data'] as Map<String, dynamic>?;
+          if (data != null) {
+            // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
+            final value = data['daily_screen_time_limit'] ?? data['daily_limit_hours'];
+            if (value is num && value > 0) {
+              dailyLimit = value.toDouble();
+            }
+          }
+        }
+      } catch (_) {
+        // Ignore errors and keep default 8 hours
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _dailyLimitHours = dailyLimit;
+      debugPrint('🧒 Child screen daily limit hours: $_dailyLimitHours');
+    });
+    // After loading the daily limit, check enforcement with the latest screen time
+    _checkAndApplyDailyLimitEnforcement();
+  }
+
+  Future<void> _loadPendingTasks() async {
+    debugPrint('📋 Child Screen: Loading pending tasks...');
+    setState(() => _loadingTasks = true);
+
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefs.getChildHash() ?? '';
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    debugPrint('📋 ========== CHILD_SCREEN LOAD TASKS ==========');
+    debugPrint('📋 Child Hash: ${childHash.isEmpty ? "EMPTY" : childHash}');
+    debugPrint('📋 Email: ${email.isEmpty ? "EMPTY" : email}');
+    debugPrint('📋 Password: ${password.isEmpty ? "EMPTY" : "[${password.length} chars]"}');
+
+    if (childHash.isEmpty || email.isEmpty) {
+      debugPrint('📋 ❌ CANNOT LOAD TASKS:');
+      debugPrint('📋    - Child Hash empty: ${childHash.isEmpty}');
+      debugPrint('📋    - Email empty: ${email.isEmpty}');
+      setState(() => _loadingTasks = false);
+      return;
+    }
+
+    debugPrint('📋 ✅ Credentials OK, calling API...');
+    final apiService = ApiService();
+    final result = await apiService.getMyTasks(
+      childHash: childHash,
+      email: email,
+      password: password,
+      completed: 'false', // Only get pending tasks
+    );
+
+    debugPrint('📋 API Result success: ${result['success']}');
+    debugPrint('📋 API Result: $result');
+
+    if (!mounted) {
+      debugPrint('📋 ⚠️ Widget not mounted, cannot update state');
+      return;
+    }
+
+    if (result['success'] == true) {
+      List<Task> tasks = result['tasks'] as List<Task>;
+      debugPrint('📋 ✅ Received ${tasks.length} tasks from API');
+      debugPrint('📋 Tasks: ${tasks.map((t) => t.id).toList()}');
+      
+      // Decrypt task titles and descriptions
+      final encryptionService = EncryptionService.instance;
+      debugPrint('📋 Starting decryption...');
+      List<Task> decryptedTasks = tasks.map((task) {
+        final decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
+        final decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
+        
+        debugPrint('📋 Task ${task.id}: decrypted=${decryptedTitle != null}');
+        
+        if (decryptedTitle != null || decryptedDescription != null) {
+          return Task(
+            id: task.id,
+            title: decryptedTitle ?? task.title,
+            description: decryptedDescription ?? task.description,
+            isCompleted: task.isCompleted,
+            completedAt: task.completedAt,
+            created: task.created,
+            updated: task.updated,
+            assignedBy: task.assignedBy,
+          );
+        }
+        return task;
+      }).toList();
+      
+      debugPrint('📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks');
+      setState(() {
+        _pendingTasks = decryptedTasks;
+        _loadingTasks = false;
+      });
+      debugPrint('📋 State updated: _pendingTasks.length = ${_pendingTasks.length}');
+    } else {
+      debugPrint('📋 ❌ Failed to load tasks: ${result['error']}');
+      setState(() => _loadingTasks = false);
+    }
+  }
+
+  /// Parse the native screen time string (e.g. "2h 15m today") into total hours.
+  double? _parseScreenTimeHours(String? timeStr) {
+    if (timeStr == null || timeStr.isEmpty) return null;
+
+    try {
+      double totalHours = 0.0;
+
+      final hoursMatch = RegExp(r'(\d+)h').firstMatch(timeStr);
+      if (hoursMatch != null) {
+        totalHours += double.parse(hoursMatch.group(1)!);
+      }
+
+      final minutesMatch = RegExp(r'(\d+)m').firstMatch(timeStr);
+      if (minutesMatch != null) {
+        totalHours += double.parse(minutesMatch.group(1)!) / 60.0;
+      }
+
+      return totalHours;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Enforce the global daily limit on the child device.
+  /// When the total screen time for today exceeds the configured daily limit,
+  /// all apps are blocked except messaging, calls, camera, and Guardian AI.
+  void _checkAndApplyDailyLimitEnforcement() {
+    if (!mounted) return;
+
+    // Require both a valid screen time value and a positive daily limit
+    if (_screenTime == null || _dailyLimitHours == null || _dailyLimitHours! <= 0) {
+      return;
+    }
+
+    final usedHours = _parseScreenTimeHours(_screenTime!);
+    if (usedHours == null) return;
+
+    final limitHours = _dailyLimitHours!;
+    final hasExceeded = usedHours >= limitHours;
+
+    final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
+
+    // Start from the current effective restrictions (server + exam mode)
+    final baseRestrictions = _getEffectiveRestrictions();
+
+    if (!hasExceeded) {
+      // Daily limit not exceeded: use normal restrictions
+      appBlocker.updateRestrictions(baseRestrictions);
+      BackgroundMonitoringService.updateRestrictions(baseRestrictions);
+      debugPrint('✅ Daily limit not exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+      return;
+    }
+
+    // Daily limit exceeded: block all apps except messaging, calls, camera, and Guardian AI
+    final Map<String, double> globalRestrictions = Map.from(baseRestrictions);
+
+    // Whitelisted packages that should remain usable after limit is exceeded
+    final Set<String> allowedPackages = {
+      // Guardian AI app itself
+      'com.example.guardian_ai',
+    };
+
+    // Infer typical phone/message/camera apps from installed package names
+    _apps.forEach((packageName, app) {
+      final lower = packageName.toLowerCase();
+
+      final isGuardian = packageName == 'com.example.guardian_ai';
+      final isPhone = lower.contains('dialer') || lower.contains('phone') || lower.contains('telecom');
+      final isMessages = lower.contains('mms') || lower.contains('sms') || lower.contains('messag');
+      final isCamera = lower.contains('camera');
+
+      if (isGuardian || isPhone || isMessages || isCamera) {
+        allowedPackages.add(packageName);
+      }
+    });
+
+    // For every known app, if it's not allowed, force its allowed time to 0h
+    _apps.forEach((packageName, _) {
+      if (!allowedPackages.contains(packageName)) {
+        globalRestrictions[packageName] = 0.0;
+      }
+    });
+
+    appBlocker.updateRestrictions(globalRestrictions);
+    BackgroundMonitoringService.updateRestrictions(globalRestrictions);
+    debugPrint('⏰ Daily limit exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+    debugPrint('   Allowed packages after limit: $allowedPackages');
+    debugPrint('   Total restricted apps after limit: ${globalRestrictions.length}');
   }
 
   Future<void> _initUsageStats() async {
@@ -344,6 +607,7 @@ class _ChildScreenState extends State<ChildScreen> {
       };
 
       DateTime now = DateTime.now();
+      // Use the device's concept of "today" from midnight to now
       DateTime startOfDay = DateTime(now.year, now.month, now.day);
       DateTime endOfDay = now;
 
@@ -352,10 +616,10 @@ class _ChildScreenState extends State<ChildScreen> {
         endOfDay,
       );
 
-      usageStats = usageStats
+        usageStats = usageStats
           .where((info) =>
-              double.parse(info.totalTimeInForeground ?? '0') > 0 &&
-              appMap.containsKey(info.packageName))
+            double.parse(info.totalTimeInForeground ?? '0') > 0 &&
+            appMap.containsKey(info.packageName))
           .toList();
 
       usageStats.sort((a, b) {
@@ -489,23 +753,24 @@ class _ChildScreenState extends State<ChildScreen> {
   String _calculateScreenTimePercentage() {
     // Parse the screen time (e.g., "2h 15m" or "45m")
     final timeStr = _screenTime;
-    final dailyLimitHours = 3.0; // Default 3 hour limit
-    
+    // Use server-provided daily limit if available; otherwise default to 8 hours
+    final dailyLimitHours = _dailyLimitHours ?? 8.0;
+
     try {
       double totalHours = 0.0;
-      
+
       // Extract hours
       final hoursMatch = RegExp(r'(\d+)h').firstMatch(timeStr);
       if (hoursMatch != null) {
         totalHours += double.parse(hoursMatch.group(1)!);
       }
-      
+
       // Extract minutes
       final minutesMatch = RegExp(r'(\d+)m').firstMatch(timeStr);
       if (minutesMatch != null) {
         totalHours += double.parse(minutesMatch.group(1)!) / 60;
       }
-      
+
       final percentage = ((totalHours / dailyLimitHours) * 100).clamp(0, 100).toInt();
       return '$percentage% of daily limit';
     } catch (e) {
@@ -665,113 +930,142 @@ class _ChildScreenState extends State<ChildScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F0F),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white, size: 28),
-            onPressed: () {
-              Scaffold.of(context).openDrawer();
-            },
-          ),
-        ),
-        title: Text(
-          "$childName's Dashboard",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          if (_examMode)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.2),
-                border: Border.all(color: Colors.orange, width: 1.5),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.school, color: Colors.orange, size: 16),
-                  SizedBox(width: 6),
-                  Text(
-                    'Exam Mode',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+        automaticallyImplyLeading: false,
+        toolbarHeight: 96,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF050608),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Builder(
+                  builder: (context) => IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.white, size: 26),
+                    onPressed: () {
+                      Scaffold.of(context).openDrawer();
+                    },
+                  ),
+                ),
+                const Spacer(),
+                if (_examMode)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.orange, width: 1.3),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.school, color: Colors.orange, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Exam Mode',
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          Consumer<LocationService>(
-            builder: (context, locationService, child) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.location_on, color: Colors.white, size: 12),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Location',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 8,
-                      height: 8,
+                Consumer<LocationService>(
+                  builder: (context, locationService, child) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        color: locationService.isTracking ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
+                        color: const Color(0xFF101722),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white12),
                       ),
-                    ),
-                  ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 20,
+                            height: 20,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF317AF7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.location_on, color: Colors.white, size: 12),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Location',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: locationService.isTracking ? Colors.green : Colors.grey,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.grey.shade700,
-              child: const Icon(Icons.person, color: Colors.white, size: 20),
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: Colors.grey.shade700,
+                        child: const Icon(Icons.person, color: Colors.white, size: 22),
+                      ),
+                      Positioned(
+                        right: -1,
+                        bottom: -1,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF4F92),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF050608),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
       drawer: Drawer(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF050608),
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  colors: [Color(0xFF101722), Color(0xFF050608)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -781,21 +1075,31 @@ class _ChildScreenState extends State<ChildScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.white.withOpacity(0.2),
-                    child: const Icon(Icons.person, color: Colors.white, size: 32),
+                    radius: 28,
+                    backgroundColor: Colors.white.withOpacity(0.12),
+                    child: const Icon(Icons.person, color: Colors.white, size: 26),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     "$childName's Dashboard",
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                      color: Colors.white70,
+                      fontSize: 13,
                     ),
                   ),
                 ],
               ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.task_outlined, color: Colors.white70),
+              title: const Text('My Tasks', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MyTasksScreen()),
+                );
+              },
             ),
             ListTile(
               leading: const Icon(Icons.refresh, color: Colors.white70),
@@ -856,68 +1160,260 @@ class _ChildScreenState extends State<ChildScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Screen Time Card - Modern Design
+                    // Screen Time Card - Match parent dashboard theme
                     Container(
-                      height: 215,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                          colors: [Color(0xFF15335C), Color(0xFF081526)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF081526).withOpacity(0.45),
+                            blurRadius: 25,
+                            offset: const Offset(0, 16),
+                          ),
+                        ],
                       ),
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Stack(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.access_time_outlined,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const Spacer(),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                _screenTime.split(' ')[0],
-                                style: const TextStyle(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                          // Decorative circles like parent screen
+                          Positioned(
+                            top: -40,
+                            right: -40,
+                            child: Container(
+                              width: 150,
+                              height: 150,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                shape: BoxShape.circle,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Screen Time',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _calculateScreenTimePercentage(),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.white70,
+                          Positioned(
+                            bottom: -70,
+                            left: -70,
+                            child: Container(
+                              width: 190,
+                              height: 190,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.04),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.18),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: Image.asset(
+                                          'assets/images/screen_time_icon.png',
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          _screenTime.split(' ').first,
+                                          style: const TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                            letterSpacing: -0.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 32),
+                                const Text(
+                                  'Screen Time',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _calculateScreenTimePercentage(),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
+                    
+                    // Debug: Task Loading Status
+                    if (_loadingTasks) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A1A1A),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          children: [
+                            CircularProgressIndicator(
+                              color: Color(0xFF5B4A9F),
+                              strokeWidth: 2,
+                            ),
+                            SizedBox(width: 16),
+                            Text(
+                              'Loading tasks...',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    
+                    // Pending Tasks Card
+                    if (_pendingTasks.isNotEmpty) ...[
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MyTasksScreen()),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF5B4A9F), Color(0xFF3E2E6F)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF5B4A9F).withOpacity(0.3),
+                                blurRadius: 15,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.task_outlined,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Text(
+                                      'Pending Tasks',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      '${_pendingTasks.length}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Icon(
+                                    Icons.chevron_right,
+                                    color: Colors.white70,
+                                    size: 24,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              ...(_pendingTasks.take(3).map((task) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.radio_button_unchecked,
+                                      color: Colors.white70,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        task.title,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ))),
+                              if (_pendingTasks.length > 3) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  '+${_pendingTasks.length - 3} more tasks',
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
                     
                     // App Usage Summary Card
                     if (_usageStats.isNotEmpty) ...[
@@ -1318,7 +1814,14 @@ class _ChildScreenState extends State<ChildScreen> {
                           )
                         : Column(
                             children: [
-                              ..._usageStats.take(10).map((usage) {
+                              // Total usage across all apps (for percentage of total time)
+                              ...(() {
+                                int totalMillisAll = 0;
+                                for (var u in _usageStats) {
+                                  totalMillisAll += int.tryParse(u.totalTimeInForeground ?? '0') ?? 0;
+                                }
+
+                                return _usageStats.take(10).map((usage) {
                                 final app = _apps[usage.packageName];
                                 if (app == null) return const SizedBox.shrink();
 
@@ -1339,8 +1842,8 @@ class _ChildScreenState extends State<ChildScreen> {
                                 // Check if limit is exceeded
                                 final isExceeded = (hasLimit && effectiveLimit != null && usedHours >= effectiveLimit) || isBlockedByExamMode;
                                 
-                                // Calculate percentage for progress bar (based on daily limit or relative to top app)
-                                final totalMillis = _usageStats.isEmpty ? 1 : int.tryParse(_usageStats.first.totalTimeInForeground ?? '1') ?? 1;
+                                // Calculate percentage of total app usage time
+                                final totalMillis = totalMillisAll == 0 ? 1 : totalMillisAll;
                                 final percentage = ((millis / totalMillis) * 100).clamp(0, 100).toInt();
                                 
                                 // Get app category
@@ -1525,7 +2028,8 @@ class _ChildScreenState extends State<ChildScreen> {
                                     ),
                                   ),
                                 );
-                              }).toList(),
+                              }).toList();
+                            })(),
                               // Load Earlier Activities Button
                               if (_usageStats.length > 10)
                                 Padding(
@@ -1549,11 +2053,6 @@ class _ChildScreenState extends State<ChildScreen> {
                 ),
               ),
             ),
-      bottomNavigationBar: AppBottomNav(
-        currentIndex: 2,
-        onTap: _handleBottomNavTap,
-        isParent: false,
-      ),
     );
   }
   
