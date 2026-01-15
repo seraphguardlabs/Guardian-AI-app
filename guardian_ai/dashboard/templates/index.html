@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guardian-AI | Safety Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="dark-mode">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>🛡️ Guardian-AI</h2>
+                <div class="status-indicator" id="system-status">System Active</div>
+            </div>
+            <nav>
+                <button class="active" onclick="switchTab('live')">Live Monitor</button>
+                <button onclick="switchTab('analysis')">Analysis & Usage</button>
+                <button onclick="switchTab('history')">History Log</button>
+            </nav>
+            <div class="footer">
+                <p>Cycle: <span id="cycle-count">0</span></p>
+                <p id="clock">--:--</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="dashboard">
+            <!-- Header -->
+            <header>
+                <h1 id="page-title">Live Monitoring</h1>
+                <div class="alert-banner hidden" id="alert-banner">
+                    ⚠️ CRITICAL RISK DETECTED
+                </div>
+            </header>
+
+            <!-- Grid Layout -->
+            <div class="dashboard-grid">
+
+                <!-- Live Screen View -->
+                <div class="card screen-view-card">
+                    <h3>Live Screen Capture</h3>
+                    <div class="screen-container">
+                        <img id="live-screenshot" src="" alt="Waiting for acquisition...">
+                        <div class="overlay" id="ocr-overlay"></div>
+                    </div>
+                </div>
+
+                <!-- Risk Gauges -->
+                <div class="card risk-card">
+                    <h3>Risk Assessment</h3>
+                    <div class="gauge-container">
+                        <div class="gauge-item">
+                            <div class="gauge-circle" id="total-risk-gauge" style="--percent: 0">
+                                <span class="score" id="total-risk-val">0</span>
+                            </div>
+                            <label>Total Risk</label>
+                        </div>
+                    </div>
+                    <div class="risk-breakdown">
+                        <div class="risk-row">
+                            <span>Vision (CLIP)</span>
+                            <div class="bar-bg">
+                                <div class="bar-fill" id="vision-bar" style="width: 0%"></div>
+                            </div>
+                            <span id="vision-val">0</span>
+                        </div>
+                        <div class="risk-row">
+                            <span>Text (OCR)</span>
+                            <div class="bar-bg">
+                                <div class="bar-fill" id="text-bar" style="width: 0%"></div>
+                            </div>
+                            <span id="text-val">0</span>
+                        </div>
+                        <div class="risk-row">
+                            <span>Behavior</span>
+                            <div class="bar-bg">
+                                <div class="bar-fill" id="behavior-bar" style="width: 0%"></div>
+                            </div>
+                            <span id="behavior-val">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Text Extraction Log -->
+                <div class="card text-card">
+                    <h3>Extracted Text (OCR)</h3>
+                    <div class="text-log" id="ocr-text-log">
+                        <p class="placeholder">No text detected...</p>
+                    </div>
+                </div>
+
+                <!-- History Chart -->
+                <div class="card chart-card">
+                    <h3>Risk Trend (Last 20 Cycles)</h3>
+                    <canvas id="riskChart"></canvas>
+                </div>
+
+                <!-- Analysis Tab (Hidden by default) -->
+                <div id="analysis-view" class="hidden full-width-card">
+                    <div class="card">
+                        <h3>📊 Behavioral Analytics</h3>
+                        <button class="btn-primary" onclick="loadAnalytics()">Refresh Report</button>
+
+                        <div class="stats-grid">
+                            <div class="stat-box">
+                                <h4>Top App Usage</h4>
+                                <ul id="app-usage-list"></ul>
+                            </div>
+                            <div class="stat-box">
+                                <h4>Risk Distribution</h4>
+                                <canvas id="riskDistChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+    <script src="/static/js/dashboard.js"></script>
+</body>
+
+</html>
