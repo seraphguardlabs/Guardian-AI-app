@@ -33,7 +33,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.1.0
   shared_preferences: ^2.2.0
-  provider: ^6.0.5
+  tflite_flutter: ^0.10.0
   permission_handler: ^11.0.1
   usage_stats: ^1.2.0
   fl_chart: ^0.63.0
@@ -71,6 +71,7 @@ flutter:
   assets:
     - resources/robot.png
     - assets/images/
+    - assets/models/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
