@@ -15,6 +15,7 @@ import '../widgets/weekly_activity_chart.dart';
 import '../widgets/app_bottom_nav.dart';
 import 'exam_mode_screen.dart';
 import 'block_sites_apps_screen.dart';
+import 'assign_task_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -29,6 +30,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Child? _selectedChild;
   bool _isLoading = true;
   bool _isLoadingData = false;
+  bool _weeklyActivityExpanded = false;
   String? _errorMessage;
   Map<String, dynamic>? _metrics;
   Map<String, dynamic>? _screenTime;
@@ -36,6 +38,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Map<String, dynamic>? _locations;
   Map<String, dynamic>? _siteAccess;
   Map<String, dynamic>? _todayScreenTime; // Today's actual screen time data
+  double? _dailyLimitHours; // Global daily screen time limit in hours
   late final PageController _metricsPageController;
   double _metricsPage = 0;
   bool _examMode = false;
@@ -215,6 +218,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       _apiService.fetchAppUsage(email, password, childHash),
       _apiService.fetchLocations(email, password, childHash, limit: 50),
       _apiService.fetchSiteAccess(email, password, childHash, filter: 'all', limit: 50),
+      _apiService.fetchDailyLimit(email, password, childHash),
     ]);
 
     setState(() {
@@ -223,6 +227,28 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       _appUsage = results[2]['success'] == true ? results[2]['data'] : null;
       _locations = results[3]['success'] == true ? results[3]['data'] : null;
       _siteAccess = results[4]['success'] == true ? results[4]['data'] : null;
+
+      // Global daily limit: use server value when available, otherwise default to 8 hours
+      double? fetchedDailyLimitHours;
+      if (results.length > 5 && results[5]['success'] == true) {
+        final dailyLimitData = results[5]['data'] as Map<String, dynamic>?;
+        if (dailyLimitData != null) {
+          // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
+          final value = dailyLimitData['daily_screen_time_limit'] ??
+              dailyLimitData['daily_limit_hours'];
+          if (value is num) {
+            fetchedDailyLimitHours = value.toDouble();
+          }
+        }
+      }
+
+      // If the server does not provide a positive limit, fall back to 8 hours
+      if (fetchedDailyLimitHours != null && fetchedDailyLimitHours > 0) {
+        _dailyLimitHours = fetchedDailyLimitHours;
+      } else {
+        _dailyLimitHours = 8.0;
+      }
+      debugPrint('🕒 Parent dashboard daily limit hours: $_dailyLimitHours');
       
       // Extract today's screen time from trend data
       if (_screenTime != null && _screenTime!['trend'] != null) {
@@ -641,53 +667,75 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white, size: 28),
-            onPressed: () {
-              Scaffold.of(context).openDrawer();
-            },
-          ),
-        ),
-        title: Text(
-          _selectedChild != null
-              ? "${_selectedChild!.firstName}'s Dashboard"
-              : "Parent Dashboard",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          if (_children.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 12.0),
-              child: GestureDetector(
-                onTap: _showChildSwitcher,
-                child: CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.grey.shade700,
-                  child: _selectedChild?.profileImageUrl != null
-                      ? ClipOval(
-                          child: Image.network(
-                            'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
-                            width: 36,
-                            height: 36,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(Icons.person, color: Colors.white);
-                            },
-                          ),
-                        )
-                      : const Icon(Icons.person, color: Colors.white),
-                ),
-              ),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 96,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF050608),
+              borderRadius: BorderRadius.circular(20),
             ),
-        ],
+            child: Row(
+              children: [
+                Builder(
+                  builder: (context) => IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.white, size: 26),
+                    onPressed: () {
+                      Scaffold.of(context).openDrawer();
+                    },
+                  ),
+                ),
+                const Spacer(),
+                if (_children.isNotEmpty)
+                  GestureDetector(
+                    onTap: _showChildSwitcher,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Colors.grey.shade700,
+                          child: _selectedChild?.profileImageUrl != null
+                              ? ClipOval(
+                                  child: Image.network(
+                                    'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Icon(Icons.person, color: Colors.white);
+                                    },
+                                  ),
+                                )
+                              : const Icon(Icons.person, color: Colors.white),
+                        ),
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF4F92),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF050608),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
       drawer: Drawer(
         backgroundColor: const Color(0xFF050608),
@@ -740,10 +788,23 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             _buildDrawerMenuItem(
               icon: Icons.assignment_outlined,
               label: 'Assign Task',
-              selected: true,
               onTap: () {
                 Navigator.pop(context);
-                _showMenuFeatureComingSoon('Assign Task');
+                if (_selectedChild != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AssignTaskScreen(child: _selectedChild!),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please select a child first'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
             ),
             _buildDrawerMenuItem(
@@ -895,19 +956,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     },
                   ),
                   const SizedBox(height: 16),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: const Text(
-                      'Weekly Activity',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
 
                   if (_screenTime != null) _buildScreenTimeCard(),
                   const SizedBox(height: 16),
@@ -1170,9 +1218,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _buildMetricsSection() {
     final cards = <Widget>[_buildMetricsCard()];
-    if (_screenTime != null && _screenTime!['summary'] != null) {
-      cards.add(_buildWeeklySummaryCard());
-    }
+
+    // Additional insight cards
+    cards.add(_buildTopAppsTodayCard());
+    cards.add(_buildRiskSignalsCard());
+    cards.add(_buildActiveAlertsCard());
+    cards.add(_buildWellBeingScoreCard());
+    cards.add(_buildChildCertificatesCard());
 
     if (cards.isEmpty) {
       return const SizedBox.shrink();
@@ -1216,6 +1268,480 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  // --- Metrics / insights cards ---
+
+  Widget _buildTopAppsTodayCard() {
+    final apps = (_appUsage?['apps'] as List?) ?? [];
+    final topApps = apps.take(3).toList();
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF3B1C73), Color(0xFF5E2BB4)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/top_apps_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Text(
+                  topApps.isEmpty ? '-' : topApps.length.toString(),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Top Apps Today',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (topApps.isEmpty)
+              const Text(
+                'No app usage data yet',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white70,
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: topApps.map((app) {
+                  final name = (app['name'] ?? app['domain'] ?? 'App').toString();
+                  final iconUrl = app['icon_url']?.toString();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (iconUrl != null && iconUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              iconUrl,
+                              width: 18,
+                              height: 18,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.apps, size: 16, color: Colors.white);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRiskSignalsCard() {
+    // Placeholder values; can be wired to real risk metrics later
+    const riskLevel = 'Low';
+    const changePercent = '+23%';
+    const changeLabel = '18.6%';
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF6A3A19), Color(0xFF9B4A1C)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/risk_signals_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildPillBadge(
+                      riskLevel.toUpperCase(),
+                      backgroundColor: Colors.white,
+                      textColor: const Color(0xFF6A3A19),
+                      horizontalPadding: 14,
+                      verticalPadding: 4,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildPillBadge(
+                      changeLabel,
+                      backgroundColor: Colors.black.withOpacity(0.24),
+                      textColor: Colors.white,
+                      fontSize: 11,
+                      horizontalPadding: 10,
+                      verticalPadding: 3,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Risk Signals',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '$changePercent since last month',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveAlertsCard() {
+    // Placeholder values; can be wired to real alerts later
+    const totalAlerts = 5;
+    const critical = 3;
+    const warning = 2;
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF5C101B), Color(0xFF8A182A)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/active_alerts_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Text(
+                  '$totalAlerts',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Active Alerts',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                _buildPillBadge(
+                  '$critical Critical',
+                  backgroundColor: const Color(0xFFFF4C4C),
+                  textColor: Colors.white,
+                ),
+                _buildPillBadge(
+                  '$warning Warning',
+                  backgroundColor: Colors.white.withOpacity(0.20),
+                  textColor: Colors.white,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWellBeingScoreCard() {
+    // Placeholder wellbeing statuses; can be wired to real metrics later
+    final wellbeingRows = const [
+      ['Physical Activity', 'Good'],
+      ['Sleep Quality', 'Excellent'],
+      ['Mood', 'Positive'],
+    ];
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF066642), Color(0xFF0B8A55)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/wellbeing_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: wellbeingRows
+                        .map(
+                          (row) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _buildWellbeingRow(row[0], row[1]),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Well being Score',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Real-time Well being Score',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChildCertificatesCard() {
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF1B2D73), Color(0xFF283C9A)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/certificates_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Child Certificates',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withOpacity(0.8)),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                onPressed: () {
+                  // TODO: wire up certificate upload flow
+                },
+                child: const Text(
+                  'Upload',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Small helpers for metrics cards ---
+
+  Widget _buildMetricsBaseCard({
+    required List<Color> gradientColors,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -40,
+            right: -40,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.06),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -70,
+            left: -70,
+            child: Container(
+              width: 190,
+              height: 190,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIconTile({
+    required String assetPath,
+    required Color backgroundColor,
+  }) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Image.asset(
+          assetPath,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPillBadge(
+    String label, {
+    Color backgroundColor = const Color(0x33FFFFFF),
+    Color textColor = Colors.white,
+    double fontSize = 12,
+    double horizontalPadding = 10,
+    double verticalPadding = 5,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: verticalPadding,
+      ),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWellbeingRow(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetricsCard() {
     // Use today's screen time from _todayScreenTime which is fetched from /screen-time/ endpoint
     String dailyFormatted = '--';
@@ -1239,139 +1765,139 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       }
     }
     
-    final percentOfLimit = ((dailySeconds / 10800) * 100).clamp(0, 999).toStringAsFixed(0);
-    final progress = (dailySeconds / 10800).clamp(0.0, 1.0);
+    // Use global daily limit from API when available; otherwise fall back to 8 hours
+    final effectiveDailyLimitHours = (_dailyLimitHours != null && _dailyLimitHours! > 0)
+        ? _dailyLimitHours!
+        : 8.0;
+
+    String percentOfLimit = '--';
+    double progress = 0.0;
+    final limitSeconds = effectiveDailyLimitHours * 3600;
+    if (limitSeconds > 0) {
+      percentOfLimit =
+          ((dailySeconds / limitSeconds) * 100).clamp(0, 999).toStringAsFixed(0);
+      progress = (dailySeconds / limitSeconds).clamp(0.0, 1.0);
+    }
 
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF5B4A9F), Color(0xFF3D2E6B)],
+          colors: [Color(0xFF15335C), Color(0xFF081526)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.purple.withOpacity(0.25),
+            color: const Color(0xFF081526).withOpacity(0.45),
             blurRadius: 25,
-            offset: const Offset(0, 12),
+            offset: const Offset(0, 16),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Screen time asset icon
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.asset(
-                    'assets/images/screen_time_icon.png',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              // Time display with limit and progress bar
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Time with underline progress
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: dailyFormatted,
-                              style: const TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const TextSpan(
-                              text: '/3h',
-                              style: TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w400,
-                                color: Colors.white70,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
+          // Card content
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Screen time asset icon
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.asset(
+                          'assets/images/screen_time_icon.png',
+                          fit: BoxFit.contain,
                         ),
                       ),
-                      // Progress bar under the current time
-                      Positioned(
-                        bottom: -8,
-                        left: 0,
-                        child: Container(
-                          width: dailyFormatted.length * 20.0, // Approximate width based on text
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: progress,
-                              child: Container(
-                                decoration: BoxDecoration(
+                    ),
+                    const Spacer(),
+                    // Time display with limit and progress bar
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: dailyFormatted,
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w700,
                                   color: Colors.white,
-                                  borderRadius: BorderRadius.circular(2),
+                                  letterSpacing: -0.5,
                                 ),
                               ),
+                              TextSpan(
+                                text: '/${effectiveDailyLimitHours % 1 == 0 ? effectiveDailyLimitHours.toInt().toString() : effectiveDailyLimitHours.toStringAsFixed(1)}h',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white70,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: 140,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.white.withOpacity(0.18),
+                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                              minHeight: 4,
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  'Screen Time',
+                  style: TextStyle(
+                    fontSize: 22,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$percentOfLimit%',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const TextSpan(
+                        text: ' of daily limit',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          const Text(
-            'Screen Time',
-            style: TextStyle(
-              fontSize: 24,
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: '$percentOfLimit%',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                const TextSpan(
-                  text: ' of daily limit',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
@@ -1432,7 +1958,64 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _buildScreenTimeCard() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: WeeklyActivityChart(child: _selectedChild!),
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _weeklyActivityExpanded = !_weeklyActivityExpanded;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF101722),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Weekly Activity',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _weeklyActivityExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              AnimatedCrossFade(
+                duration: const Duration(milliseconds: 250),
+                crossFadeState: _weeklyActivityExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                firstChild: const Text(
+                  'Tap to view weekly screen time trends',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white70,
+                  ),
+                ),
+                secondChild: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: WeeklyActivityChart(child: _selectedChild!),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1499,7 +2082,19 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   shape: BoxShape.circle,
                   color: Color(0xFF2A2A2A),
                 ),
-                child: const Icon(Icons.apps, color: Colors.white, size: 18),
+                child: ClipOval(
+                  child: app['icon_url'] != null && app['icon_url'].toString().isNotEmpty
+                      ? Image.network(
+                          app['icon_url'],
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(Icons.apps, color: Colors.white, size: 18);
+                          },
+                        )
+                      : const Icon(Icons.apps, color: Colors.white, size: 18),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(

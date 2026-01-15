@@ -87,6 +87,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
     final email = prefs.getParentEmail() ?? '';
     final password = prefs.getParentPassword() ?? '';
 
+    debugPrint('📥 Loading available apps for app limits...');
     final result = await _apiService.fetchAppUsage(
       email,
       password,
@@ -101,9 +102,13 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
           .whereType<Map<String, dynamic>>()
           .toList();
 
+      debugPrint('✅ Loaded ${apps.length} apps for Add App Limit');
+
       setState(() {
         _availableApps = apps;
       });
+    } else {
+      debugPrint('❌ Failed to load available apps for limits: ${result['error']}');
     }
   }
 
@@ -214,17 +219,22 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
     }
   }
 
-  void _showAddRestrictionDialog() {
+  Future<void> _showAddRestrictionDialog() async {
     final hoursController = TextEditingController();
 
     if (_availableApps.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No app usage data available yet'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
+      // Try to load the latest app list from the server (apps sent from child device)
+      await _loadAvailableApps();
+
+      if (_availableApps.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No app usage data available yet from the child device'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
     }
 
     String? selectedPackage;
@@ -252,13 +262,40 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
                   labelText: 'Select App',
                   labelStyle: TextStyle(color: Colors.white54),
                 ),
+                isExpanded: true,
                 items: _availableApps.map((app) {
                   final pkg = (app['domain'] ?? app['package'] ?? '').toString();
                   final name = (app['name'] ?? pkg).toString();
+                  final iconUrl = app['icon_url']?.toString();
                   if (pkg.isEmpty) return null;
                   return DropdownMenuItem<String>(
                     value: pkg,
-                    child: Text(name, overflow: TextOverflow.ellipsis),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (iconUrl != null && iconUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              iconUrl,
+                              width: 20,
+                              height: 20,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.apps, size: 18, color: Colors.white);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 }).whereType<DropdownMenuItem<String>>().toList(),
                 onChanged: (value) {
@@ -580,7 +617,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddRestrictionDialog,
+        onPressed: () => _showAddRestrictionDialog(),
         backgroundColor: Colors.orange,
         icon: const Icon(Icons.add),
         label: const Text('Add App Limit'),

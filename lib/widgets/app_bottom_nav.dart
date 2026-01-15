@@ -36,18 +36,18 @@ class AppBottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _buildNavItem(
-            icon: Icons.chat_bubble_outline,
+            assetPath: 'assets/images/message.png',
             index: 0,
             context: context,
           ),
           _buildNavItem(
-            icon: Icons.star_border,
+            assetPath: 'assets/images/alert.png',
             index: 1,
             context: context,
           ),
           _buildCentralButton(context),
           _buildNavItem(
-            icon: Icons.hub_outlined,
+            assetPath: 'assets/images/command_center.png',
             index: 3,
             context: context,
           ),
@@ -62,7 +62,8 @@ class AppBottomNav extends StatelessWidget {
   }
 
   Widget _buildNavItem({
-    required IconData icon,
+    String? assetPath,
+    IconData? icon,
     required int index,
     required BuildContext context,
   }) {
@@ -72,42 +73,36 @@ class AppBottomNav extends StatelessWidget {
       onTap: () => onTap(index),
       child: Container(
         padding: const EdgeInsets.all(12),
-        child: Icon(
-          icon,
-          color: isSelected ? const Color(0xFF1A3C8B) : Colors.white70,
-          size: 28,
-        ),
+        child: assetPath != null
+            ? Image.asset(
+                assetPath,
+                width: 26,
+                height: 26,
+                color: isSelected ? const Color(0xFF1A3C8B) : Colors.white70,
+              )
+            : Icon(
+                icon,
+                color: isSelected ? const Color(0xFF1A3C8B) : Colors.white70,
+                size: 28,
+              ),
       ),
     );
   }
 
   Widget _buildCentralButton(BuildContext context) {
-    final isSelected = currentIndex == 2;
-    
-    return GestureDetector(
-      onTap: () => onTap(2),
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: isSelected
-              ? const LinearGradient(
-                  colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          border: Border.all(
-            color: isSelected ? const Color(0xFF1A3C8B) : Colors.white24,
-            width: 2,
+    // Slightly larger than other icons and gently lifted
+    return Transform.translate(
+      offset: const Offset(0, -6),
+      child: GestureDetector(
+        onTap: () => onTap(2),
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Image.asset(
+            'assets/images/dashboard.png',
+            width: 45,
+            height: 45,
+            color: null,
           ),
-          color: isSelected ? null : const Color(0xFF1A1A1A),
-        ),
-        child: Icon(
-          Icons.apps,
-          color: isSelected ? Colors.white : Colors.white70,
-          size: 28,
         ),
       ),
     );

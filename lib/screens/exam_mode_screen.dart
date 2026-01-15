@@ -21,11 +21,14 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
   bool _savingToggle = false;
   bool _examMode = false;
   List<String> _examModeApps = [];
+  bool _loadingDailyLimit = true;
+  double? _dailyLimitHours;
 
   @override
   void initState() {
     super.initState();
     _loadExamMode();
+    _loadDailyLimit();
   }
 
   Future<void> _loadExamMode() async {
@@ -58,6 +61,44 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _loadDailyLimit() async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final email = prefs.getParentEmail() ?? '';
+    final password = prefs.getParentPassword() ?? '';
+
+    try {
+      final result = await _apiService.fetchDailyLimit(
+        email,
+        password,
+        widget.child.childHash,
+      );
+
+      if (!mounted) return;
+
+      double? fetchedDailyLimitHours;
+      if (result['success'] == true) {
+        final data = result['data'] as Map<String, dynamic>?;
+        if (data != null) {
+          // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
+          final value = data['daily_screen_time_limit'] ?? data['daily_limit_hours'];
+          if (value is num) {
+            fetchedDailyLimitHours = value.toDouble();
+          }
+        }
+      }
+
+      setState(() {
+        _dailyLimitHours = fetchedDailyLimitHours;
+        _loadingDailyLimit = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingDailyLimit = false;
+      });
     }
   }
 
@@ -256,6 +297,147 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
     }
   }
 
+  String _buildDailyLimitSubtitle() {
+    if (_loadingDailyLimit) {
+      return 'Daily Limit : Loading...';
+    }
+    if (_dailyLimitHours != null && _dailyLimitHours! > 0) {
+      final hours = _dailyLimitHours!;
+      final text = hours == hours.roundToDouble()
+          ? hours.toStringAsFixed(0)
+          : hours.toStringAsFixed(1);
+      return 'Daily Limit : $text hr';
+    }
+    return 'Daily Limit : Not set';
+  }
+
+  void _showDailyLimitDialog() {
+    final controller = TextEditingController(
+      text: _dailyLimitHours != null && _dailyLimitHours! > 0
+          ? (_dailyLimitHours! == _dailyLimitHours!.roundToDouble()
+              ? _dailyLimitHours!.toStringAsFixed(0)
+              : _dailyLimitHours!.toStringAsFixed(1))
+          : '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Set Daily Screen Time Limit',
+            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter the total allowed screen time per day for this child (in hours).',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Daily limit (hours)',
+                  labelStyle: const TextStyle(color: Colors.white54),
+                  hintText: 'e.g. 3 or 4.5',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: const Color(0xFF0F0F0F),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Leave empty to remove the daily limit.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+            TextButton(
+              onPressed: () async {
+                final text = controller.text.trim();
+                double? hours;
+                if (text.isNotEmpty) {
+                  hours = double.tryParse(text);
+                  if (hours == null || hours <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter a valid number of hours'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+                }
+
+                Navigator.pop(context);
+
+                final prefs = Provider.of<PreferencesManager>(context, listen: false);
+                final email = prefs.getParentEmail() ?? '';
+                final password = prefs.getParentPassword() ?? '';
+
+                final result = await _apiService.updateDailyLimit(
+                  email,
+                  password,
+                  widget.child.childHash,
+                  hours,
+                );
+
+                if (!mounted) return;
+
+                if (result['success'] == true) {
+                  // Reload from server so we always display the canonical value
+                  await _loadDailyLimit();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        hours == null
+                            ? 'Daily limit removed'
+                            : 'Daily limit set to ${hours == hours.roundToDouble() ? hours.toStringAsFixed(0) : hours.toStringAsFixed(1)} hr',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['error'] ?? 'Failed to update daily limit'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save', style: TextStyle(color: Color(0xFF9C27B0))),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -287,10 +469,8 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
                   // Set Screen Time card
                   _CommandCard(
                     title: 'Set Screen Time',
-                    subtitle: 'Daily Limit : 3 hr',
-                    onTap: () {
-                      // TODO: hook to real screen-time limit screen if available
-                    },
+                    subtitle: _buildDailyLimitSubtitle(),
+                    onTap: _showDailyLimitDialog,
                   ),
                   const SizedBox(height: 16),
 
