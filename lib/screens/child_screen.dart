@@ -416,28 +416,20 @@ class _ChildScreenState extends State<ChildScreen> {
 
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash() ?? '';
-    final email = prefs.getParentEmail() ?? '';
-    final password = prefs.getParentPassword() ?? '';
 
     debugPrint('📋 ========== CHILD_SCREEN LOAD TASKS ==========');
     debugPrint('📋 Child Hash: ${childHash.isEmpty ? "EMPTY" : childHash}');
-    debugPrint('📋 Email: ${email.isEmpty ? "EMPTY" : email}');
-    debugPrint('📋 Password: ${password.isEmpty ? "EMPTY" : "[${password.length} chars]"}');
 
-    if (childHash.isEmpty || email.isEmpty) {
-      debugPrint('📋 ❌ CANNOT LOAD TASKS:');
-      debugPrint('📋    - Child Hash empty: ${childHash.isEmpty}');
-      debugPrint('📋    - Email empty: ${email.isEmpty}');
+    if (childHash.isEmpty) {
+      debugPrint('📋 ❌ CANNOT LOAD TASKS: Child Hash is empty');
       setState(() => _loadingTasks = false);
       return;
     }
 
-    debugPrint('📋 ✅ Credentials OK, calling API...');
+    debugPrint('📋 ✅ Child Hash OK, calling API...');
     final apiService = ApiService();
     final result = await apiService.getMyTasks(
       childHash: childHash,
-      email: email,
-      password: password,
       completed: 'false', // Only get pending tasks
     );
 

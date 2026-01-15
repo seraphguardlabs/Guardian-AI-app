@@ -102,6 +102,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Navigate to profile selection, passing the children list
       if (mounted) {
+        // Close login dialog first
+        Navigator.of(context).pop();
+        
         final children = result['children'] as List<Child>;
         Navigator.pushReplacement(
           context,
@@ -111,9 +114,55 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } else {
-      setState(() {
-        _errorMessage = result['error'];
-      });
+      // Show error dialog popup
+      if (mounted) {
+        // Close login dialog first
+        Navigator.of(context).pop();
+        
+        // Small delay to ensure dialog is closed
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // Show error dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red[400], size: 28),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Login Failed',
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ],
+              ),
+              content: const Text(
+                'Invalid credentials. Please check your email and password.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B4A9F),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'OK',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -140,6 +189,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result['success']) {
       // Show success message and pre-fill login email
       if (mounted) {
+        // Close signup dialog
+        Navigator.of(context).pop();
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Account created successfully! You can now login.'),
@@ -157,9 +209,55 @@ class _LoginScreenState extends State<LoginScreen> {
         _signupPasswordController.clear();
       }
     } else {
-      setState(() {
-        _errorMessage = result['error'];
-      });
+      // Show error dialog popup
+      if (mounted) {
+        // Close signup dialog first
+        Navigator.of(context).pop();
+        
+        // Small delay to ensure dialog is closed
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // Show error dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red[400], size: 28),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Signup Failed',
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ],
+              ),
+              content: const Text(
+                'Failed to create account. Please try again.',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B4A9F),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'OK',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -260,16 +358,17 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showLoginDialog() {
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -343,12 +442,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
                         color: Colors.white60,
                       ),
                       onPressed: () {
-                        setState(() {
+                        setDialogState(() {
                           _obscurePassword = !_obscurePassword;
                         });
                       },
@@ -377,9 +476,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _handleLogin();
+                  onPressed: _isLoading ? null : () async {
+                    if (_formKey.currentState!.validate()) {
+                      await _handleLogin();
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1A3C8B),
@@ -389,14 +489,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    'Login',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Login',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -410,6 +519,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -425,13 +535,14 @@ class _LoginScreenState extends State<LoginScreen> {
       builder: (context) {
         final maxHeight = MediaQuery.of(context).size.height * 0.9;
 
-        return Dialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: ConstrainedBox(
+        return StatefulBuilder(
+          builder: (context, setDialogState) => Dialog(
+            backgroundColor: const Color(0xFF1A1A1A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: maxHeight,
               minWidth: 320,
@@ -544,11 +655,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           prefixIcon: const Icon(Icons.lock, color: Colors.white54),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureSignupPassword ? Icons.visibility_off : Icons.visibility,
+                              _obscureSignupPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                               color: Colors.white54,
                             ),
                             onPressed: () {
-                              setState(() {
+                              setDialogState(() {
                                 _obscureSignupPassword = !_obscureSignupPassword;
                               });
                             },
@@ -580,9 +691,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _handleSignup();
+                        onPressed: _isLoading ? null : () async {
+                          if (_signupFormKey.currentState!.validate()) {
+                            await _handleSignup();
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1A3C8B),
@@ -624,7 +736,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        );
+        ),
+      );
       },
     );
   }
