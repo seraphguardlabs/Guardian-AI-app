@@ -786,50 +786,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ),
             const SizedBox(height: 16),
             _buildDrawerMenuItem(
-              icon: Icons.assignment_outlined,
-              label: 'Assign Task',
-              onTap: () {
-                Navigator.pop(context);
-                if (_selectedChild != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AssignTaskScreen(child: _selectedChild!),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please select a child first'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-            ),
-            _buildDrawerMenuItem(
-              icon: Icons.block,
-              label: 'Block Sites and Apps',
-              onTap: () {
-                Navigator.pop(context);
-                if (_selectedChild != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => BlockSitesAppsScreen(child: _selectedChild!),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please select a child first'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-            ),
-            _buildDrawerMenuItem(
               icon: Icons.insights_outlined,
               label: 'Growth Trends',
               onTap: () {

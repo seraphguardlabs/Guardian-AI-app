@@ -230,7 +230,7 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                             child: ListTile(
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
-                                vertical: 16,
+                                vertical: 8,
                               ),
                               leading: Container(
                                 width: 48,

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/child.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
+import 'assign_task_screen.dart';
+import 'block_sites_apps_screen.dart';
 
 class ExamModeScreen extends StatefulWidget {
   final Child child;
@@ -474,14 +476,55 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // App Permission card
+                  // Assign Task card
+                  _CommandCard(
+                    title: 'Assign Task',
+                    subtitle: 'Create tasks for ${widget.child.firstName}',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AssignTaskScreen(child: widget.child),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Block Sites & Apps card
+                  _CommandCard(
+                    title: 'Block Sites & Apps',
+                    subtitle: 'Manage app time limits',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BlockSitesAppsScreen(child: widget.child),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Exam Mode section header
+                  const Text(
+                    'Exam Mode',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // App Control card
                   _AppPermissionCard(
                     appNames: _examModeApps.map(_getAppNameFromPackage).toList(),
                     onEdit: _showAddAppDialog,
                   ),
                   const SizedBox(height: 16),
 
-                  // Exam Mode card (no sleep mode)
+                  // Exam Mode card
                   _ExamModeCard(
                     enabled: _examMode,
                     saving: _savingToggle,
@@ -584,7 +627,7 @@ class _AppPermissionCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'App Permission',
+                'App Control',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -599,7 +642,7 @@ class _AppPermissionCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'No. of daily app permission : $count Apps',
+            'No. of daily app control : $count Apps',
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 13,
