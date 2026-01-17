@@ -200,7 +200,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.orange,
+                  color: Color(0xFF1A3C8B),
                 ),
               ),
             ),
@@ -210,23 +210,34 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         children: [
           // Stats banner
           Container(
-            color: const Color(0xFF1A1A1A),
+            width: double.infinity,
             padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
             child: Row(
               children: [
-                _buildStatItem('Total', _totalTasks, Colors.blue),
+                _buildStatItem('Total', _totalTasks, Colors.white),
                 const SizedBox(width: 20),
-                _buildStatItem('Pending', _pendingTasks, Colors.orange),
+                _buildStatItem('Pending', _pendingTasks, Colors.orangeAccent),
                 const SizedBox(width: 20),
-                _buildStatItem('Done', _completedTasks, Colors.green),
+                _buildStatItem('Done', _completedTasks, Colors.greenAccent),
               ],
             ),
           ),
 
           // Filter tabs
           Container(
-            color: const Color(0xFF1A1A1A),
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            color: Colors.transparent,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Row(
               children: [
                 _buildFilterChip('All', 'all'),
@@ -237,12 +248,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               ],
             ),
           ),
-          
           // Task list
           Expanded(
             child: _loading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.orange),
+                    child: CircularProgressIndicator(color: Color(0xFF1A3C8B)),
                   )
                 : _tasks.isEmpty
                     ? Center(
@@ -252,7 +262,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                             Icon(
                               Icons.task_outlined,
                               size: 64,
-                              color: Colors.white.withOpacity(0.3),
+                              color: Colors.white.withOpacity(0.18),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -271,7 +281,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                               Text(
                                 'Great job! All tasks completed! 🎉',
                                 style: TextStyle(
-                                  color: Colors.green.withOpacity(0.7),
+                                  color: Colors.greenAccent.withOpacity(0.7),
                                   fontSize: 14,
                                 ),
                               ),
@@ -297,9 +307,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           children: [
@@ -309,14 +318,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 color: color,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: color.withOpacity(0.8),
+                color: color.withOpacity(0.85),
                 fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -332,13 +343,15 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         setState(() => _filter = value);
         _loadTasks();
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF5B4A9F) : Colors.transparent,
+          color: isSelected ? const Color(0xFF1A3C8B) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? const Color(0xFF5B4A9F) : Colors.white30,
+            color: isSelected ? const Color(0xFF1A3C8B) : Colors.white24,
+            width: 1.5,
           ),
         ),
         child: Text(
@@ -346,6 +359,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           style: TextStyle(
             color: isSelected ? Colors.white : Colors.white70,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            letterSpacing: -0.2,
           ),
         ),
       ),
@@ -356,15 +370,33 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     return GestureDetector(
       onTap: () => _toggleTaskStatus(task),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(16),
+          gradient: task.isCompleted
+              ? const LinearGradient(
+                  colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : const LinearGradient(
+                  colors: [Color(0xFF23243A), Color(0xFF1A1A1A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
           border: Border.all(
             color: task.isCompleted
-                ? Colors.green.withOpacity(0.3)
+                ? Colors.greenAccent.withOpacity(0.3)
                 : Colors.white10,
+            width: 1.2,
           ),
         ),
         child: Column(
@@ -375,7 +407,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 Icon(
                   task.isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
                   color: task.isCompleted
-                      ? Colors.green
+                      ? Colors.greenAccent
                       : Colors.white54,
                   size: 28,
                 ),
@@ -391,6 +423,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                          letterSpacing: -0.2,
                         ),
                       ),
                       if (task.assignedBy != null) ...[
@@ -429,13 +462,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                         const Icon(
                           Icons.check,
                           size: 14,
-                          color: Colors.green,
+                          color: Colors.greenAccent,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Completed: ${DateFormat('MMM d, h:mm a').format(task.completedAt!)}',
                           style: const TextStyle(
-                            color: Colors.green,
+                            color: Colors.greenAccent,
                             fontSize: 12,
                           ),
                         ),

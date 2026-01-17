@@ -743,9 +743,8 @@ class _ChildScreenState extends State<ChildScreen> {
   }
 
   String _calculateScreenTimePercentage() {
-    // Parse the screen time (e.g., "2h 15m" or "45m")
-    final timeStr = _screenTime;
-    // Use server-provided daily limit if available; otherwise default to 8 hours
+    // Use _totalUsageTime (e.g., "2h 15m" or "45m") for actual usage
+    final timeStr = _totalUsageTime;
     final dailyLimitHours = _dailyLimitHours ?? 8.0;
 
     try {
@@ -1309,14 +1308,14 @@ class _ChildScreenState extends State<ChildScreen> {
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF5B4A9F), Color(0xFF3E2E6F)],
+                              colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)], // Use app's primary gradient
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF5B4A9F).withOpacity(0.3),
+                                color: const Color(0xFF1A3C8B).withOpacity(0.18),
                                 blurRadius: 15,
                                 offset: const Offset(0, 8),
                               ),
@@ -1330,7 +1329,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white.withOpacity(0.13),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Icon(
@@ -1347,13 +1346,14 @@ class _ChildScreenState extends State<ChildScreen> {
                                         color: Colors.white,
                                         fontSize: 18,
                                         fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.5,
                                       ),
                                     ),
                                   ),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white.withOpacity(0.13),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
@@ -1390,6 +1390,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 14,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
