@@ -430,9 +430,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final childName = prefsManager.getChildName() ?? 'Child';
     
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF1A1A1A).withOpacity(0.8),
         elevation: 0,
         leading: Builder(
           builder: (context) => IconButton(
@@ -579,12 +580,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
-          : RefreshIndicator(
-              color: const Color(0xFF5B4A9F),
-              onRefresh: _refreshData,
-              child: SingleChildScrollView(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/mountain.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
+            : RefreshIndicator(
+                color: const Color(0xFF5B4A9F),
+                onRefresh: _refreshData,
+                child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -1327,6 +1335,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showRequestTimeDialog(context),
         backgroundColor: const Color(0xFF5B4A9F),

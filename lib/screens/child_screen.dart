@@ -853,15 +853,15 @@ class _ChildScreenState extends State<ChildScreen> {
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF5B4A9F).withOpacity(0.3),
-                    const Color(0xFF4A3280).withOpacity(0.3),
+                    const Color(0xFF317AF7).withOpacity(0.3),
+                    const Color(0xFF15335C).withOpacity(0.3),
                   ],
                 ),
               ),
               child: const Icon(
                 Icons.rocket_launch_outlined,
                 size: 50,
-                color: Color(0xFF5B4A9F),
+                color: Color(0xFF317AF7),
               ),
             ),
             const SizedBox(height: 24),
@@ -877,7 +877,7 @@ class _ChildScreenState extends State<ChildScreen> {
             const Text(
               'Coming Soon',
               style: TextStyle(
-                color: Color(0xFF5B4A9F),
+                color: Color(0xFF317AF7),
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -899,7 +899,7 @@ class _ChildScreenState extends State<ChildScreen> {
             child: const Text(
               'OK',
               style: TextStyle(
-                color: Color(0xFF5B4A9F),
+                color: Color(0xFF317AF7),
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -919,7 +919,8 @@ class _ChildScreenState extends State<ChildScreen> {
     final childName = prefsManager.getChildName() ?? 'Child';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -1119,7 +1120,7 @@ class _ChildScreenState extends State<ChildScreen> {
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5B4A9F),
+                          backgroundColor: const Color(0xFF317AF7),
                         ),
                         child: const Text('Logout', style: TextStyle(color: Colors.white)),
                       ),
@@ -1139,15 +1140,22 @@ class _ChildScreenState extends State<ChildScreen> {
           ],
         ),
       ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
-          : RefreshIndicator(
-              color: const Color(0xFF5B4A9F),
-              onRefresh: _refreshData,
-              child: SingleChildScrollView(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/mountain.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFF317AF7)))
+            : RefreshIndicator(
+                color: const Color(0xFF317AF7),
+                onRefresh: _refreshData,
+                child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 110, 16, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1155,14 +1163,14 @@ class _ChildScreenState extends State<ChildScreen> {
                     Container(
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF15335C), Color(0xFF081526)],
+                          colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF081526).withOpacity(0.45),
+                            color: const Color(0xFF0D1F4A).withOpacity(0.45),
                             blurRadius: 25,
                             offset: const Offset(0, 16),
                           ),
@@ -1281,7 +1289,7 @@ class _ChildScreenState extends State<ChildScreen> {
                         child: const Row(
                           children: [
                             CircularProgressIndicator(
-                              color: Color(0xFF5B4A9F),
+                              color: Color(0xFF317AF7),
                               strokeWidth: 2,
                             ),
                             SizedBox(width: 16),
@@ -1308,14 +1316,14 @@ class _ChildScreenState extends State<ChildScreen> {
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)], // Use app's primary gradient
+                              colors: [Color(0xFF15335C), Color(0xFF081526)], // Use app's primary gradient
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF1A3C8B).withOpacity(0.18),
+                                color: const Color(0xFF15335C).withOpacity(0.18),
                                 blurRadius: 15,
                                 offset: const Offset(0, 8),
                               ),
@@ -1455,7 +1463,7 @@ class _ChildScreenState extends State<ChildScreen> {
                     if (_browserUsageStats.isNotEmpty) ...[
                       Row(
                         children: [
-                          const Icon(Icons.language_rounded, size: 20, color: Color(0xFF9C27B0)),
+                          const Icon(Icons.language_rounded, size: 20, color: Color(0xFF317AF7)),
                           const SizedBox(width: 8),
                           const Text(
                             'Browser Activity',
@@ -1472,7 +1480,7 @@ class _ChildScreenState extends State<ChildScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF5B4A9F),
+                              color: const Color(0xFF317AF7),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -1530,7 +1538,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                             )
                                           : const Icon(
                                               Icons.language_rounded,
-                                              color: Color(0xFF9C27B0),
+                                              color: Color(0xFF317AF7),
                                             ),
                                     ),
                                   ),
@@ -1553,7 +1561,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF5B4A9F),
+                                      color: const Color(0xFF317AF7),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
@@ -1576,7 +1584,7 @@ class _ChildScreenState extends State<ChildScreen> {
                     // Browser History Section
                     Row(
                       children: [
-                        const Icon(Icons.history_rounded, size: 20, color: Color(0xFF9C27B0)),
+                        const Icon(Icons.history_rounded, size: 20, color: Color(0xFF317AF7)),
                         const SizedBox(width: 8),
                         const Text(
                           'Browsing History',
@@ -1617,7 +1625,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                       const Icon(
                                         Icons.info_outline_rounded,
                                         size: 48,
-                                        color: Color(0xFF9C27B0),
+                                        color: Color(0xFF317AF7),
                                       ),
                                       const SizedBox(height: 16),
                                       const Text(
@@ -1647,7 +1655,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                           }
                                         },
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF5B4A9F),
+                                          backgroundColor: const Color(0xFF317AF7),
                                           foregroundColor: Colors.white,
                                         ),
                                         icon: const Icon(Icons.settings, size: 18),
@@ -1683,8 +1691,8 @@ class _ChildScreenState extends State<ChildScreen> {
                                         height: 40,
                                         decoration: BoxDecoration(
                                           color: isErrorMessage 
-                                              ? const Color(0xFF5B4A9F).withOpacity(0.3)
-                                              : const Color(0xFF5B4A9F),
+                                              ? const Color(0xFF317AF7).withOpacity(0.3)
+                                              : const Color(0xFF317AF7),
                                           borderRadius: BorderRadius.circular(10),
                                         ),
                                         child: Icon(
@@ -1711,7 +1719,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                             style: TextStyle(
                                               color: isErrorMessage 
                                                   ? Colors.white 
-                                                  : const Color(0xFF9C27B0),
+                                                  : const Color(0xFF317AF7),
                                               fontSize: 12,
                                             ),
                                             maxLines: 3,
@@ -1737,7 +1745,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                                 }
                                               },
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: const Color(0xFF5B4A9F),
+                                                backgroundColor: const Color(0xFF317AF7),
                                                 foregroundColor: Colors.white,
                                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                                 minimumSize: const Size(0, 32),
@@ -1862,7 +1870,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
                                       color: isExceeded 
-                                          ? const Color(0xFF5B4A9F).withOpacity(0.15)
+                                          ? const Color(0xFF317AF7).withOpacity(0.15)
                                           : const Color(0xFF0F0F0F),
                                       borderRadius: BorderRadius.circular(12),
                                       border: isExceeded
@@ -1892,7 +1900,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                                       )
                                                     : const Icon(
                                                         Icons.android,
-                                                        color: Color(0xFF9C27B0),
+                                                        color: Color(0xFF317AF7),
                                                         size: 24,
                                                       ),
                                               ),
@@ -2002,7 +2010,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                                               ? [Colors.orange, Colors.deepOrange]
                                                               : isExceeded
                                                                   ? [Colors.redAccent, Colors.red]
-                                                                  : [const Color(0xFF00B4D8), const Color(0xFF0096C7)],
+                                                                  : [const Color(0xFF48B3FF), const Color(0xFF3E6BFF)],
                                                         ),
                                                         borderRadius: BorderRadius.circular(3),
                                                       ),
@@ -2055,6 +2063,7 @@ class _ChildScreenState extends State<ChildScreen> {
                 ),
               ),
             ),
+          ),
     );
   }
   
@@ -2073,7 +2082,7 @@ class _ChildScreenState extends State<ChildScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                  colors: [Color(0xFF317AF7), Color(0xFF15335C)],
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -2105,7 +2114,7 @@ class _ChildScreenState extends State<ChildScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.apps, color: Color(0xFF9C27B0), size: 20),
+                      const Icon(Icons.apps, color: Color(0xFF317AF7), size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -2252,7 +2261,7 @@ class _ChildScreenState extends State<ChildScreen> {
                         Text('Encrypting and sending request...'),
                       ],
                     ),
-                    backgroundColor: Color(0xFF5B4A9F),
+                    backgroundColor: Color(0xFF317AF7),
                     duration: Duration(seconds: 2),
                   ),
                 );
@@ -2292,7 +2301,7 @@ class _ChildScreenState extends State<ChildScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF5B4A9F),
+              backgroundColor: const Color(0xFF317AF7),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -2311,7 +2320,7 @@ class _ChildScreenState extends State<ChildScreen> {
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
     return Column(
       children: [
-        Icon(icon, color: const Color(0xFF9C27B0), size: 28),
+        Icon(icon, color: const Color(0xFF317AF7), size: 28),
         const SizedBox(height: 8),
         Text(
           value,

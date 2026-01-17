@@ -665,7 +665,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -836,9 +837,16 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ],
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/mountain.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header with child name and location status
@@ -863,28 +871,69 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         ),
                       ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF101722),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
+                    Flexible(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Location indicator
                           Container(
-                            width: 28,
-                            height: 28,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                             decoration: BoxDecoration(
-                              color: (_metrics?['metrics']?['latest_location'] != null)
-                                  ? const Color(0xFF317AF7)
-                                  : Colors.red,
-                              shape: BoxShape.circle,
+                              color: const Color(0xFF101722),
+                              borderRadius: BorderRadius.circular(24),
                             ),
-                            child: const Icon(
-                              Icons.location_on,
-                              size: 16,
-                              color: Colors.white,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: (_metrics?['metrics']?['latest_location'] != null)
+                                        ? const Color(0xFF317AF7)
+                                        : Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Safe Today indicator
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF101722),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.asset(
+                                'assets/images/safe_today_icon.png',
+                                width: 24,
+                                height: 24,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF22C55E),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ],
@@ -929,6 +978,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ],
           ),
         ),
+      ),
       ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 2,
@@ -1231,7 +1281,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final topApps = apps.take(3).toList();
 
     return _buildMetricsBaseCard(
-      gradientColors: const [Color(0xFF3B1C73), Color(0xFF5E2BB4)],
+      gradientColors: const [Color(0xFF2E1065), Color(0xFF4C1D95)],
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1738,128 +1788,131 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF15335C), Color(0xFF081526)],
+          colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF081526).withOpacity(0.45),
+            color: const Color(0xFF0D1F4A).withOpacity(0.45),
             blurRadius: 25,
             offset: const Offset(0, 16),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          // Card content
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Screen time asset icon
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Image.asset(
-                          'assets/images/screen_time_icon.png',
-                          fit: BoxFit.contain,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            // Decorative circle - top right
+            Positioned(
+              top: -40,
+              right: -40,
+              child: Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            // Decorative circle - bottom left
+            Positioned(
+              bottom: -70,
+              left: -70,
+              child: Container(
+                width: 190,
+                height: 190,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            // Card content
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Screen time icon
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                      ),
-                    ),
-                    const Spacer(),
-                    // Time display with limit and progress bar
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: dailyFormatted,
-                                style: const TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: -0.5,
-                                ),
-                              ),
-                              TextSpan(
-                                text: '/${effectiveDailyLimitHours % 1 == 0 ? effectiveDailyLimitHours.toInt().toString() : effectiveDailyLimitHours.toStringAsFixed(1)}h',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white70,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                            ],
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/images/screen_time_icon.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 140,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.white.withOpacity(0.18),
-                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                              minHeight: 4,
+                      ),
+                      const Spacer(),
+                      // Time display with limit
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: dailyFormatted,
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '/${effectiveDailyLimitHours % 1 == 0 ? effectiveDailyLimitHours.toInt().toString() : effectiveDailyLimitHours.toStringAsFixed(1)}h',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.white.withOpacity(0.5),
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                const Text(
-                  'Screen Time',
-                  style: TextStyle(
-                    fontSize: 22,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '$percentOfLimit%',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const TextSpan(
-                        text: ' of daily limit',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w400,
-                        ),
+                        ],
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 32),
+                  const Text(
+                    'Screen Time',
+                    style: TextStyle(
+                      fontSize: 22,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$percentOfLimit% of daily limit',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.7),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
