@@ -97,6 +97,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Future<void> _loadChildren() async {
+    debugPrint('🔄 Parent Dashboard: Loading children...');
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final email = prefs.getParentEmail() ?? '';
     final password = prefs.getParentPassword() ?? '';
@@ -107,6 +108,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     });
 
     final result = await _apiService.fetchChildren(email, password);
+    debugPrint('📥 Parent Dashboard: Fetch children result: ${result['success']}');
 
     if (result['success'] == true) {
       setState(() {
@@ -116,11 +118,16 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         }
         _isLoading = false;
       });
+      debugPrint('✅ Parent Dashboard: Loaded ${_children.length} children');
+      for (var child in _children) {
+        debugPrint('   - ${child.firstName} ${child.lastName}');
+      }
       if (_selectedChild != null) {
         _loadChildData(_selectedChild!.childHash);
         _loadExamMode(_selectedChild!.childHash);
       }
     } else {
+      debugPrint('❌ Parent Dashboard: Failed to load children: ${result['error']}');
       setState(() {
         _errorMessage = result['error'] ?? 'Failed to load children';
         _isLoading = false;
@@ -274,6 +281,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   void _showAddChildDialog() {
+    debugPrint('📝 Parent Dashboard: Showing Add Child dialog');
     final firstNameController = TextEditingController();
     final lastNameController = TextEditingController();
     final dateOfBirthController = TextEditingController();
@@ -281,7 +289,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         backgroundColor: const Color(0xFF1A1A1A),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -324,7 +332,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
                     ),
                   ),
                   validator: (value) {
@@ -355,7 +363,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
                     ),
                   ),
                   validator: (value) {
@@ -387,12 +395,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
                     ),
                   ),
                   onTap: () async {
+                    debugPrint('📅 Parent Dashboard: Date picker tapped');
                     final DateTime? picked = await showDatePicker(
-                      context: context,
+                      context: dialogContext,
                       initialDate: DateTime.now().subtract(const Duration(days: 365 * 10)),
                       firstDate: DateTime(2000),
                       lastDate: DateTime.now(),
@@ -400,7 +409,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         return Theme(
                           data: ThemeData.dark().copyWith(
                             colorScheme: const ColorScheme.dark(
-                              primary: Color(0xFF5B4A9F),
+                              primary: Color(0xFF2B4C8F),
                               onPrimary: Colors.white,
                               surface: Color(0xFF1A1A1A),
                               onSurface: Colors.white,
@@ -412,6 +421,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     );
                     if (picked != null) {
                       dateOfBirthController.text = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                      debugPrint('📅 Parent Dashboard: Date selected: ${dateOfBirthController.text}');
                     }
                   },
                   validator: (value) {
@@ -424,8 +434,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 const SizedBox(height: 24),
                 ElevatedButton(
                   onPressed: () async {
+                    debugPrint('👆 Parent Dashboard: Add Child button pressed');
                     if (formKey.currentState!.validate()) {
-                      Navigator.pop(context);
+                      debugPrint('✅ Parent Dashboard: Form validated');
+                      Navigator.pop(dialogContext);
                       
                       // Show loading
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -444,14 +456,21 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                               Text('Adding child...'),
                             ],
                           ),
-                          backgroundColor: Color(0xFF5B4A9F),
+                          backgroundColor: Color(0xFF2B4C8F),
+                          duration: Duration(seconds: 10),
                         ),
                       );
 
                       // Get credentials from preferences
-                      final prefs = context.read<PreferencesManager>();
+                      final prefs = Provider.of<PreferencesManager>(context, listen: false);
                       final email = prefs.getParentEmail() ?? '';
                       final password = prefs.getParentPassword() ?? '';
+                      
+                      debugPrint('📤 Parent Dashboard: Adding child with credentials:');
+                      debugPrint('   Email: $email');
+                      debugPrint('   First Name: ${firstNameController.text.trim()}');
+                      debugPrint('   Last Name: ${lastNameController.text.trim()}');
+                      debugPrint('   DOB: ${dateOfBirthController.text.trim()}');
 
                       // Call API
                       final result = await _apiService.addChild(
@@ -462,17 +481,43 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         dateOfBirthController.text.trim(),
                       );
 
-                      if (result['success'] && mounted) {
+                      debugPrint('📥 Parent Dashboard: Add child API result: $result');
+                      
+                      // Hide loading snackbar
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      }
+
+                      if (result['success'] == true && mounted) {
+                        debugPrint('✅ Parent Dashboard: Child added successfully!');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(result['message'] ?? 'Child added successfully!'),
                             backgroundColor: Colors.green,
                           ),
                         );
-                        
-                        // Reload children list
-                        _loadChildren();
+                        // Only reload the children list, not all dashboard data
+                        debugPrint('🔄 Parent Dashboard: Fetching updated children list...');
+                        final prefs = Provider.of<PreferencesManager>(context, listen: false);
+                        final email = prefs.getParentEmail() ?? '';
+                        final password = prefs.getParentPassword() ?? '';
+                        final childrenResult = await _apiService.fetchChildren(email, password);
+                        if (childrenResult['success'] == true && mounted) {
+                          setState(() {
+                            _children = childrenResult['children'] as List<Child>;
+                            if (_children.isNotEmpty) {
+                              _selectedChild = _children[0];
+                            }
+                          });
+                          debugPrint('✅ Parent Dashboard: Children list updated, total: ${_children.length}');
+                          for (var child in _children) {
+                            debugPrint('   - ${child.firstName} ${child.lastName} (${child.childHash})');
+                          }
+                        } else {
+                          debugPrint('❌ Parent Dashboard: Failed to update children list: \\${childrenResult['error']}');
+                        }
                       } else if (mounted) {
+                        debugPrint('❌ Parent Dashboard: Failed to add child: ${result['error']}');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(result['error'] ?? 'Failed to add child'),
@@ -480,10 +525,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                           ),
                         );
                       }
+                    } else {
+                      debugPrint('❌ Parent Dashboard: Form validation failed');
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5B4A9F),
+                    backgroundColor: const Color(0xFF2B4C8F),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -501,7 +548,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    debugPrint('👆 Parent Dashboard: Cancel button pressed');
+                    Navigator.pop(dialogContext);
+                  },
                   child: const Text(
                     'Cancel',
                     style: TextStyle(color: Colors.white54),

@@ -270,165 +270,152 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
           'Daily Limit: ${_formatHours((_dailyLimitHours ?? _fallbackDailyLimitHours))} hr',
           style: const TextStyle(
             color: Colors.white60,
-            fontSize: 14,
+            fontSize: 13,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
 
-        // Today's usage
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Today',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
+        // Today's usage section with time display
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Today',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 8),
-              Text(
-                _formatDuration(_todayUsage),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Stack(
+            ),
+            RichText(
+              text: TextSpan(
                 children: [
-                  Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(4),
+                  TextSpan(
+                    text: _formatDuration(_todayUsage),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  FractionallySizedBox(
-                    widthFactor: (() {
-                      final limit = _dailyLimitHours ?? _fallbackDailyLimitHours;
-                      if (limit <= 0) return 0.0;
-                      return (_todayUsage / limit).clamp(0.0, 1.0);
-                    })(),
-                    child: Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2196F3), Color(0xFF1976D2)],
-                        ),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                  TextSpan(
+                    text: '/${_formatHours((_dailyLimitHours ?? _fallbackDailyLimitHours))}h',
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 16,
+                      fontWeight: FontWeight.normal,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  if (_hasWeekData(_currentWeekData))
-                    _buildLegendItem(const Color(0xFF2196F3), 'This Week'),
-                  if (_hasWeekData(_previousWeekData))
-                    _buildLegendItem(const Color(0xFF64B5F6), 'Last Week'),
-                  if (_hasWeekData(_twoWeeksAgoData))
-                    _buildLegendItem(const Color(0xFF90CAF9), '2 Weeks Ago'),
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
+        // Progress bar
+        Stack(
+          children: [
+            Container(
+              height: 6,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            FractionallySizedBox(
+              widthFactor: (() {
+                final limit = _dailyLimitHours ?? _fallbackDailyLimitHours;
+                if (limit <= 0) return 0.0;
+                return (_todayUsage / limit).clamp(0.0, 1.0);
+              })(),
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2196F3), Color(0xFF1565C0)],
+                  ),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Legend - Today and Previous Day
+        Row(
+          children: [
+            _buildLegendItem(const Color(0xFF1565C0), 'This Week'),
+            const SizedBox(width: 16),
+            _buildLegendItem(const Color(0xFF4DD0E1), 'Previous Week'),
+          ],
+        ),
+        const SizedBox(height: 10),
 
         // Chart
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(16),
-          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: SizedBox(
-            height: 250,
+            height: 120,
             child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: 1,
-                  getDrawingHorizontalLine: (value) {
-                    return const FlLine(
-                      color: Colors.white10,
-                      strokeWidth: 1,
-                    );
-                  },
+            LineChartData(
+              gridData: const FlGridData(
+                show: false,
+              ),
+              titlesData: FlTitlesData(
+                leftTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
                 ),
-                titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 1,
+                    reservedSize: 30,
+                    getTitlesWidget: (value, meta) {
+                      const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+                      if (value.toInt() >= 0 && value.toInt() < 7) {
                         return Padding(
-                          padding: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.only(top: 12),
                           child: Text(
-                            '${value.toInt()}h',
+                            days[value.toInt()],
                             style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 11,
+                              color: Colors.white54,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         );
-                      },
-                    ),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
-                        const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-                        if (value.toInt() >= 0 && value.toInt() < 7) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              days[value.toInt()],
-                              style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
-                            ),
-                          );
-                        }
-                        return const Text('');
-                      },
-                    ),
+                      }
+                      return const Text('');
+                    },
                   ),
                 ),
-                borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: 6,
-                minY: 0,
-                maxY: _calculateMaxY(),
-                lineTouchData: LineTouchData(
-                  enabled: true,
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: const Color(0xFF5B4A9F),
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
+              ),
+              borderData: FlBorderData(show: false),
+              minX: 0,
+              maxX: 6,
+              minY: 0,
+              maxY: _calculateMaxY(),
+              lineTouchData: LineTouchData(
+                enabled: true,
+                touchTooltipData: LineTouchTooltipData(
+                  tooltipBgColor: const Color(0xFF1A3C8F),
+                  tooltipRoundedRadius: 8,
+                  tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  getTooltipItems: (touchedSpots) {
+                    // Only show tooltip for the first (Today) line
+                    if (touchedSpots.isEmpty) return [];
+                    final todaySpot = touchedSpots.firstWhere(
+                      (s) => s.barIndex == (touchedSpots.length > 1 ? 1 : 0),
+                      orElse: () => touchedSpots.first,
+                    );
+                    return touchedSpots.map((spot) {
+                      if (spot == todaySpot) {
                         return LineTooltipItem(
                           _formatDuration(spot.y),
                           const TextStyle(
@@ -437,111 +424,107 @@ class _WeeklyActivityChartState extends State<WeeklyActivityChart> {
                             fontSize: 14,
                           ),
                         );
-                      }).toList();
-                    },
-                  ),
-                  handleBuiltInTouches: true,
+                      }
+                      return null;
+                    }).toList();
+                  },
                 ),
-                lineBarsData: [
-                  if (_hasWeekData(_twoWeeksAgoData))
-                    LineChartBarData(
-                      spots: _getWeekSpots(_twoWeeksAgoData, twoWeeksAgoStart),
-                      isCurved: true,
-                      color: const Color(0xFF90CAF9),
-                      barWidth: 3,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(show: false),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                  if (_hasWeekData(_previousWeekData))
-                    LineChartBarData(
-                      spots: _getWeekSpots(_previousWeekData, previousWeekStart),
-                      isCurved: true,
-                      color: const Color(0xFF64B5F6),
-                      barWidth: 3,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(show: false),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                  if (_hasWeekData(_currentWeekData))
-                    LineChartBarData(
-                      spots: _getWeekSpots(_currentWeekData, currentWeekStart),
-                      isCurved: true,
-                      color: const Color(0xFF2196F3),
-                      barWidth: 4,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(
+                handleBuiltInTouches: true,
+                getTouchedSpotIndicator: (barData, spotIndexes) {
+                  return spotIndexes.map((spotIndex) {
+                    return TouchedSpotIndicatorData(
+                      const FlLine(color: Colors.transparent),
+                      FlDotData(
                         show: true,
-                        getDotPainter: (spot, percent, barData, index) {
-                          if (index == now.weekday - 1) {
-                            return FlDotCirclePainter(
-                              radius: 6,
-                              color: Colors.white,
-                              strokeWidth: 2,
-                              strokeColor: const Color(0xFF2196F3),
-                            );
-                          }
+                        getDotPainter: (spot, percent, bar, index) {
                           return FlDotCirclePainter(
-                            radius: 0,
-                            color: Colors.transparent,
+                            radius: 6,
+                            color: const Color(0xFF1A3C8F),
+                            strokeWidth: 3,
+                            strokeColor: Colors.white,
                           );
                         },
                       ),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                ],
+                    );
+                  }).toList();
+                },
               ),
+              lineBarsData: [
+                // Previous Day line (lighter cyan)
+                if (_hasWeekData(_previousWeekData))
+                  LineChartBarData(
+                    spots: _getWeekSpots(_previousWeekData, previousWeekStart),
+                    isCurved: true,
+                    curveSmoothness: 0.35,
+                    color: const Color(0xFF4DD0E1),
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                // Today line (darker blue)
+                if (_hasWeekData(_currentWeekData))
+                  LineChartBarData(
+                    spots: _getWeekSpots(_currentWeekData, currentWeekStart),
+                    isCurved: true,
+                    curveSmoothness: 0.35,
+                    color: const Color(0xFF1565C0),
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) {
+                        // Show dot only for today
+                        if (index == now.weekday - 1) {
+                          return FlDotCirclePainter(
+                            radius: 5,
+                            color: const Color(0xFF1565C0),
+                            strokeWidth: 2,
+                            strokeColor: Colors.white,
+                          );
+                        }
+                        return FlDotCirclePainter(
+                          radius: 0,
+                          color: Colors.transparent,
+                        );
+                      },
+                    ),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 24),
-
-        // Weekly summary
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Weekly Summary',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_hasWeekData(_currentWeekData)) ...[
-                _buildStatRow(
-                  'This Week',
-                  _formatDuration(_calculateWeekTotal(_currentWeekData)),
-                  const Color(0xFF2196F3),
-                ),
-                if (_hasWeekData(_previousWeekData) || _hasWeekData(_twoWeeksAgoData))
-                  const Divider(color: Colors.white24, height: 24),
-              ],
-              if (_hasWeekData(_previousWeekData)) ...[
-                _buildStatRow(
-                  'Last Week',
-                  _formatDuration(_calculateWeekTotal(_previousWeekData)),
-                  const Color(0xFF64B5F6),
-                ),
-                if (_hasWeekData(_twoWeeksAgoData))
-                  const Divider(color: Colors.white24, height: 24),
-              ],
-              if (_hasWeekData(_twoWeeksAgoData))
-                _buildStatRow(
-                  'Two Weeks Ago',
-                  _formatDuration(_calculateWeekTotal(_twoWeeksAgoData)),
-                  const Color(0xFF90CAF9),
-                ),
-            ],
-          ),
         ),
+        const SizedBox(height: 16),
+
+        // Weekly summary - simplified
+        if (_hasWeekData(_currentWeekData) || _hasWeekData(_previousWeekData))
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                if (_hasWeekData(_currentWeekData))
+                  _buildStatRow(
+                    'This Week Total',
+                    _formatDuration(_calculateWeekTotal(_currentWeekData)),
+                    const Color(0xFF1565C0),
+                  ),
+                if (_hasWeekData(_currentWeekData) && _hasWeekData(_previousWeekData))
+                  const SizedBox(height: 12),
+                if (_hasWeekData(_previousWeekData))
+                  _buildStatRow(
+                    'Last Week Total',
+                    _formatDuration(_calculateWeekTotal(_previousWeekData)),
+                    const Color(0xFF4DD0E1),
+                  ),
+              ],
+            ),
+          ),
       ],
     );
   }
