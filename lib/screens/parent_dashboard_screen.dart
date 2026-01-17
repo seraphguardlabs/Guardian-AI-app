@@ -596,42 +596,55 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 const SizedBox(height: 12),
                 ..._children.map((child) {
                   final isSelected = _selectedChild?.childHash == child.childHash;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.grey.shade700,
-                      child: child.profileImageUrl != null
-                          ? ClipOval(
-                              child: Image.network(
-                                'https://seraphguardlabs.com${child.profileImageUrl}',
-                                width: 40,
-                                height: 40,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(Icons.person, color: Colors.white);
-                                },
-                              ),
-                            )
-                          : const Icon(Icons.person, color: Colors.white),
+                  return Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFF2B4C8F).withOpacity(0.18) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      border: isSelected
+                          ? Border.all(color: const Color(0xFF2B4C8F), width: 2)
+                          : null,
                     ),
-                    title: Text(
-                      child.firstName,
-                      style: const TextStyle(color: Colors.white),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      leading: CircleAvatar(
+                        radius: 20,
+                        backgroundColor: isSelected ? const Color(0xFF2B4C8F) : Colors.grey.shade700,
+                        child: child.profileImageUrl != null
+                            ? ClipOval(
+                                child: Image.network(
+                                  'https://seraphguardlabs.com${child.profileImageUrl}',
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return const Icon(Icons.person, color: Colors.white);
+                                  },
+                                ),
+                              )
+                            : const Icon(Icons.person, color: Colors.white),
+                      ),
+                      title: Text(
+                        child.firstName,
+                        style: TextStyle(
+                          color: isSelected ? const Color(0xFF2B4C8F) : Colors.white,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle, color: Color(0xFF2B4C8F))
+                          : null,
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (_selectedChild?.childHash != child.childHash) {
+                          setState(() {
+                            _selectedChild = child;
+                          });
+                          _loadChildData(child.childHash);
+                          _loadExamMode(child.childHash);
+                        }
+                      },
                     ),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle, color: Colors.greenAccent)
-                        : null,
-                    onTap: () {
-                      Navigator.pop(context);
-                      if (_selectedChild?.childHash != child.childHash) {
-                        setState(() {
-                          _selectedChild = child;
-                        });
-                        _loadChildData(child.childHash);
-                        _loadExamMode(child.childHash);
-                      }
-                    },
                   );
                 }).toList(),
                 const Divider(color: Colors.white12, height: 24),
