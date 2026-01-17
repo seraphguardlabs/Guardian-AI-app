@@ -1179,19 +1179,29 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final tasksList = (data['tasks'] as List)
-            .map((taskJson) => Task.fromJson(taskJson as Map<String, dynamic>))
-            .toList();
-        
+        final tasksList = (data['tasks'] is List)
+            ? (data['tasks'] as List)
+                .where((taskJson) => taskJson != null)
+                .map((taskJson) => Task.fromJson(taskJson as Map<String, dynamic>))
+                .toList()
+            : <Task>[];
+
         debugPrint('📋 ✅ Successfully loaded ${tasksList.length} tasks');
-        
+
+        int totalTasks = 0;
+        int pendingTasks = 0;
+        int completedTasks = 0;
+        if (data['total_tasks'] is int) totalTasks = data['total_tasks'];
+        if (data['pending_tasks'] is int) pendingTasks = data['pending_tasks'];
+        if (data['completed_tasks'] is int) completedTasks = data['completed_tasks'];
+
         return {
           'success': true,
           'child_hash': data['child_hash'],
           'child_name': data['child_name'],
-          'total_tasks': data['total_tasks'],
-          'pending_tasks': data['pending_tasks'] ?? 0,
-          'completed_tasks': data['completed_tasks'] ?? 0,
+          'total_tasks': totalTasks,
+          'pending_tasks': pendingTasks,
+          'completed_tasks': completedTasks,
           'tasks': tasksList,
         };
       } else {
@@ -1230,10 +1240,14 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        Task? completedTask;
+        if (data['task'] != null && data['task'] is Map<String, dynamic>) {
+          completedTask = Task.fromJson(data['task'] as Map<String, dynamic>);
+        }
         return {
           'success': true,
           'message': data['message'] ?? 'Task marked as completed',
-          'task': Task.fromJson(data['task'] as Map<String, dynamic>),
+          'task': completedTask,
         };
       } else {
         final errorData = jsonDecode(response.body) as Map<String, dynamic>;

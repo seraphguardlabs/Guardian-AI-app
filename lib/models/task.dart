@@ -22,16 +22,16 @@ class Task {
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
       id: json['id'] as int,
-      title: json['title'] as String,
-      description: json['description'] as String,
+      title: (json['title'] ?? '') as String,
+      description: (json['description'] ?? '') as String,
       isCompleted: json['is_completed'] as bool,
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
-          : null,
+        ? DateTime.parse(json['completed_at'] as String)
+        : null,
       created: DateTime.parse(json['created'] as String),
       updated: json['updated'] != null
-          ? DateTime.parse(json['updated'] as String)
-          : null,
+        ? DateTime.parse(json['updated'] as String)
+        : null,
       assignedBy: json['assigned_by'] as String?,
     );
   }

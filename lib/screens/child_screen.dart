@@ -1224,12 +1224,21 @@ class _ChildScreenState extends State<ChildScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
                                         Text(
-                                          _screenTime.split(' ').first,
+                                          _totalUsageTime,
                                           style: const TextStyle(
                                             fontSize: 28,
                                             fontWeight: FontWeight.w700,
                                             color: Colors.white,
                                             letterSpacing: -0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Daily Limit: ${_dailyLimitHours?.toStringAsFixed(1) ?? '8.0'} hr',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.white70,
+                                            fontWeight: FontWeight.w400,
                                           ),
                                         ),
                                       ],

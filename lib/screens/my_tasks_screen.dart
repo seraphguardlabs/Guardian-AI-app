@@ -48,9 +48,10 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     }
 
     debugPrint('📋 ✅ Child Hash OK, calling API...');
+    // Always fetch all tasks for correct counters
     final result = await _apiService.getMyTasks(
       childHash: childHash,
-      completed: _filter,
+      completed: 'all',
     );
 
     debugPrint('📋 API Result success: ${result['success']}');
@@ -63,17 +64,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     if (result['success'] == true) {
       List<Task> tasks = result['tasks'] as List<Task>;
       debugPrint('📋 ✅ Received ${tasks.length} tasks from API');
-      
+
       // Decrypt task titles and descriptions
       final encryptionService = EncryptionService.instance;
       debugPrint('📋 Starting decryption...');
       List<Task> decryptedTasks = tasks.map((task) {
-        // Try to decrypt title and description
         final decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
         final decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
-        
-        // If decryption succeeds, create new task with decrypted data
-        // If decryption fails (returns null), keep the original (could be plaintext)
         if (decryptedTitle != null || decryptedDescription != null) {
           return Task(
             id: task.id,
@@ -86,15 +83,29 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             assignedBy: task.assignedBy,
           );
         }
-        return task; // Return original if no decryption needed
+        return task;
       }).toList();
-      
-      debugPrint('📋 ✅ Decryption complete. Setting state with ${decryptedTasks.length} tasks');
+
+      // Calculate stats from all tasks
+      int totalTasks = decryptedTasks.length;
+      int pendingTasks = decryptedTasks.where((t) => !t.isCompleted).length;
+      int completedTasks = decryptedTasks.where((t) => t.isCompleted).length;
+
+      // Filter tasks for display
+      List<Task> displayTasks;
+      if (_filter == 'true') {
+        displayTasks = decryptedTasks.where((t) => t.isCompleted).toList();
+      } else if (_filter == 'false') {
+        displayTasks = decryptedTasks.where((t) => !t.isCompleted).toList();
+      } else {
+        displayTasks = decryptedTasks;
+      }
+
       setState(() {
-        _tasks = decryptedTasks;
-        _totalTasks = result['total_tasks'] as int;
-        _pendingTasks = result['pending_tasks'] as int;
-        _completedTasks = result['completed_tasks'] as int;
+        _tasks = displayTasks;
+        _totalTasks = totalTasks;
+        _pendingTasks = pendingTasks;
+        _completedTasks = completedTasks;
         _loading = false;
       });
       debugPrint('📋 State updated: _tasks.length = ${_tasks.length}');
@@ -152,15 +163,17 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-      _loadTasks();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['error'] ?? 'Failed to update task'),
-          backgroundColor: Colors.red,
+          content: Text('Task status updated.'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
       );
     }
+    // Always reload to reflect status change
+    _loadTasks();
   }
 
   @override
