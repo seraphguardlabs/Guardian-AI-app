@@ -86,18 +86,6 @@ class _LoginScreenState extends State<LoginScreen> {
         print('✅ LOGIN: Token saved');
       }
       
-      // Initialize encryption (upload will happen when parent dashboard is selected)
-      debugPrint('🔐 Login: Initializing encryption service...');
-      await EncryptionService.instance.initialize();
-      
-      // Save public and private keys
-      final publicKey = EncryptionService.instance.publicKey;
-      final privateKey = EncryptionService.instance.privateKey;
-      if (publicKey != null && privateKey != null) {
-        await prefs.setPublicKey(publicKey);
-        await prefs.setPrivateKey(privateKey);
-        print('✅ LOGIN: Encryption keys saved to preferences');
-      }
       print('═══════════════════════════════════════════════════════');
 
       // Navigate to profile selection, passing the children list
@@ -112,8 +100,31 @@ class _LoginScreenState extends State<LoginScreen> {
             builder: (context) => ProfileSelectionScreen(children: children),
           ),
         );
+        
+        // Initialize encryption in background (don't block UI)
+        Future.microtask(() async {
+          try {
+            debugPrint('🔐 Login: Initializing encryption service in background...');
+            await EncryptionService.instance.initialize();
+            
+            // Save public and private keys
+            final publicKey = EncryptionService.instance.publicKey;
+            final privateKey = EncryptionService.instance.privateKey;
+            if (publicKey != null && privateKey != null) {
+              await prefs.setPublicKey(publicKey);
+              await prefs.setPrivateKey(privateKey);
+              print('✅ LOGIN: Encryption keys saved to preferences');
+            }
+          } catch (e) {
+            debugPrint('⚠️ Login: Encryption initialization failed: $e');
+          }
+        });
       }
     } else {
+      // Get actual error message from response
+      final errorMessage = result['error'] as String? ?? 'Login failed. Please try again.';
+      print('❌ LOGIN SCREEN: Login failed - $errorMessage');
+      
       // Show error dialog popup
       if (mounted) {
         // Close login dialog first
@@ -122,7 +133,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Small delay to ensure dialog is closed
         await Future.delayed(const Duration(milliseconds: 100));
         
-        // Show error dialog
+        // Show error dialog with actual error message
         if (mounted) {
           showDialog(
             context: context,
@@ -139,9 +150,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              content: const Text(
-                'Invalid credentials. Please check your email and password.',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+              content: Text(
+                errorMessage,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
               actions: [
                 TextButton(
@@ -209,6 +220,10 @@ class _LoginScreenState extends State<LoginScreen> {
         _signupPasswordController.clear();
       }
     } else {
+      // Get actual error message from response
+      final errorMessage = result['error'] as String? ?? 'Failed to create account. Please try again.';
+      print('❌ SIGNUP SCREEN: Signup failed - $errorMessage');
+      
       // Show error dialog popup
       if (mounted) {
         // Close signup dialog first
@@ -217,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Small delay to ensure dialog is closed
         await Future.delayed(const Duration(milliseconds: 100));
         
-        // Show error dialog
+        // Show error dialog with actual error message
         if (mounted) {
           showDialog(
             context: context,
@@ -234,9 +249,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              content: const Text(
-                'Failed to create account. Please try again.',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+              content: Text(
+                errorMessage,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
               actions: [
                 TextButton(

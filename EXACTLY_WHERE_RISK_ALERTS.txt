@@ -1,0 +1,216 @@
+# 🎯 RISK ALERTS SECTION - EXACT LOCATION
+
+## SIMPLE ANSWER
+
+**Where to find Risk Alerts on Parent Dashboard:**
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    PARENT DASHBOARD SCREEN             ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃                                        ┃
+┃  📌 Header - Child Name               ┃
+┃                                        ┃
+┃  🎠 Metrics (carousel - swipeable)    ┃
+┃     (Can see 5 different cards)       ┃
+┃                                        ┃
+┃  📋 Pending Requests                  ┃
+┃                                        ┃
+┃  📈 Screen Time Chart                 ┃
+┃                                        ┃
+┃  📱 App Usage Stats                   ┃
+┃                                        ┃
+┃  🗺️  GPS Locations                    ┃
+┃                                        ┃
+┃  🌐 Website Access Logs               ┃
+┃                                        ┃
+┃  ↓ ↓ ↓ SCROLL DOWN TO BOTTOM ↓ ↓ ↓   ┃
+┃                                        ┃
+┃  ┌──────────────────────────────────┐ ┃
+┃  │ 🔴 RISK ALERTS SECTION           │ ┃
+┃  │ (Shows list of real alerts)       │ ┃
+┃  │                                  │ ┃
+┃  │ Alert 1: HIGH RISK (78/100)      │ ┃
+┃  │ Alert 2: MEDIUM RISK (45/100)    │ ┃
+┃  │ Alert 3: HIGH RISK (82/100)      │ ┃
+┃  │ Alert 4: LOW RISK (15/100)       │ ┃
+┃  │ Alert 5: MEDIUM RISK (52/100)    │ ┃
+┃  └──────────────────────────────────┘ ┃
+┃                                        ┃
+┃  [Bottom Navigation]                   ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+```
+
+---
+
+## 📍 THE EXACT ANSWER
+
+**Risk Alerts Section is located:**
+
+1. **Screen:** Parent Dashboard
+2. **Position:** **AT THE BOTTOM** (below all other cards)
+3. **How to see:** **SCROLL DOWN** past all data
+4. **Card Style:** Red/Pink colored full-width card
+5. **Shows:** Top 5 most recent alerts with details
+
+---
+
+## 🔄 SCROLL JOURNEY
+
+When you open Parent Dashboard and scroll:
+
+```
+START → See header
+  ↓
+  → See metrics carousel
+  ↓
+  → See pending requests
+  ↓
+  → See screen time
+  ↓
+  → See app usage
+  ↓
+  → See locations
+  ↓
+  → See site access
+  ↓
+  → KEEP SCROLLING DOWN...
+  ↓
+  🎯 RISK ALERTS APPEARS! ← ← ← HERE!
+  ↓
+  → Bottom navigation
+  ↓
+END
+```
+
+---
+
+## ✅ QUICK TESTING STEPS
+
+```
+1. Open app → Login as Parent
+2. Select a child
+3. 👀 Look at screen (See header, metrics)
+4. 👆 Scroll DOWN (scroll gesture)
+5. 📋 Pass pending requests
+6. 📈 Pass screen time
+7. 📱 Pass app usage
+8. 🗺️  Pass locations
+9. 🌐 Pass sites
+10. 🔴 FOUND IT! Risk Alerts section appears!
+11. ✓ See alerts displayed
+12. ✓ Click alert to see details
+13. ✓ WORKING! ✅
+```
+
+---
+
+## 🎯 VISUAL LANDMARKS
+
+**Look for these in order while scrolling:**
+
+| # | What You See | Position |
+|---|---|---|
+| 1 | Child's Dashboard (title) | TOP |
+| 2 | Metrics cards (swipeable) | High up |
+| 3 | Pending Requests card | Middle |
+| 4 | Screen Time chart | Middle-lower |
+| 5 | App Usage data | Lower |
+| 6 | GPS Locations | Lower |
+| 7 | Website access logs | Lower |
+| 8 | **🔴 RISK ALERTS** | **BOTTOM** ← **HERE!** |
+
+---
+
+## 🔍 HOW TO KNOW YOU'RE AT THE RIGHT PLACE
+
+**Risk Alerts Card has these features:**
+
+- ✅ Dark gray background
+- ✅ Red/Pink header with "🔴 RISK ALERTS" text
+- ✅ List of alerts with:
+  - Severity badge (🔴/🟠/🟢)
+  - Risk score number (0-100)
+  - Alert summary text
+  - Time indicator ("5m ago")
+  - Child name
+- ✅ Full width of screen
+- ✅ Clickable - tap any alert
+
+---
+
+## 📱 ON YOUR DEVICE
+
+**When you test, you'll:**
+
+```
+Screen: Parent Dashboard
+┌─────────────────────┐
+│ Child's Dashboard   │  ← TOP (see immediately)
+├─────────────────────┤
+│ [Metrics carousel]  │  ← See by default
+│ [Pending requests]  │  ← See by scrolling small amount
+│ [Screen time]       │  ← Continue scrolling
+│ [App usage]         │  ← Keep scrolling
+│ [Locations]         │  ← Keep scrolling
+│ [Site access]       │  ← Keep scrolling
+├─────────────────────┤
+│ 🔴 RISK ALERTS      │  ← SCROLL TO HERE
+│ [Alert list]        │     This is what you're looking for!
+│ [Alert list]        │     Shows real-time alerts
+│ [Alert list]        │
+└─────────────────────┘  ← BOTTOM
+
+👆 When you see this RED card at bottom = SUCCESS! ✅
+```
+
+---
+
+## ✨ WHAT YOU'LL SEE IN RISK ALERTS
+
+**When you scroll to Risk Alerts section, you'll see:**
+
+```
+┌─ RED/PINK CARD ─────────────────────┐
+│                                     │
+│ 🔴 RISK ALERTS                     │
+│                                     │
+│ ┌─────────────────────────────────┐│
+│ │ 🔴 HIGH RISK (78/100)           ││
+│ │ "Detected grooming language"    ││
+│ │ John Smith • 5 minutes ago      ││
+│ └─────────────────────────────────┘│
+│                                     │
+│ ┌─────────────────────────────────┐│
+│ │ 🟠 MEDIUM RISK (45/100)         ││
+│ │ "Unusual app activity"          ││
+│ │ John Smith • 12 minutes ago     ││
+│ └─────────────────────────────────┘│
+│                                     │
+│ ┌─────────────────────────────────┐│
+│ │ 🔴 HIGH RISK (82/100)           ││
+│ │ "Solicitation detected"         ││
+│ │ John Smith • 18 minutes ago     ││
+│ └─────────────────────────────────┘│
+│                                     │
+│ ... (more alerts) ...              │
+│                                     │
+└─────────────────────────────────────┘
+      ↑ Click any alert to see details
+```
+
+---
+
+## 🎯 FINAL ANSWER
+
+**Risk Alerts Section:**
+- **📍 Location:** Bottom of Parent Dashboard
+- **👆 How to get there:** Scroll down
+- **🎨 Color:** Red/Pink card header
+- **📋 Shows:** Top 5 recent real alerts
+- **✓ When ready:** When there are alerts to display
+- **💬 Click:** Tap alert to see full details
+
+---
+
+**TL;DR: On Parent Dashboard, SCROLL TO THE BOTTOM to see Risk Alerts section!** ⬇️

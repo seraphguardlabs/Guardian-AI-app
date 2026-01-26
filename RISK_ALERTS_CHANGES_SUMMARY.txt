@@ -1,0 +1,107 @@
+# 🎯 RISK ALERTS RESTRUCTURE - WHAT CHANGED
+
+## The Change
+
+```
+BEFORE:
+Parent Dashboard
+├─ Header
+├─ Metrics Carousel
+├─ Pending Requests
+├─ Screen Time
+├─ App Usage
+├─ Locations
+├─ Site Access
+└─ Risk Alerts (at bottom, conditional)
+
+AFTER:
+Parent Dashboard                    Risk Alerts Page (NEW!)
+├─ Header                          ├─ Title
+├─ Metrics Carousel (REAL DATA)    ├─ Alert List (ALL)
+│ ├─ Risk Signals (REAL level)    │  ├─ Alert 1: HIGH
+│ └─ Active Alerts (REAL counts)  │  ├─ Alert 2: MEDIUM
+├─ Pending Requests               │  ├─ Alert 3: HIGH
+├─ Screen Time                    │  ├─ Alert 4: LOW
+├─ App Usage                      │  └─ ...
+├─ Locations                      ├─ Real-time updates
+└─ Site Access                    └─ Back button
+
+Access Risk Alerts:
+Tap → 🔴 Icon (Bottom Nav, Index 1)
+```
+
+---
+
+## 🔴 Bottom Navigation
+
+**5 Tabs (Now Accessible):**
+
+```
+┌─────────────────────────────────────┐
+│  Tab 1     Tab 2      Tab 3    ...  │
+│  🗨️Chat  🔴Risk    🏠Home   ...  │
+│          Alerts                     │
+│          (NEW!)                     │
+└─────────────────────────────────────┘
+           ↑
+      TAP HERE for Risk Alerts page
+```
+
+---
+
+## 📊 Carousel Updates
+
+### **Risk Signals Card:**
+| Before | After |
+|--------|-------|
+| Hardcoded: "Low" | Real: Calculated % |
+| Dummy badge | REAL: HIGH/MEDIUM/LOW |
+| Static | Dynamic (updates with alerts) |
+
+### **Active Alerts Card:**
+| Before | After |
+|--------|-------|
+| Shows: "5" (dummy) | Shows: Real count |
+| Hardcoded: "1 Critical" | Real: "3 Critical (HIGH)" |
+| Static | Dynamic (real counts) |
+
+---
+
+## ✅ What to Expect When Testing
+
+### **On Dashboard:**
+```
+✓ Carousel cards show REAL data
+✓ Risk Signals: HIGH/MEDIUM/LOW (calculated)
+✓ Active Alerts: Real counts with breakdown
+✓ Bottom nav has 5 tabs
+```
+
+### **On Risk Alerts Page:**
+```
+✓ Tap alert icon (🔴) at bottom
+✓ See full Risk Alerts page
+✓ Shows ALL alerts (not just 5)
+✓ Each alert shows:
+  - Severity badge
+  - Risk score 0-100
+  - Full timestamp
+  - Complete detected content
+  - Full summary
+✓ Real-time: New alerts appear instantly
+```
+
+---
+
+## 🚀 Quick Access
+
+**To see Risk Alerts Page:**
+```
+Step 1: Open app as Parent
+Step 2: Tap bottom tab (index 1, 🔴 icon)
+Step 3: See full Risk Alerts page
+```
+
+---
+
+**Done! Risk Alerts is now a dedicated, always-accessible page with real data!** ✅

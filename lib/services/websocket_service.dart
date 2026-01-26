@@ -419,6 +419,11 @@ class WebSocketService extends ChangeNotifier {
     await _establishConnection();
   }
   
+  /// Public disconnect method
+  Future<void> disconnect() async {
+    await _disconnect();
+  }
+  
   /// Get buffered message count
   int get bufferedMessageCount => _messageBuffer.length;
   
@@ -430,7 +435,7 @@ class WebSocketService extends ChangeNotifier {
   
   @override
   void dispose() {
-    _disconnect();
+    _disconnect(); // Fire and forget - can't await in dispose
     _messageController.close();
     _restrictionsController.close();
     super.dispose();

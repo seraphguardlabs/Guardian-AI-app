@@ -5,6 +5,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/child_screen.dart';
 import 'screens/profile_selection_screen.dart';
 import 'screens/parent_dashboard_screen.dart';
+import 'screens/ai_test_screen.dart';
 import 'services/api_service.dart';
 import 'services/location_service.dart';
 import 'services/websocket_service.dart';
@@ -12,6 +13,7 @@ import 'services/app_blocker_service.dart';
 import 'services/chat_service.dart';
 import 'services/time_extension_service.dart';
 import 'services/encryption_service.dart';
+import 'services/text_analysis_service.dart';
 import 'utils/preferences_manager.dart';
 
 void main() async {
@@ -35,6 +37,23 @@ void main() async {
     print('❌ ENCRYPTION SERVICE INITIALIZATION FAILED!');
     print('Error: $e');
     print('Stack trace: $stackTrace');
+  }
+  
+  // Initialize TextAnalysisService (AI Models)
+  print('🤖 Initializing TextAnalysisService (AI Models)...');
+  try {
+    final initialized = await TextAnalysisService.instance.initialize();
+    if (initialized) {
+      print('✅ TextAnalysisService initialized successfully');
+    } else {
+      print('⚠️  TextAnalysisService initialization failed - app will continue');
+      print('     You can access the AI Test Screen to debug model loading');
+    }
+  } catch (e, stackTrace) {
+    print('❌ TEXTANALYSISSERVCE INITIALIZATION FAILED!');
+    print('Error: $e');
+    print('Stack trace: $stackTrace');
+    print('⚠️  App will continue - use AI Test Screen to debug');
   }
   print('═══════════════════════════════════════════════════════');
 
@@ -125,6 +144,7 @@ class GuardianAIApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/child': (context) => const ChildScreen(),
         '/parent_dashboard': (context) => const ParentDashboardScreen(),
+        '/ai_test': (context) => const AITestScreen(),
       },
     );
   }

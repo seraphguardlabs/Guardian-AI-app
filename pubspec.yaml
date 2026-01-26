@@ -44,6 +44,11 @@ dependencies:
   pointycastle: ^3.9.1
   encrypt: ^5.0.3
   google_maps_flutter: ^2.7.0
+  file: ^7.0.0
+  path: ^1.8.3
+  path_provider: ^2.1.0
+  sqflite: ^2.2.8+4
+  uuid: ^4.0.0
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +82,13 @@ flutter:
   assets:
     - resources/robot.png
     - assets/images/
+    - assets/models/bert_predatory.onnx
+    - assets/models/bert_predatory.onnx.data
+    - assets/models/behavior_lstm_mobile.ptl
+    - assets/models/vision_mobile.ptl
+    - assets/models/vision_mobile.onnx
+    - assets/models/vision_mobile.onnx.data
+    - assets/models/vocab.txt
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

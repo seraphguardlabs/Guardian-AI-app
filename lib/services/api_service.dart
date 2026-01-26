@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
@@ -167,7 +168,14 @@ class ApiService {
   Future<Map<String, dynamic>> signup(String fullName, String email, String password) async {
     final url = Uri.parse('$baseUrl/api/signup/');
     
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('📝 SIGNUP API: Attempting signup...');
+    debugPrint('   URL: $url');
+    debugPrint('   Email: $email');
+    debugPrint('   Full Name: $fullName');
+    
     try {
+      debugPrint('📤 SIGNUP API: Sending request...');
       final response = await http.post(
         url,
         headers: {
@@ -178,12 +186,24 @@ class ApiService {
           'password': password,
           'full_name': fullName,
         }),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('❌ SIGNUP API: Request timed out after 15 seconds');
+          throw TimeoutException('Signup request timed out after 15 seconds');
+        },
       );
+
+      debugPrint('📥 SIGNUP API: Response received');
+      debugPrint('   Status code: ${response.statusCode}');
+      debugPrint('   Response body: ${response.body}');
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         
         if (data['status'] == 'ok') {
+          debugPrint('✅ SIGNUP API: Account created successfully!');
+          debugPrint('═══════════════════════════════════════════════════════');
           return {
             'success': true,
             'message': data['message'] ?? 'Account created successfully',
@@ -193,12 +213,18 @@ class ApiService {
       }
       
       final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      final errorMsg = errorData['message'] ?? errorData['error'] ?? 'Failed to create account';
+      debugPrint('❌ SIGNUP API: Signup failed with status ${response.statusCode}');
+      debugPrint('   Error: $errorMsg');
+      debugPrint('═══════════════════════════════════════════════════════');
       return {
         'success': false,
-        'error': errorData['message'] ?? 'Failed to create account',
+        'error': errorMsg,
       };
     } catch (e) {
-      debugPrint('Signup error: $e');
+      debugPrint('❌ SIGNUP API: Network error occurred');
+      debugPrint('   Error: $e');
+      debugPrint('═══════════════════════════════════════════════════════');
       return {
         'success': false,
         'error': 'Network error: ${e.toString()}',
@@ -209,7 +235,13 @@ class ApiService {
   Future<Map<String, dynamic>> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/api/login/');
     
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('🔐 LOGIN API: Attempting login...');
+    debugPrint('   URL: $url');
+    debugPrint('   Email: $email');
+    
     try {
+      debugPrint('📤 LOGIN API: Sending request...');
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -217,7 +249,17 @@ class ApiService {
           'email': email,
           'password': password,
         }),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('❌ LOGIN API: Request timed out after 15 seconds');
+          throw TimeoutException('Login request timed out after 15 seconds');
+        },
       );
+
+      debugPrint('📥 LOGIN API: Response received');
+      debugPrint('   Status code: ${response.statusCode}');
+      debugPrint('   Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -225,6 +267,8 @@ class ApiService {
         // Handle different response formats like PCA
         if (data['status'] == 'ok') {
           final childrenList = data['children'] as List? ?? [];
+          debugPrint('✅ LOGIN API: Login successful! Children: ${childrenList.length}');
+          debugPrint('═══════════════════════════════════════════════════════');
           return {
             'success': true,
             'token': '',
@@ -236,6 +280,8 @@ class ApiService {
         
         // Standard format with token
         final childrenList = data['children'] as List? ?? [];
+        debugPrint('✅ LOGIN API: Login successful! Children: ${childrenList.length}');
+        debugPrint('═══════════════════════════════════════════════════════');
         return {
           'success': true,
           'token': data['token'] ?? '',
@@ -245,12 +291,19 @@ class ApiService {
         };
       } else {
         final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        final errorMsg = errorData['error'] ?? errorData['message'] ?? errorData['detail'] ?? 'Login failed';
+        debugPrint('❌ LOGIN API: Login failed with status ${response.statusCode}');
+        debugPrint('   Error: $errorMsg');
+        debugPrint('═══════════════════════════════════════════════════════');
         return {
           'success': false,
-          'error': errorData['error'] ?? errorData['message'] ?? errorData['detail'] ?? 'Login failed',
+          'error': errorMsg,
         };
       }
     } catch (e) {
+      debugPrint('❌ LOGIN API: Network error occurred');
+      debugPrint('   Error: $e');
+      debugPrint('═══════════════════════════════════════════════════════');
       return {
         'success': false,
         'error': 'Network error: $e',
@@ -563,7 +616,12 @@ class ApiService {
     try {
       debugPrint('📥 Fetching restrictions for: $childHash');
       
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Fetch restrictions timed out after 15 seconds');
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -659,6 +717,11 @@ class ApiService {
           'X-Password': password,
         },
         body: jsonEncode(requestBody),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Update restrictions timed out after 15 seconds');
+        },
       );
 
       if (response.statusCode == 200) {

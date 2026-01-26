@@ -16,6 +16,10 @@ import '../widgets/app_bottom_nav.dart';
 import 'exam_mode_screen.dart';
 import 'block_sites_apps_screen.dart';
 import 'assign_task_screen.dart';
+import '../services/realtime_alert_service.dart';
+import '../models/alert.dart';
+import 'alert_detail_screen.dart';
+import 'risk_alerts_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -31,7 +35,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   bool _isLoading = true;
   bool _isLoadingData = false;
   bool _weeklyActivityExpanded = false;
-  String? _errorMessage;
   Map<String, dynamic>? _metrics;
   Map<String, dynamic>? _screenTime;
   Map<String, dynamic>? _appUsage;
@@ -45,6 +48,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   List<String> _examModeApps = [];
   bool _loadingExamMode = false;
   StreamSubscription<TimeExtensionRequest>? _newRequestSubscription;
+  final RealtimeAlertService _alertService = RealtimeAlertService();
+  StreamSubscription<Alert>? _alertSubscription;
+  List<Alert> _activeAlerts = [];
 
   @override
   void initState() {
@@ -62,6 +68,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     
     _loadChildren();
     
+    _startBackgroundMonitoring();
+    
     // Listen for new time extension requests
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final prefs = Provider.of<PreferencesManager>(context, listen: false);
@@ -72,6 +80,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       _newRequestSubscription = timeExtService.newRequestStream.listen((request) {
         _showNewRequestNotification(request);
       });
+      
+      _loadActiveAlerts();
     });
   }
   
@@ -79,6 +89,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   void dispose() {
     _metricsPageController.dispose();
     _newRequestSubscription?.cancel();
+    _alertSubscription?.cancel();
     super.dispose();
   }
   
@@ -104,7 +115,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     final result = await _apiService.fetchChildren(email, password);
@@ -129,7 +139,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     } else {
       debugPrint('❌ Parent Dashboard: Failed to load children: ${result['error']}');
       setState(() {
-        _errorMessage = result['error'] ?? 'Failed to load children';
         _isLoading = false;
       });
     }
@@ -640,6 +649,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                           setState(() {
                             _selectedChild = child;
                           });
+                          _loadActiveAlerts();
                           _loadChildData(child.childHash);
                           _loadExamMode(child.childHash);
                         }
@@ -722,6 +732,53 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/login');
       }
+    }
+  }
+
+  void _startBackgroundMonitoring() {
+    // Note: Background monitoring is handled on the child device
+    // Parent dashboard only receives alerts from child devices via WebSocket/API
+    if (_selectedChild != null) {
+      debugPrint('🚀 Parent Dashboard: Monitoring alerts for ${_selectedChild!.firstName}');
+    }
+  }
+
+  Future<void> _loadActiveAlerts() async {
+    if (_selectedChild == null) return;
+    
+    try {
+      final selectedChild = _selectedChild; // Capture to avoid null safety issues
+      if (selectedChild == null) return;
+      
+      // Fetch recent alerts for this child
+      final alerts = await _alertService.getRecentAlerts(
+        childHash: selectedChild.childHash,
+        limit: 10,
+      );
+      
+      setState(() {
+        _activeAlerts = alerts;
+      });
+      
+      debugPrint('✅ Loaded ${alerts.length} recent alerts for ${selectedChild.firstName}');
+      
+      // Subscribe to new alerts from the service
+      _alertSubscription?.cancel();
+      _alertSubscription = _alertService.alertStream.listen((Alert alert) {
+        if (alert.childHash == selectedChild.childHash) {
+          if (mounted) {
+            setState(() {
+              _activeAlerts.insert(0, alert);
+              // Keep only recent alerts
+              if (_activeAlerts.length > 10) {
+                _activeAlerts = _activeAlerts.sublist(0, 10);
+              }
+            });
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('❌ Error loading active alerts: $e');
     }
   }
 
@@ -1035,7 +1092,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   const SizedBox(height: 16),
 
                   if (_siteAccess != null) _buildSiteAccessCard(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                 ],
               ],
             ],
@@ -1054,6 +1111,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   void _handleBottomNavTap(int index) {
     if (index == 2) {
       // Already on dashboard, do nothing
+      return;
+    }
+
+    // Handle Alerts (index 1)
+    if (index == 1 && _selectedChild != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RiskAlertsScreen(
+            childHash: _selectedChild!.childHash,
+            childName: _selectedChild!.fullName,
+          ),
+        ),
+      );
       return;
     }
 
@@ -1438,8 +1509,28 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildRiskSignalsCard() {
-    // Placeholder values; can be wired to real risk metrics later
-    const riskLevel = 'Low';
+    // Calculate actual risk level based on alerts
+    String riskLevel = 'No Data';
+    Color riskLevelColor = Colors.white;
+    
+    if (_activeAlerts.isNotEmpty) {
+      final highAlertCount = _activeAlerts.where((a) => a.severity == AlertSeverity.HIGH).length;
+      final totalAlerts = _activeAlerts.length;
+      final highPercentage = (highAlertCount / totalAlerts) * 100;
+      
+      if (highPercentage >= 61) {
+        riskLevel = 'High';
+        riskLevelColor = const Color(0xFFFF4F92);
+      } else if (highPercentage >= 31) {
+        riskLevel = 'Medium';
+        riskLevelColor = Colors.orange;
+      } else {
+        riskLevel = 'Low';
+        riskLevelColor = Colors.blue;
+      }
+    }
+    
+    // Calculate change percent (for now using a placeholder)
     const changePercent = '+23%';
     const changeLabel = '18.6%';
 
@@ -1463,8 +1554,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   children: [
                     _buildPillBadge(
                       riskLevel.toUpperCase(),
-                      backgroundColor: Colors.white,
-                      textColor: const Color(0xFF6A3A19),
+                      backgroundColor: riskLevel == 'No Data' ? Colors.white : riskLevelColor.withOpacity(0.2),
+                      textColor: riskLevel == 'No Data' ? const Color(0xFF6A3A19) : riskLevelColor,
                       horizontalPadding: 14,
                       verticalPadding: 4,
                     ),
@@ -1505,10 +1596,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildActiveAlertsCard() {
-    // Placeholder values; can be wired to real alerts later
-    const totalAlerts = 5;
-    const critical = 3;
-    const warning = 2;
+    final totalAlerts = _activeAlerts.length;
+    final criticalCount = _activeAlerts.where((a) => a.severity == AlertSeverity.HIGH).length;
+    final warningCount = _activeAlerts.where((a) => a.severity == AlertSeverity.MEDIUM || a.severity == AlertSeverity.LOW).length;
 
     return _buildMetricsBaseCard(
       gradientColors: const [Color(0xFF5C101B), Color(0xFF8A182A)],
@@ -1545,25 +1635,157 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              children: [
-                _buildPillBadge(
-                  '$critical Critical',
-                  backgroundColor: const Color(0xFFFF4C4C),
-                  textColor: Colors.white,
+            if (totalAlerts == 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'No alerts detected today',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
                 ),
-                _buildPillBadge(
-                  '$warning Warning',
-                  backgroundColor: Colors.white.withOpacity(0.20),
-                  textColor: Colors.white,
-                ),
-              ],
-            ),
+              )
+            else
+              Column(
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (criticalCount > 0)
+                        _buildPillBadge(
+                          '$criticalCount Critical (HIGH)',
+                          backgroundColor: const Color(0xFFFF4C4C),
+                          textColor: Colors.white,
+                        ),
+                      if (warningCount > 0)
+                        _buildPillBadge(
+                          '$warningCount Warning (MEDIUM + LOW)',
+                          backgroundColor: Colors.white.withOpacity(0.20),
+                          textColor: Colors.white,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  ..._activeAlerts.take(3).map((alert) {
+                    final severity = alert.severity;
+                    final badgeColor = severity == AlertSeverity.HIGH
+                        ? const Color(0xFFFF4C4C)
+                        : severity == AlertSeverity.MEDIUM
+                            ? const Color(0xFFFFA500)
+                            : const Color(0xFF2B4C8F);
+                    
+                    final timeAgo = _formatTimeAgo(alert.timestamp);
+                    final severityText = severity.toString().split('.').last;
+                    
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AlertDetailScreen(alert: alert),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: badgeColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  severityText,
+                                  style: TextStyle(
+                                    color: badgeColor,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      alert.summary.length > 60
+                                          ? '${alert.summary.substring(0, 60)}...'
+                                          : alert.summary,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          alert.childName,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        Text(
+                                          timeAgo,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.white60,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inSeconds < 60) {
+      return 'just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
   }
 
   Widget _buildWellBeingScoreCard() {
