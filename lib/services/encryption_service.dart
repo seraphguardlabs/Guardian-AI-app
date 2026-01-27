@@ -251,20 +251,50 @@ class EncryptionService {
     }
   }
   
-  /// Encrypt text using a public key
+  /// Encrypt text using a public key (hybrid encryption for long strings)
+  /// Uses AES for data encryption and RSA for key encryption
   String encryptWithPublicKey(String plainText, String publicKeyPem) {
     try {
+      // For short strings (< 190 bytes), use direct RSA
+      if (plainText.length < 100) {
+        final publicKey = encrypt.RSAKeyParser().parse(publicKeyPem) as RSAPublicKey;
+        final encrypter = encrypt.Encrypter(encrypt.RSA(publicKey: publicKey));
+        final encrypted = encrypter.encrypt(plainText);
+        return encrypted.base64;
+      }
+      
+      // For longer strings, use hybrid encryption (AES + RSA)
+      debugPrint('🔐 Using hybrid encryption for long string (${plainText.length} chars)');
+      
+      // Generate random AES key (32 bytes = 256 bit)
+      final random = Random.secure();
+      final aesKeyBytes = List<int>.generate(32, (_) => random.nextInt(256));
+      final aesKey = encrypt.Key(Uint8List.fromList(aesKeyBytes));
+      
+      // Generate random IV (16 bytes)
+      final ivBytes = List<int>.generate(16, (_) => random.nextInt(256));
+      final iv = encrypt.IV(Uint8List.fromList(ivBytes));
+      
+      // Encrypt plaintext with AES
+      final aesEncrypter = encrypt.Encrypter(encrypt.AES(aesKey, mode: encrypt.AESMode.cbc));
+      final encryptedData = aesEncrypter.encrypt(plainText, iv: iv);
+      
+      // Encrypt AES key with RSA
       final publicKey = encrypt.RSAKeyParser().parse(publicKeyPem) as RSAPublicKey;
-      final encrypter = encrypt.Encrypter(encrypt.RSA(publicKey: publicKey));
-      final encrypted = encrypter.encrypt(plainText);
-      return encrypted.base64;
+      final rsaEncrypter = encrypt.Encrypter(encrypt.RSA(publicKey: publicKey));
+      final encryptedAesKey = rsaEncrypter.encrypt(base64.encode(aesKeyBytes));
+      
+      // Combine: "HYBRID:" + encryptedAesKey + ":" + iv (base64) + ":" + encryptedData (base64)
+      final result = 'HYBRID:${encryptedAesKey.base64}:${base64.encode(ivBytes)}:${encryptedData.base64}';
+      debugPrint('✅ Hybrid encryption successful');
+      return result;
     } catch (e) {
       debugPrint('❌ Encryption: Encryption error: $e');
       rethrow;
     }
   }
   
-  /// Decrypt text using our private key
+  /// Decrypt text using our private key (supports both direct RSA and hybrid encryption)
   String? decryptWithPrivateKey(String encryptedBase64) {
     if (_privateKey == null) {
       debugPrint('❌ Encryption: No private key available for decryption');
@@ -276,19 +306,50 @@ class EncryptionService {
       debugPrint('══════════════════════════════════════════════════════');
       debugPrint('🔓 DECRYPTING MESSAGE WITH PRIVATE KEY');
       debugPrint('══════════════════════════════════════════════════════');
-      debugPrint('📋 Encrypted Message (Base64):');
+      debugPrint('📋 Encrypted Message:');
       debugPrint('   Length: ${encryptedBase64.length} characters');
-      debugPrint('   Preview: ${encryptedBase64.substring(0, encryptedBase64.length > 50 ? 50 : encryptedBase64.length)}...');
-      debugPrint('   Full: $encryptedBase64');
-      debugPrint('──────────────────────────────────────────────────────');
-      debugPrint('🔐 Using Private Key:');
-      debugPrint(_privateKey!);
-      debugPrint('══════════════════════════════════════════════════════');
       
       final privateKey = encrypt.RSAKeyParser().parse(_privateKey!) as RSAPrivateKey;
-      final encrypter = encrypt.Encrypter(encrypt.RSA(privateKey: privateKey));
+      final rsaDecrypter = encrypt.Encrypter(encrypt.RSA(privateKey: privateKey));
+      
+      // Check if this is hybrid encryption
+      if (encryptedBase64.startsWith('HYBRID:')) {
+        debugPrint('🔐 Detected hybrid encryption, decrypting...');
+        final parts = encryptedBase64.substring(7).split(':');
+        if (parts.length != 3) {
+          debugPrint('❌ Invalid hybrid encryption format');
+          return null;
+        }
+        
+        final encryptedAesKeyBase64 = parts[0];
+        final ivBase64 = parts[1];
+        final encryptedDataBase64 = parts[2];
+        
+        // Decrypt AES key with RSA
+        final encryptedAesKey = encrypt.Encrypted.fromBase64(encryptedAesKeyBase64);
+        final aesKeyBase64 = rsaDecrypter.decrypt(encryptedAesKey);
+        final aesKeyBytes = base64.decode(aesKeyBase64);
+        
+        // Restore AES key and IV
+        final aesKey = encrypt.Key(Uint8List.fromList(aesKeyBytes));
+        final iv = encrypt.IV(Uint8List.fromList(base64.decode(ivBase64)));
+        
+        // Decrypt data with AES
+        final aesDecrypter = encrypt.Encrypter(encrypt.AES(aesKey, mode: encrypt.AESMode.cbc));
+        final encryptedData = encrypt.Encrypted.fromBase64(encryptedDataBase64);
+        final decrypted = aesDecrypter.decrypt(encryptedData, iv: iv);
+        
+        debugPrint('✅ HYBRID DECRYPTION SUCCESSFUL!');
+        debugPrint('   Decrypted Message: $decrypted');
+        debugPrint('══════════════════════════════════════════════════════');
+        
+        return decrypted;
+      }
+      
+      // Standard RSA decryption
+      debugPrint('🔐 Using standard RSA decryption...');
       final encrypted = encrypt.Encrypted.fromBase64(encryptedBase64);
-      final decrypted = encrypter.decrypt(encrypted);
+      final decrypted = rsaDecrypter.decrypt(encrypted);
       
       debugPrint('✅ DECRYPTION SUCCESSFUL!');
       debugPrint('   Decrypted Message: $decrypted');

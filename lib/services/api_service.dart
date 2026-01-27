@@ -1071,7 +1071,8 @@ class ApiService {
   // ========== TASK API METHODS ==========
 
   /// Create a new task for a child (Guardian only)
-  /// Encrypts title and description using child's public key for E2E encryption
+  /// Note: Encryption disabled due to server database field length limits.
+  /// Tasks are stored locally with plaintext for display.
   Future<Map<String, dynamic>> createTask({
     required String email,
     required String password,
@@ -1083,41 +1084,16 @@ class ApiService {
     
     try {
       debugPrint('📝 Creating task for child: $childHash');
+      debugPrint('   Title: $title');
+      debugPrint('   Description: ${description.substring(0, description.length > 50 ? 50 : description.length)}...');
       
-      // First, get the child's public key for encryption
-      debugPrint('🔑 Fetching child public key for encryption...');
-      final publicKeyResponse = await getChildPublicKey(childHash: childHash);
-      
-      String encryptedTitle;
-      String encryptedDescription;
-      
-      if (publicKeyResponse['success'] == true) {
-        final childPublicKey = publicKeyResponse['public_key'] as String;
-        debugPrint('✅ Child public key retrieved, encrypting task data...');
-        
-        // Encrypt title and description with child's public key
-        final encryptionService = EncryptionService.instance;
-        encryptedTitle = encryptionService.encryptWithPublicKey(title, childPublicKey) ?? '';
-        encryptedDescription = encryptionService.encryptWithPublicKey(description, childPublicKey) ?? '';
-        
-        if (encryptedTitle.isEmpty || encryptedDescription.isEmpty) {
-          debugPrint('⚠️ Encryption failed, sending plaintext instead');
-          encryptedTitle = title;
-          encryptedDescription = description;
-        } else {
-          debugPrint('✅ Task data encrypted successfully');
-        }
-      } else {
-        debugPrint('⚠️ Could not get child public key: ${publicKeyResponse['error']}');
-        debugPrint('⚠️ Sending task without encryption');
-        encryptedTitle = title;
-        encryptedDescription = description;
-      }
-      
+      // Send plaintext - encryption disabled due to server DB field length limits
       final Map<String, dynamic> requestBody = {
-        'title': encryptedTitle,
-        'description': encryptedDescription,
+        'title': title,
+        'description': description,
       };
+      
+      debugPrint('📤 Sending task request...');
       
       final response = await http.post(
         url,
@@ -1130,6 +1106,7 @@ class ApiService {
       );
 
       debugPrint('📥 Create task response: ${response.statusCode}');
+      debugPrint('📥 Response body: ${response.body}');
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
