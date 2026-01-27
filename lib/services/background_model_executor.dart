@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../models/alert.dart';
 import 'text_analysis_service.dart';
+import 'api_service.dart';
+import 'realtime_alert_service.dart';
 
 /// Service that executes text analysis models in the background
 /// Runs on a 30-second timer interval only when in 'child' view mode
@@ -256,13 +258,14 @@ class BackgroundModelExecutor {
     return [];
   }
 
-  /// Save alert to local database
+  /// Save alert to local database and sync to server
   Future<void> _saveAlert(Alert alert) async {
     if (_database == null) {
       throw Exception('Database not initialized');
     }
 
     try {
+      // Save to local database
       await _database!.insert(
         'alerts',
         {
@@ -280,10 +283,33 @@ class BackgroundModelExecutor {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       _log('   💾 Alert saved to database');
+
+      // Sync alert to server via HTTP API
+      _syncAlertToServer(alert);
     } catch (e) {
       _log('   ❌ Failed to save alert to database: $e');
       rethrow;
     }
+  }
+
+  /// Sync alert to server asynchronously (fire and forget)
+  void _syncAlertToServer(Alert alert) {
+    // Use fire-and-forget pattern to not block the main execution
+    Future.microtask(() async {
+      try {
+        final apiService = ApiService();
+        final realtimeAlertService = RealtimeAlertService();
+        
+        await realtimeAlertService.syncAlertToServer(
+          alert,
+          apiService,
+          _currentChildName ?? 'Unknown',
+        );
+        _log('   ☁️ Alert synced to server: ${alert.id}');
+      } catch (e) {
+        _log('   ⚠️ Failed to sync alert to server (non-blocking): $e');
+      }
+    });
   }
 
   /// Generate alert summary from detected content and risk score

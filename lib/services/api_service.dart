@@ -1367,4 +1367,208 @@ class ApiService {
       };
     }
   }
+
+  /// Fetch AI alerts for a child (Guardian endpoint)
+  /// GET /api/mobile/child/<child_hash>/alerts/
+  Future<Map<String, dynamic>> fetchAIAlerts({
+    required String email,
+    required String password,
+    required String childHash,
+    String? startDate,
+    String? endDate,
+    String? severity,
+    String? contentType,
+    int limit = 50,
+  }) async {
+    try {
+      // Build query parameters
+      final queryParams = <String, String>{
+        'limit': limit.toString(),
+      };
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (severity != null && severity != 'all') queryParams['severity'] = severity;
+      if (contentType != null && contentType != 'all') queryParams['content_type'] = contentType;
+
+      final uri = Uri.parse('$baseUrl/api/mobile/child/$childHash/alerts/')
+          .replace(queryParameters: queryParams);
+
+      debugPrint('📡 Fetching AI alerts for child: $childHash');
+      debugPrint('   URL: $uri');
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Fetch alerts timed out after 15 seconds');
+        },
+      );
+
+      debugPrint('📥 AI alerts response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (data['status'] == 'ok') {
+          debugPrint('✅ Fetched ${(data['alerts'] as List?)?.length ?? 0} AI alerts');
+          return {
+            'success': true,
+            'data': data,
+            'alerts': data['alerts'] ?? [],
+            'summary': data['summary'] ?? {},
+          };
+        }
+      }
+
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('❌ Failed to fetch AI alerts: ${errorData['message']}');
+      return {
+        'success': false,
+        'error': errorData['message'] ?? 'Failed to fetch AI alerts',
+      };
+    } catch (e) {
+      debugPrint('❌ Fetch AI alerts error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Send AI alert from child device to server (HTTP fallback)
+  /// POST /api/ingest/ with data_type: ai_alert
+  Future<Map<String, dynamic>> sendAIAlert({
+    required String childHash,
+    required String alertId,
+    required String timestamp,
+    required int riskScore,
+    required String severity,
+    required String contentType,
+    required String summary,
+    required String childName,
+    String? detectedContent,
+    String? sourceApp,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/ingest/');
+
+    try {
+      final payload = {
+        'child_hash': childHash,
+        'data_type': 'ai_alert',
+        'payload': {
+          'id': alertId,
+          'timestamp': timestamp,
+          'risk_score': riskScore,
+          'severity': severity,
+          'content_type': contentType,
+          'summary': summary,
+          'detected_content': detectedContent ?? '',
+          'source_app': sourceApp,
+          'child_hash': childHash,
+          'child_name': childName,
+        },
+      };
+
+      debugPrint('📤 Sending AI alert to server: $alertId');
+      debugPrint('   URL: $url');
+      debugPrint('   Severity: $severity, Risk Score: $riskScore');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Child-Hash': childHash,
+        },
+        body: jsonEncode(payload),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Send AI alert timed out after 15 seconds');
+        },
+      );
+
+      debugPrint('📥 Send AI alert response status: ${response.statusCode}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ AI alert sent successfully: $alertId');
+        return {
+          'success': true,
+          'message': data['message'] ?? 'AI alert sent successfully',
+        };
+      }
+
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('❌ Failed to send AI alert: ${errorData['message']}');
+      return {
+        'success': false,
+        'error': errorData['message'] ?? 'Failed to send AI alert',
+      };
+    } catch (e) {
+      debugPrint('❌ Send AI alert error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Acknowledge an AI alert (Guardian endpoint)
+  /// POST /api/mobile/child/<child_hash>/alerts/<alert_id>/acknowledge/
+  Future<Map<String, dynamic>> acknowledgeAlert({
+    required String email,
+    required String password,
+    required String childHash,
+    required String alertId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/alerts/$alertId/acknowledge/');
+
+    try {
+      debugPrint('📤 Acknowledging alert: $alertId');
+      debugPrint('   URL: $url');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Acknowledge alert timed out after 15 seconds');
+        },
+      );
+
+      debugPrint('📥 Acknowledge alert response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ Alert acknowledged successfully: $alertId');
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Alert acknowledged',
+        };
+      }
+
+      final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('❌ Failed to acknowledge alert: ${errorData['message']}');
+      return {
+        'success': false,
+        'error': errorData['message'] ?? 'Failed to acknowledge alert',
+      };
+    } catch (e) {
+      debugPrint('❌ Acknowledge alert error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
 }

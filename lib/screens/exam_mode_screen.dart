@@ -86,19 +86,22 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
         if (data != null) {
           // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
           final value = data['daily_screen_time_limit'] ?? data['daily_limit_hours'];
-          if (value is num) {
+          if (value is num && value > 0) {
             fetchedDailyLimitHours = value.toDouble();
           }
         }
       }
 
       setState(() {
-        _dailyLimitHours = fetchedDailyLimitHours;
+        // Default to 8 hours if server doesn't provide a value
+        _dailyLimitHours = fetchedDailyLimitHours ?? 8.0;
         _loadingDailyLimit = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        // Default to 8 hours on error
+        _dailyLimitHours = 8.0;
         _loadingDailyLimit = false;
       });
     }

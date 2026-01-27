@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/alert.dart';
 import 'background_model_executor.dart';
 import 'websocket_service.dart';
+import 'api_service.dart';
 
 /// Service that manages real-time alerts from multiple sources
 /// Listens to background model detections and WebSocket alerts from parent devices
@@ -448,21 +449,109 @@ class RealtimeAlertService {
     }
   }
 
-  /// Sync new alerts via WebSocket to parent
-  /// This would be called to notify parent device of locally detected alerts
-  Future<void> syncAlertToParent(Alert alert, WebSocketService webSocketService) async {
-    if (!webSocketService.isConnected) {
-      _log('⚠️  WebSocket not connected, cannot sync alert to parent');
-      return;
-    }
-
+  /// Sync new alerts via HTTP to server
+  /// This is called to send locally detected alerts to the backend
+  Future<void> syncAlertToServer(Alert alert, ApiService apiService, String childName) async {
     try {
-      // TODO: Implement alert syncing via WebSocket when sendMessage method is available
-      // For now, alerts are persisted locally and parent fetches them via getRecentAlerts()
-      _log('📤 Alert saved locally: ${alert.id}');
+      final result = await apiService.sendAIAlert(
+        childHash: alert.childHash,
+        alertId: alert.id,
+        timestamp: alert.timestamp.toIso8601String(),
+        riskScore: alert.riskScore,
+        severity: alert.severity.toString().split('.').last,
+        contentType: alert.contentType.toString().split('.').last,
+        summary: alert.summary,
+        childName: childName,
+        detectedContent: alert.detectedContent,
+        sourceApp: alert.sourceApp,
+      );
+      
+      if (result['success'] == true) {
+        _log('✅ Alert synced to server: ${alert.id}');
+      } else {
+        _log('⚠️ Failed to sync alert to server: ${result['error']}');
+      }
     } catch (e, stackTrace) {
-      _log('❌ Error syncing alert to parent: $e');
+      _log('❌ Error syncing alert to server: $e');
       _log('Stack trace: $stackTrace');
+    }
+  }
+
+  /// Fetch alerts from server (for Guardian app)
+  /// Uses the new API endpoint: GET /api/mobile/child/<child_hash>/alerts/
+  Future<List<Alert>> fetchAlertsFromServer({
+    required ApiService apiService,
+    required String email,
+    required String password,
+    required String childHash,
+    String? startDate,
+    String? endDate,
+    String? severity,
+    String? contentType,
+    int limit = 50,
+  }) async {
+    try {
+      _log('📡 Fetching alerts from server for child: $childHash');
+      
+      final result = await apiService.fetchAIAlerts(
+        email: email,
+        password: password,
+        childHash: childHash,
+        startDate: startDate,
+        endDate: endDate,
+        severity: severity,
+        contentType: contentType,
+        limit: limit,
+      );
+      
+      if (result['success'] == true) {
+        final alertsList = result['alerts'] as List? ?? [];
+        final alerts = alertsList
+            .map((alertData) => Alert.fromJson(alertData as Map<String, dynamic>))
+            .toList();
+        
+        _log('✅ Fetched ${alerts.length} alerts from server');
+        return alerts;
+      } else {
+        _log('⚠️ Failed to fetch alerts from server: ${result['error']}');
+        return [];
+      }
+    } catch (e, stackTrace) {
+      _log('❌ Error fetching alerts from server: $e');
+      _log('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Acknowledge an alert on the server (for Guardian app)
+  Future<bool> acknowledgeAlertOnServer({
+    required ApiService apiService,
+    required String email,
+    required String password,
+    required String childHash,
+    required String alertId,
+  }) async {
+    try {
+      _log('📤 Acknowledging alert on server: $alertId');
+      
+      final result = await apiService.acknowledgeAlert(
+        email: email,
+        password: password,
+        childHash: childHash,
+        alertId: alertId,
+      );
+      
+      if (result['success'] == true) {
+        _log('✅ Alert acknowledged on server: $alertId');
+        return true;
+      } else {
+        _log('⚠️ Failed to acknowledge alert: ${result['error']}');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _log('❌ Error acknowledging alert: $e');
+      _log('Stack trace: $stackTrace');
+      return false;
     }
   }
 

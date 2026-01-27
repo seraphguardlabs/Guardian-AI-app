@@ -1088,7 +1088,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   if (_appUsage != null) _buildAppUsageCard(),
                   const SizedBox(height: 16),
 
-                  if (_locations != null) _buildLocationsCard(),
+                  // Always show locations card (handles empty state internally)
+                  _buildLocationsCard(),
                   const SizedBox(height: 16),
 
                   if (_siteAccess != null) _buildSiteAccessCard(),
@@ -2738,11 +2739,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _buildLocationsCard() {
-    final rawLocations = _locations!['locations'] as List? ?? [];
+    final rawLocations = (_locations?['locations'] as List?) ?? [];
     final locations = rawLocations
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
-    final summary = _locations!['summary'];
+    final summary = _locations?['summary'] as Map<String, dynamic>? ?? {'total_count': 0};
 
     // Derive last-updated time from the latest timestamp, if present.
     DateTime? lastUpdated;
@@ -2752,7 +2753,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       } catch (_) {}
     }
 
-    String lastUpdatedLabel = 'Unknown';
+    String lastUpdatedLabel = 'No data yet';
     if (lastUpdated != null) {
       lastUpdatedLabel = DateFormat('MMM d, h:mm a').format(lastUpdated!);
     }
@@ -2777,6 +2778,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF101010),
             borderRadius: BorderRadius.circular(18),
+            border: locations.isEmpty
+                ? Border.all(color: Colors.white12, width: 1)
+                : null,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2787,13 +2791,23 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Location',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            color: Colors.white70,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Location',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -2808,21 +2822,53 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
+                      color: locations.isEmpty 
+                          ? Colors.grey.withOpacity(0.2)
+                          : Colors.green.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '${summary['total_count']} tracked',
-                      style: const TextStyle(color: Colors.green, fontSize: 11),
+                      locations.isEmpty
+                          ? 'No data'
+                          : '${summary['total_count']} tracked',
+                      style: TextStyle(
+                        color: locations.isEmpty ? Colors.grey : Colors.green,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               if (locations.isEmpty)
-                const Text(
-                  'No recent locations yet',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                Container(
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A0A0F),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.location_off,
+                          color: Colors.white30,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'No location data available',
+                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Tap to view map',
+                          style: TextStyle(color: Colors.white24, fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  ),
                 )
               else
                 const Text(

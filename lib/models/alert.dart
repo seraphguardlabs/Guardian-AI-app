@@ -15,6 +15,7 @@ class Alert {
   final String detectedContent;
   final String childHash;
   final String childName;
+  final String? sourceApp; // Package name of the app that triggered the alert
 
   Alert({
     required this.id,
@@ -26,6 +27,7 @@ class Alert {
     required this.detectedContent,
     required this.childHash,
     required this.childName,
+    this.sourceApp,
   }) : assert(
     riskScore >= 0 && riskScore <= 100,
     'riskScore must be between 0 and 100',
@@ -53,6 +55,7 @@ class Alert {
       detectedContent: json['detected_content'] as String? ?? '',
       childHash: json['child_hash'] as String? ?? '',
       childName: json['child_name'] as String? ?? '',
+      sourceApp: json['source_app'] as String?,
     );
   }
 
@@ -68,6 +71,7 @@ class Alert {
       'detected_content': detectedContent,
       'child_hash': childHash,
       'child_name': childName,
+      'source_app': sourceApp,
     };
   }
 
@@ -121,6 +125,7 @@ class Alert {
     String? detectedContent,
     String? childHash,
     String? childName,
+    String? sourceApp,
   }) {
     return Alert(
       id: id ?? this.id,
@@ -132,6 +137,7 @@ class Alert {
       detectedContent: detectedContent ?? this.detectedContent,
       childHash: childHash ?? this.childHash,
       childName: childName ?? this.childName,
+      sourceApp: sourceApp ?? this.sourceApp,
     );
   }
 

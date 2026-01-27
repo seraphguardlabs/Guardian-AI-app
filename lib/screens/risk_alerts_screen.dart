@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:provider/provider.dart';
 import '../models/alert.dart';
 import '../services/realtime_alert_service.dart';
+import '../services/api_service.dart';
+import '../utils/preferences_manager.dart';
 import 'alert_detail_screen.dart';
 
 /// Dedicated full-screen risk alerts page
@@ -41,12 +44,37 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
 
   Future<void> _loadAlerts() async {
     try {
-      final alerts = await _alertService.getAlerts(childHash: widget.childHash);
-      if (mounted) {
-        setState(() {
-          _alerts = alerts;
-          _isLoading = false;
-        });
+      // Get guardian credentials for server API call
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      final email = prefs.getParentEmail();
+      final password = prefs.getParentPassword();
+      final childHash = widget.childHash ?? prefs.getChildHash();
+      
+      if (email != null && password != null && childHash != null) {
+        // Fetch alerts from server (Guardian API)
+        final apiService = ApiService();
+        final alerts = await _alertService.fetchAlertsFromServer(
+          apiService: apiService,
+          email: email,
+          password: password,
+          childHash: childHash,
+        );
+        
+        if (mounted) {
+          setState(() {
+            _alerts = alerts;
+            _isLoading = false;
+          });
+        }
+      } else {
+        // Fallback to local database if credentials not available
+        final alerts = await _alertService.getAlerts(childHash: widget.childHash);
+        if (mounted) {
+          setState(() {
+            _alerts = alerts;
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -114,7 +142,9 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0F),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0A0A0F),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -123,40 +153,74 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
         centerTitle: true,
         elevation: 0,
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
-          : _alerts.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.shield_outlined,
-                        size: 64,
-                        color: Colors.white30,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No Alerts',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'No risk alerts detected for ${widget.childName}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey[400],
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF0A0A0F),
+              Color(0xFF101722),
+              Color(0xFF0A0A0F),
+            ],
+          ),
+        ),
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: Color(0xFFFF4F92),
+                ),
+              )
+            : _alerts.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.shield_outlined,
+                            size: 50,
+                            color: Colors.white30,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'No Alerts',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 48),
+                          child: Text(
+                            'No risk alerts detected for ${widget.childName}',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey[400],
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          '✓ Your child is safe',
+                          style: TextStyle(
+                            color: Colors.green[400],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _alerts.length,
                   itemBuilder: (context, index) {
@@ -342,6 +406,7 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
                     );
                   },
                 ),
+      ),
     );
   }
 }
