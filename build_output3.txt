@@ -1,0 +1,96 @@
+﻿Running Gradle task 'assembleDebug'...                          
+flutter : warning: 
+[options] source value 
+8 is obsolete and will 
+be removed in a future 
+release
+At line:1 char:1
++ flutter build apk 
+--debug 2>&1 | 
+Out-File -FilePath 
+build_output3.txt ...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (warning: [opt   
+ io... future relea    
+se:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+warning: [options] 
+target value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] To 
+suppress warnings 
+about obsolete 
+options, use 
+-Xlint:-options.
+3 warnings
+warning: [options] 
+source value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] 
+target value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] To 
+suppress warnings 
+about obsolete 
+options, use 
+-Xlint:-options.
+Note: C:\Users\HP\AppDa
+ta\Local\Pub\Cache\host
+ed\pub.dev\google_mlkit
+_commons-0.7.1\android\
+src\main\java\com\googl
+e_mlkit_commons\InputIm
+ageConverter.java uses 
+unchecked or unsafe 
+operations.
+Note: Recompile with 
+-Xlint:unchecked for 
+details.
+3 warnings
+warning: [options] 
+source value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] 
+target value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] To 
+suppress warnings 
+about obsolete 
+options, use 
+-Xlint:-options.
+3 warnings
+warning: [options] 
+source value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] 
+target value 8 is 
+obsolete and will be 
+removed in a future 
+release
+warning: [options] To 
+suppress warnings 
+about obsolete 
+options, use 
+-Xlint:-options.
+3 warnings
+Running Gradle task 'assembleDebug'...                            311.0s
+ΓêÜ Built build\app\outputs\flutter-apk\app-debug.apk

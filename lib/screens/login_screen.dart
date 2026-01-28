@@ -40,16 +40,27 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkLoginStatus() async {
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     
-    if (prefs.isLoggedIn() && prefs.hasSelectedChild()) {
-      // Already logged in, navigate to dashboard
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+    if (prefs.isLoggedIn()) {
+      if (prefs.hasSelectedChild()) {
+        // Already logged in and child selected, navigate to dashboard
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        }
+      } else {
+        // Logged in but no child selected, navigate to profile selection
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/profile_selection');
+        }
       }
     }
   }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Store values before any async operations (controllers might be disposed later)
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
 
     setState(() {
       _isLoading = true;
@@ -59,10 +70,10 @@ class _LoginScreenState extends State<LoginScreen> {
     final apiService = Provider.of<ApiService>(context, listen: false);
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
 
-    final result = await apiService.login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+    final result = await apiService.login(email, password);
+
+    // Check mounted before setState
+    if (!mounted) return;
 
     setState(() {
       _isLoading = false;
@@ -72,10 +83,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // Save parent credentials for API calls
       print('═══════════════════════════════════════════════════════');
       print('💾 LOGIN: Saving credentials...');
-      await prefs.setParentEmail(_emailController.text.trim());
-      await prefs.setParentPassword(_passwordController.text);
+      await prefs.setParentEmail(email);
+      await prefs.setParentPassword(password);
       await prefs.setParentLoggedIn(true);
-      print('✅ LOGIN: Email saved: ${_emailController.text.trim()}');
+      print('✅ LOGIN: Email saved: $email');
       print('✅ LOGIN: Password saved: [PRESENT]');
       print('✅ LOGIN: Parent logged in status saved');
       
@@ -89,19 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
       print('═══════════════════════════════════════════════════════');
 
       // Navigate to profile selection, passing the children list
-      if (mounted) {
-        // Close login dialog first
-        Navigator.of(context).pop();
-        
+      if (result['success']) {
         final children = result['children'] as List<Child>;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProfileSelectionScreen(children: children),
-          ),
-        );
         
-        // Initialize encryption in background (don't block UI)
+        // Explicitly close login dialog first using rootNavigator
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+
+        // Initialize encryption in background BEFORE navigating (use stored prefs)
         Future.microtask(() async {
           try {
             debugPrint('🔐 Login: Initializing encryption service in background...');
@@ -119,6 +126,16 @@ class _LoginScreenState extends State<LoginScreen> {
             debugPrint('⚠️ Login: Encryption initialization failed: $e');
           }
         });
+        
+        // Use pushAndRemoveUntil to properly navigate and remove all previous routes
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => ProfileSelectionScreen(children: children),
+            ),
+            (route) => false, // Remove all routes
+          );
+        }
       }
     } else {
       // Get actual error message from response
@@ -127,8 +144,8 @@ class _LoginScreenState extends State<LoginScreen> {
       
       // Show error dialog popup
       if (mounted) {
-        // Close login dialog first
-        Navigator.of(context).pop();
+        // Close login dialog using rootNavigator
+        Navigator.of(context, rootNavigator: true).pop();
         
         // Small delay to ensure dialog is closed
         await Future.delayed(const Duration(milliseconds: 100));
@@ -180,6 +197,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleSignup() async {
     if (!_signupFormKey.currentState!.validate()) return;
 
+    // Store values early
+    final name = _signupNameController.text.trim();
+    final email = _signupEmailController.text.trim();
+    final password = _signupPasswordController.text;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -187,11 +209,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final apiService = Provider.of<ApiService>(context, listen: false);
 
-    final result = await apiService.signup(
-      _signupNameController.text.trim(),
-      _signupEmailController.text.trim(),
-      _signupPasswordController.text,
-    );
+    final result = await apiService.signup(name, email, password);
+
+    if (!mounted) return;
 
     setState(() {
       _isLoading = false;
@@ -200,8 +220,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result['success']) {
       // Show success message and pre-fill login email
       if (mounted) {
-        // Close signup dialog
-        Navigator.of(context).pop();
+        // Close signup dialog using rootNavigator
+        Navigator.of(context, rootNavigator: true).pop();
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -212,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         
         // Pre-fill the login email with the signup email
-        _emailController.text = _signupEmailController.text.trim();
+        _emailController.text = email;
         
         // Clear signup form fields
         _signupNameController.clear();
@@ -226,8 +246,8 @@ class _LoginScreenState extends State<LoginScreen> {
       
       // Show error dialog popup
       if (mounted) {
-        // Close signup dialog first
-        Navigator.of(context).pop();
+        // Close signup dialog using rootNavigator
+        Navigator.of(context, rootNavigator: true).pop();
         
         // Small delay to ensure dialog is closed
         await Future.delayed(const Duration(milliseconds: 100));
@@ -373,169 +393,179 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showLoginDialog() {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Login',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                if (_errorMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.redAccent),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.redAccent),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    labelStyle: const TextStyle(color: Colors.white60),
-                    prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1A3C8B)),
-                    filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your email';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Please enter a valid email';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    labelStyle: const TextStyle(color: Colors.white60),
-                    prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1A3C8B)),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: Colors.white60,
-                      ),
-                      onPressed: () {
-                        setDialogState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your password';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : () async {
-                    if (_formKey.currentState!.validate()) {
-                      await _handleLogin();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A3C8B),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
+      builder: (context) {
+        final maxHeight = MediaQuery.of(context).size.height * 0.8;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => Dialog(
+            backgroundColor: const Color(0xFF1A1A1A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: maxHeight,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
                           'Login',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.white54),
+                        const SizedBox(height: 24),
+                        if (_errorMessage != null)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.redAccent),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Colors.redAccent),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            labelStyle: const TextStyle(color: Colors.white60),
+                            prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1A3C8B)),
+                            filled: true,
+                            fillColor: const Color(0xFF0F0F0F),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your email';
+                            }
+                            if (!value.contains('@')) {
+                              return 'Please enter a valid email';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            labelStyle: const TextStyle(color: Colors.white60),
+                            prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1A3C8B)),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: Colors.white60,
+                              ),
+                              onPressed: () {
+                                setDialogState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFF0F0F0F),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFF1A3C8B), width: 2),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : () async {
+                            if (_formKey.currentState!.validate()) {
+                              await _handleLogin();
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A3C8B),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Login',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-      ),
+        );
+      },
     );
   }
 

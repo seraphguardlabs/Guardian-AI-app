@@ -1,0 +1,19 @@
+name: installed_apps
+description: A Flutter plugin to get installed apps on Android - Fixed for Flutter 3.x
+version: 1.6.1
+homepage: https://github.com/seraphguardlabs/installed_apps
+
+environment:
+  sdk: ">=2.17.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.sharmadhiraj.installed_apps
+        pluginClass: InstalledAppsPlugin

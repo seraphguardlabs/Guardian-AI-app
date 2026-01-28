@@ -1,0 +1,193 @@
+﻿Running Gradle task 'assembleDebug'...                          
+Auto-assigned namespace 'com.example.pytorch_mobile' to project 'pytorch_mobile'
+flutter : warning: [options] 
+source value 8 is obsolete and 
+will be removed in a future 
+release
+At line:1 char:1
++ flutter build apk --debug 
+2>&1 | Out-File -FilePath 
+build_output.txt  ...
++ 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          :  
+   NotSpecified: (warning: [o  
+  ptio... future release:Str   
+ ing) [], RemoteException
+    + FullyQualifiedErrorId :  
+   NativeCommandError
+ 
+warning: [options] target 
+value 8 is obsolete and will 
+be removed in a future release
+warning: [options] To suppress 
+warnings about obsolete 
+options, use -Xlint:-options.
+C:\Users\HP\AppData\Local\Pub\C
+ache\hosted\pub.dev\pytorch_mob
+ile-0.2.2\android\src\main\java
+\io\fynn\pytorch_mobile\PyTorch
+MobilePlugin.java:13: error: 
+cannot find symbol
+import io.flutter.plugin.common
+.PluginRegistry.Registrar;
+                               
+               ^
+  symbol:   class Registrar
+  location: interface 
+PluginRegistry
+C:\Users\HP\AppData\Local\Pub\C
+ache\hosted\pub.dev\pytorch_mob
+ile-0.2.2\android\src\main\java
+\io\fynn\pytorch_mobile\PyTorch
+MobilePlugin.java:47: error: 
+cannot find symbol
+  public static void 
+registerWith(Registrar 
+registrar) {
+                               
+   ^
+  symbol:   class Registrar
+  location: class 
+PyTorchMobilePlugin
+Note: C:\Users\HP\AppData\Local
+\Pub\Cache\hosted\pub.dev\pytor
+ch_mobile-0.2.2\android\src\mai
+n\java\io\fynn\pytorch_mobile\P
+yTorchMobilePlugin.java uses 
+or overrides a deprecated API.
+Note: Recompile with 
+-Xlint:deprecation for details.
+2 errors
+3 warnings
+e: file:///C:/Users/HP/AppData/
+Local/Pub/Cache/hosted/pub.dev/
+installed_apps-1.6.0/android/sr
+c/main/kotlin/com/sharmadhiraj/
+installed_apps/BuiltWithUtil.kt
+:52:47 Only safe (?.) or 
+non-null asserted (!!.) calls 
+are allowed on a nullable 
+receiver of type 
+'ApplicationInfo?'.
+e: file:///C:/Users/HP/AppData/
+Local/Pub/Cache/hosted/pub.dev/
+installed_apps-1.6.0/android/sr
+c/main/kotlin/com/sharmadhiraj/
+installed_apps/Util.kt:28:82 
+Argument type mismatch: actual 
+type is 'ApplicationInfo?', 
+but 'ApplicationInfo' was 
+expected.
+e: file:///C:/Users/HP/AppData/
+Local/Pub/Cache/hosted/pub.dev/
+installed_apps-1.6.0/android/sr
+c/main/kotlin/com/sharmadhiraj/
+installed_apps/Util.kt:29:74 
+Only safe (?.) or non-null 
+asserted (!!.) calls are 
+allowed on a nullable receiver 
+of type 'ApplicationInfo?'.
+
+FAILURE: Build completed with 
+2 failures.
+
+1: Task failed with an 
+exception.
+-----------
+* What went wrong:
+Execution failed for task ':pyt
+orch_mobile:compileDebugJavaWit
+hJavac'.
+> Compilation failed; see the 
+compiler output below.
+  Note: C:\Users\HP\AppData\Loc
+al\Pub\Cache\hosted\pub.dev\pyt
+orch_mobile-0.2.2\android\src\m
+ain\java\io\fynn\pytorch_mobile
+\PyTorchMobilePlugin.java uses 
+or overrides a deprecated API.
+  warning: [options] target 
+value 8 is obsolete and will 
+be removed in a future release
+  Note: Recompile with 
+-Xlint:deprecation for details.
+  warning: [options] source 
+value 8 is obsolete and will 
+be removed in a future release
+  C:\Users\HP\AppData\Local\Pub
+\Cache\hosted\pub.dev\pytorch_m
+obile-0.2.2\android\src\main\ja
+va\io\fynn\pytorch_mobile\PyTor
+chMobilePlugin.java:13: error: 
+cannot find symbol
+  import io.flutter.plugin.comm
+on.PluginRegistry.Registrar;
+                               
+                 ^
+    symbol:   class Registrar
+    location: interface 
+PluginRegistry
+  C:\Users\HP\AppData\Local\Pub
+\Cache\hosted\pub.dev\pytorch_m
+obile-0.2.2\android\src\main\ja
+va\io\fynn\pytorch_mobile\PyTor
+chMobilePlugin.java:47: error: 
+cannot find symbol
+    public static void 
+registerWith(Registrar 
+registrar) {
+                               
+     ^
+    symbol:   class Registrar
+    location: class 
+PyTorchMobilePlugin
+  warning: [options] To 
+suppress warnings about 
+obsolete options, use 
+-Xlint:-options.
+  2 errors
+  3 warnings
+
+* Try:
+> Check your code and 
+dependencies to fix the 
+compilation error(s)
+> Run with --scan to get full 
+insights.
+===============================
+===============================
+================
+
+2: Task failed with an 
+exception.
+-----------
+* What went wrong:
+Execution failed for task ':ins
+talled_apps:compileDebugKotlin'
+.
+> A failure occurred while 
+executing org.jetbrains.kotlin.
+compilerRunner.GradleCompilerRu
+nnerWithWorkers$GradleKotlinCom
+pilerWorkAction
+   > Compilation error. See 
+log for more details
+
+* Try:
+> Run with --stacktrace option 
+to get the stack trace.
+> Run with --info or --debug 
+option to get more log output.
+> Run with --scan to get full 
+insights.
+> Get more help at 
+https://help.gradle.org.
+===============================
+===============================
+================
+
+BUILD FAILED in 10s
+Running Gradle task 'assembleDebug'...                             11.2s
+Gradle task assembleDebug 
+failed with exit code 1

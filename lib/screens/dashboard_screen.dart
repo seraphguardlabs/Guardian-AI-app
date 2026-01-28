@@ -281,7 +281,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // Get installed apps for names and icons
-      List<AppInfo> apps = await InstalledApps.getInstalledApps(true, true);
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: true, withIcon: true);
       
       Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app

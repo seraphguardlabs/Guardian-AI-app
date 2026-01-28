@@ -38,13 +38,15 @@ dependencies:
   usage_stats: ^1.2.0
   fl_chart: ^0.63.0
   geolocator: ^10.1.0
-  installed_apps: ^1.2.0
+  installed_apps:
+    path: packages/installed_apps
   intl: ^0.18.1
   web_socket_channel: ^3.0.1
   pointycastle: ^3.9.1
   encrypt: ^5.0.3
   google_maps_flutter: ^2.7.0
-  pytorch_mobile: ^0.2.2
+  pytorch_mobile:
+    path: packages/pytorch_mobile
   onnxruntime: ^1.4.1
   google_mlkit_text_recognition: ^0.13.0
   google_mlkit_commons: ^0.7.0
@@ -73,12 +75,6 @@ flutter_launcher_icons:
   ios: true
   image_path : assets/images/shield_logo.png
 
-
-dependency_overrides:
-  usage_stats:
-    path: packages/usage_stats
-  installed_apps:
-    path: packages/installed_apps
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

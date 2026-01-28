@@ -713,7 +713,7 @@ class _ChildScreenState extends State<ChildScreen> {
         }
       }
 
-      List<AppInfo> apps = await InstalledApps.getInstalledApps(true, true);
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: true, withIcon: true);
 
       Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app

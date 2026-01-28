@@ -23,6 +23,13 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     super.initState();
     _childrenList = widget.children ?? [];
     debugPrint('📱 ProfileSelectionScreen initialized with ${_childrenList.length} children');
+    
+    // Auto-load children if list is empty
+    if (_childrenList.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reloadChildren();
+      });
+    }
   }
 
   @override
@@ -235,85 +242,96 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     debugPrint('📋 Showing child selection dialog with ${_childrenList.length} children');
     showDialog(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Select Child Profile',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
-              ..._childrenList.map((child) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  tileColor: const Color(0xFF2B2B2B),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  leading: CircleAvatar(
-                    backgroundColor: const Color(0xFF2B4C8F),
-                    backgroundImage: child.profileImageUrl != null
-                        ? NetworkImage(child.profileImageUrl!)
-                        : null,
-                    child: child.profileImageUrl == null
-                        ? Text(
-                            child.firstName[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : null,
-                  ),
-                  title: Text(
-                    '${child.firstName} ${child.lastName}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+      builder: (dialogContext) {
+        final maxHeight = MediaQuery.of(context).size.height * 0.7;
+        return Dialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
+              maxWidth: 400,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Select Child Profile',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
-                  onTap: () {
-                    debugPrint('👆 Child tile tapped: ${child.firstName}');
-                    Navigator.pop(dialogContext);
-                    _selectChild(child);
-                  },
+                    const SizedBox(height: 24),
+                    ..._childrenList.map((child) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        tileColor: const Color(0xFF2B2B2B),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFF2B4C8F),
+                          backgroundImage: child.profileImageUrl != null
+                              ? NetworkImage(child.profileImageUrl!)
+                              : null,
+                          child: child.profileImageUrl == null
+                              ? Text(
+                                  child.firstName[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        title: Text(
+                          '${child.firstName} ${child.lastName}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
+                        onTap: () {
+                          debugPrint('👆 Child tile tapped: ${child.firstName}');
+                          Navigator.pop(dialogContext);
+                          _selectChild(child);
+                        },
+                      ),
+                    )),
+                    const SizedBox(height: 8),
+                    // Add Child Option
+                    ListTile(
+                      tileColor: const Color(0xFF2B4C8F).withOpacity(0.3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFF2B4C8F),
+                        child: Icon(Icons.add, color: Colors.white),
+                      ),
+                      title: const Text(
+                        'Add New Child',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
+                      onTap: () {
+                        debugPrint('👆 Add New Child tapped');
+                        Navigator.pop(dialogContext);
+                        _showAddChildDialog();
+                      },
+                    ),
+                  ],
                 ),
-              )),
-              const SizedBox(height: 8),
-              // Add Child Option
-              ListTile(
-                tileColor: const Color(0xFF2B4C8F).withValues(alpha: 0.3),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFF2B4C8F),
-                  child: Icon(Icons.add, color: Colors.white),
-                ),
-                title: const Text(
-                  'Add New Child',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
-                onTap: () {
-                  debugPrint('👆 Add New Child tapped');
-                  Navigator.pop(dialogContext);
-                  _showAddChildDialog();
-                },
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -326,267 +344,277 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
 
     showDialog(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Add Child',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // First Name Field
-                TextFormField(
-                  controller: firstNameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'First Name',
-                    labelStyle: const TextStyle(color: Colors.white54),
-                    prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter first name';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Last Name Field
-                TextFormField(
-                  controller: lastNameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Last Name',
-                    labelStyle: const TextStyle(color: Colors.white54),
-                    prefixIcon: const Icon(Icons.person, color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter last name';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Date of Birth Field
-                TextFormField(
-                  controller: dateOfBirthController,
-                  style: const TextStyle(color: Colors.white),
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    labelText: 'Date of Birth',
-                    labelStyle: const TextStyle(color: Colors.white54),
-                    prefixIcon: const Icon(Icons.calendar_today, color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
-                    ),
-                  ),
-                  onTap: () async {
-                    debugPrint('📅 Date picker tapped');
-                    final DateTime? picked = await showDatePicker(
-                      context: dialogContext,
-                      initialDate: DateTime.now().subtract(const Duration(days: 365 * 10)),
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime.now(),
-                      builder: (context, child) {
-                        return Theme(
-                          data: ThemeData.dark().copyWith(
-                            colorScheme: const ColorScheme.dark(
-                              primary: Color(0xFF2B4C8F),
-                              onPrimary: Colors.white,
-                              surface: Color(0xFF1A1A1A),
-                              onSurface: Colors.white,
-                            ),
-                          ),
-                          child: child!,
-                        );
-                      },
-                    );
-                    if (picked != null) {
-                      dateOfBirthController.text = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                      debugPrint('📅 Date selected: ${dateOfBirthController.text}');
-                    }
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please select date of birth';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () async {
-                    debugPrint('👆 Add Child button pressed');
-                    if (formKey.currentState!.validate()) {
-                      debugPrint('✅ Form validated');
-                      Navigator.pop(dialogContext);
-                      
-                      // Show loading
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Row(
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Text('Adding child...'),
-                            ],
-                          ),
-                          backgroundColor: Color(0xFF2B4C8F),
-                          duration: Duration(seconds: 10),
+      builder: (dialogContext) {
+        final maxHeight = MediaQuery.of(context).size.height * 0.8;
+        return Dialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Add Child',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
-                      );
-
-                      // Get credentials from preferences
-                      final prefs = Provider.of<PreferencesManager>(context, listen: false);
-                      final email = prefs.getParentEmail() ?? '';
-                      final password = prefs.getParentPassword() ?? '';
-                      
-                      debugPrint('📤 Adding child with credentials:');
-                      debugPrint('   Email: $email');
-                      debugPrint('   First Name: ${firstNameController.text.trim()}');
-                      debugPrint('   Last Name: ${lastNameController.text.trim()}');
-                      debugPrint('   DOB: ${dateOfBirthController.text.trim()}');
-
-                      // Call API
-                      final result = await _apiService.addChild(
-                        email,
-                        password,
-                        firstNameController.text.trim(),
-                        lastNameController.text.trim(),
-                        dateOfBirthController.text.trim(),
-                      );
-
-                      debugPrint('📥 Add child API result: $result');
-                      
-                      // Hide loading snackbar
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      }
-
-                      if (result['success'] == true && mounted) {
-                        debugPrint('✅ Child added successfully!');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(result['message'] ?? 'Child added successfully!'),
-                            backgroundColor: Colors.green,
+                      ),
+                      const SizedBox(height: 24),
+                      // First Name Field
+                      TextFormField(
+                        controller: firstNameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'First Name',
+                          labelStyle: const TextStyle(color: Colors.white54),
+                          prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
+                          filled: true,
+                          fillColor: const Color(0xFF0F0F0F),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
-                        );
-                        
-                        // Reload children list
-                        await _reloadChildren();
-                        
-                        // Show the updated child selection dialog
-                        if (mounted && _childrenList.isNotEmpty) {
-                          _showChildSelectionDialog();
-                        }
-                      } else if (mounted) {
-                        debugPrint('❌ Failed to add child: ${result['error']}');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(result['error'] ?? 'Failed to add child'),
-                            backgroundColor: Colors.red,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
                           ),
-                        );
-                      }
-                    } else {
-                      debugPrint('❌ Form validation failed');
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2B4C8F),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Add Child',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter first name';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Last Name Field
+                      TextFormField(
+                        controller: lastNameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Last Name',
+                          labelStyle: const TextStyle(color: Colors.white54),
+                          prefixIcon: const Icon(Icons.person, color: Colors.white54),
+                          filled: true,
+                          fillColor: const Color(0xFF0F0F0F),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter last name';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Date of Birth Field
+                      TextFormField(
+                        controller: dateOfBirthController,
+                        style: const TextStyle(color: Colors.white),
+                        readOnly: true,
+                        decoration: InputDecoration(
+                          labelText: 'Date of Birth',
+                          labelStyle: const TextStyle(color: Colors.white54),
+                          prefixIcon: const Icon(Icons.calendar_today, color: Colors.white54),
+                          filled: true,
+                          fillColor: const Color(0xFF0F0F0F),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
+                          ),
+                        ),
+                        onTap: () async {
+                          debugPrint('📅 Date picker tapped');
+                          final DateTime? picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: DateTime.now().subtract(const Duration(days: 365 * 10)),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                            builder: (context, child) {
+                              return Theme(
+                                data: ThemeData.dark().copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Color(0xFF2B4C8F),
+                                    onPrimary: Colors.white,
+                                    surface: Color(0xFF1A1A1A),
+                                    onSurface: Colors.white,
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
+                          );
+                          if (picked != null) {
+                            dateOfBirthController.text = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                            debugPrint('📅 Date selected: ${dateOfBirthController.text}');
+                          }
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please select date of birth';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () async {
+                          debugPrint('👆 Add Child button pressed');
+                          if (formKey.currentState!.validate()) {
+                            debugPrint('✅ Form validated');
+                            Navigator.pop(dialogContext);
+                            
+                            // Show loading
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text('Adding child...'),
+                                  ],
+                                ),
+                                backgroundColor: Color(0xFF2B4C8F),
+                                duration: Duration(seconds: 10),
+                              ),
+                            );
+
+                            // Get credentials from preferences
+                            final prefs = Provider.of<PreferencesManager>(context, listen: false);
+                            final email = prefs.getParentEmail() ?? '';
+                            final password = prefs.getParentPassword() ?? '';
+                            
+                            debugPrint('📤 Adding child with credentials:');
+                            debugPrint('   Email: $email');
+                            debugPrint('   First Name: ${firstNameController.text.trim()}');
+                            debugPrint('   Last Name: ${lastNameController.text.trim()}');
+                            debugPrint('   DOB: ${dateOfBirthController.text.trim()}');
+
+                            // Call API
+                            final result = await _apiService.addChild(
+                              email,
+                              password,
+                              firstNameController.text.trim(),
+                              lastNameController.text.trim(),
+                              dateOfBirthController.text.trim(),
+                            );
+
+                            debugPrint('📥 Add child API result: $result');
+                            
+                            // Hide loading snackbar
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            }
+
+                            if (result['success'] == true && mounted) {
+                              debugPrint('✅ Child added successfully!');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(result['message'] ?? 'Child added successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                              
+                              // Reload children list
+                              await _reloadChildren();
+                              
+                              // Show the updated child selection dialog
+                              if (mounted && _childrenList.isNotEmpty) {
+                                _showChildSelectionDialog();
+                              }
+                            } else if (mounted) {
+                              debugPrint('❌ Failed to add child: ${result['error']}');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(result['error'] ?? 'Failed to add child'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } else {
+                            debugPrint('❌ Form validation failed');
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2B4C8F),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'Add Child',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () {
+                          debugPrint('👆 Cancel button pressed');
+                          Navigator.pop(dialogContext);
+                        },
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () {
-                    debugPrint('👆 Cancel button pressed');
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.white54),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

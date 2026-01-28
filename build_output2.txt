@@ -1,0 +1,201 @@
+﻿Running Gradle task 'assembleDebug'...                          
+flutter : lib/screens/d
+ashboard_screen.dart:6:
+8: Error: Error when 
+reading 'packages/insta
+lled_apps/lib/app_info.
+dart': The system 
+cannot find the file 
+specified.
+At line:1 char:1
++ flutter build apk 
+--debug 2>&1 | 
+Out-File -FilePath 
+build_output2.txt ...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (lib/screens/d   
+ as...file specifie    
+d.:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+
+import 'package:install
+ed_apps/app_info.dart';
+       ^
+lib/screens/child_scree
+n.dart:6:8: Error: 
+Error when reading 'pac
+kages/installed_apps/li
+b/app_info.dart': The 
+system cannot find the 
+file specified.
+
+import 'package:install
+ed_apps/app_info.dart';
+       ^
+lib/screens/dashboard_s
+creen.dart:284:64: 
+Error: Too many 
+positional arguments: 
+0 allowed, but 2 found.
+Try removing the extra 
+positional arguments.
+      List<AppInfo> 
+apps = await InstalledA
+pps.getInstalledApps(tr
+ue, true);
+                       
+                       
+                 ^
+packages/installed_apps
+/lib/src/installed_apps
+.dart:15:32: Context: 
+Found this candidate, 
+but the arguments 
+don't match.
+  static 
+Future<List<AppInfo>> 
+getInstalledApps({
+                       
+        
+^^^^^^^^^^^^^^^^
+lib/screens/dashboard_s
+creen.dart:898:55: 
+Error: The argument 
+type 'String' can't be 
+assigned to the 
+parameter type 
+'Uint8List'.
+ - 'Uint8List' is from 
+'dart:typed_data'.
+                       
+                       
+app.icon!,
+                       
+                       
+        ^
+lib/screens/dashboard_s
+creen.dart:1237:59: 
+Error: The argument 
+type 'String' can't be 
+assigned to the 
+parameter type 
+'Uint8List'.
+ - 'Uint8List' is from 
+'dart:typed_data'.
+                       
+                       
+    app.icon!,
+                       
+                       
+            ^
+lib/screens/dashboard_s
+creen.dart:1428:45: 
+Error: The argument 
+type 'String' can't be 
+assigned to the 
+parameter type 
+'Uint8List'.
+ - 'Uint8List' is from 
+'dart:typed_data'.
+                       
+             app.icon!,
+                       
+                     ^
+lib/screens/child_scree
+n.dart:716:64: Error: 
+Too many positional 
+arguments: 0 allowed, 
+but 2 found.
+Try removing the extra 
+positional arguments.
+      List<AppInfo> 
+apps = await InstalledA
+pps.getInstalledApps(tr
+ue, true);
+                       
+                       
+                 ^
+packages/installed_apps
+/lib/src/installed_apps
+.dart:15:32: Context: 
+Found this candidate, 
+but the arguments 
+don't match.
+  static 
+Future<List<AppInfo>> 
+getInstalledApps({
+                       
+        
+^^^^^^^^^^^^^^^^
+lib/screens/child_scree
+n.dart:1658:55: Error: 
+The argument type 
+'String' can't be 
+assigned to the 
+parameter type 
+'Uint8List'.
+ - 'Uint8List' is from 
+'dart:typed_data'.
+                       
+                       
+app.icon!,
+                       
+                       
+        ^
+lib/screens/child_scree
+n.dart:2020:65: Error: 
+The argument type 
+'String' can't be 
+assigned to the 
+parameter type 
+'Uint8List'.
+ - 'Uint8List' is from 
+'dart:typed_data'.
+                       
+                       
+          app.icon!,
+                       
+                       
+                  ^
+Target kernel_snapshot_
+program failed: 
+Exception
+
+
+FAILURE: Build failed 
+with an exception.
+
+* What went wrong:
+Execution failed for 
+task ':app:compileFlutt
+erBuildDebug'.
+> Process 'command 'C:\
+develop\flutter\bin\flu
+tter.bat'' finished 
+with non-zero exit 
+value 1
+
+* Try:
+> Run with 
+--stacktrace option to 
+get the stack trace.
+> Run with --info or 
+--debug option to get 
+more log output.
+> Run with --scan to 
+get full insights.
+> Get more help at http
+s://help.gradle.org.
+
+BUILD FAILED in 1m 6s
+Running Gradle task 'assembleDebug'...                             67.4s
+Gradle task 
+assembleDebug failed 
+with exit code 1

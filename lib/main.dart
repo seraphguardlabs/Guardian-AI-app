@@ -221,7 +221,7 @@ class GuardianAIApp extends StatelessWidget {
         initialScreen = const ChildScreen();
       } else {
         // Logged in but no child selected - go to profile selection
-        initialScreen = const LoginScreen();
+        initialScreen = const ProfileSelectionScreen();
       }
     }
     
