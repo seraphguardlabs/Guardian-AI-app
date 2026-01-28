@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:usage_stats/usage_stats.dart';
-import 'package:device_apps/device_apps.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 
 class AppUsageScreen extends StatefulWidget {
@@ -12,7 +13,7 @@ class AppUsageScreen extends StatefulWidget {
 
 class _AppUsageScreenState extends State<AppUsageScreen> {
   List<UsageInfo> _usageStats = [];
-  Map<String, Application> _apps = {};
+  Map<String, AppInfo> _apps = {};
   bool _loading = true;
 
   @override
@@ -40,13 +41,9 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
       }
 
       // Get installed apps for names and icons
-      List<Application> apps = await DeviceApps.getInstalledApplications(
-        includeAppIcons: true,
-        includeSystemApps: true,
-        onlyAppsWithLaunchIntent: true,
-      );
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(true, true);
       
-      Map<String, Application> appMap = {
+      Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app
       };
 
@@ -241,9 +238,9 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: app is ApplicationWithIcon
+                                  child: app.icon != null
                                       ? Image.memory(
-                                          app.icon,
+                                          app.icon!,
                                           width: 48,
                                           height: 48,
                                           fit: BoxFit.cover,
@@ -255,7 +252,7 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                                 ),
                               ),
                               title: Text(
-                                app.appName,
+                                app.name,
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),

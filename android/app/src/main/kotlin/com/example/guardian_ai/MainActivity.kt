@@ -1,5 +1,6 @@
 package com.example.guardian_ai
 
+import android.app.Activity
 import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.usage.UsageStats
@@ -8,6 +9,7 @@ import android.app.usage.UsageEvents
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
+import android.media.projection.MediaProjectionManager
 import android.util.Log
 import android.net.Uri
 import android.os.Build
@@ -23,6 +25,10 @@ class MainActivity: FlutterActivity() {
     private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
     private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
     private val MONITORING_CHANNEL = "com.example.guardian_ai/monitoring_service"
+    private val SCREEN_CAPTURE_CHANNEL = "com.example.guardian_ai/screen_capture"
+    
+    private val SCREEN_CAPTURE_REQUEST_CODE = 1000
+    private var screenCaptureResultCallback: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -112,6 +118,25 @@ class MainActivity: FlutterActivity() {
                     } else {
                         result.error("INVALID_ARGS", "Restrictions required", null)
                     }
+                }
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+        
+        // Screen Capture Channel
+        val screenCaptureChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CAPTURE_CHANNEL)
+        ScreenCaptureService.methodChannel = screenCaptureChannel
+        
+        screenCaptureChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestPermission" -> {
+                    requestScreenCapturePermission(result)
+                }
+                "stopCapture" -> {
+                    ScreenCaptureService.stop(this)
+                    result.success(true)
                 }
                 else -> {
                     result.notImplemented()
@@ -298,5 +323,29 @@ class MainActivity: FlutterActivity() {
             )
         }
         return mode == AppOpsManager.MODE_ALLOWED
+    }
+    
+    private fun requestScreenCapturePermission(result: MethodChannel.Result) {
+        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        screenCaptureResultCallback = result
+        startActivityForResult(mediaProjectionManager.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
+        Log.d("MainActivity", "Screen capture permission requested")
+    }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                Log.d("MainActivity", "Screen capture permission granted")
+                // Start the screen capture service
+                ScreenCaptureService.start(this, resultCode, data)
+                screenCaptureResultCallback?.success(true)
+            } else {
+                Log.d("MainActivity", "Screen capture permission denied")
+                screenCaptureResultCallback?.error("PERMISSION_DENIED", "User denied screen capture permission", null)
+            }
+            screenCaptureResultCallback = null
+        }
     }
 }

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
-import 'package:device_apps/device_apps.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
@@ -13,6 +14,10 @@ import '../services/encryption_service.dart';
 import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
 import '../services/time_extension_service.dart';
+import '../services/text_analysis_service.dart';
+import '../services/vision_analysis_service.dart';
+import '../services/screen_monitoring_service.dart';
+import '../services/text_threat_detection_service.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
 import '../widgets/app_bottom_nav.dart';
@@ -32,7 +37,7 @@ class _ChildScreenState extends State<ChildScreen> {
   double? _dailyLimitHours; // Global daily limit from server or default
   bool _loading = true;
   List<UsageInfo> _usageStats = [];
-  Map<String, Application> _apps = {};
+  Map<String, AppInfo> _apps = {};
   List<Map<String, String>> _browserHistory = [];
   Timer? _refreshTimer;
   RestrictionsData? _restrictions;
@@ -498,45 +503,102 @@ class _ChildScreenState extends State<ChildScreen> {
         _modelsRunning = 0;
       });
 
-      // Simulate AI service initialization with delays to show progress
-      // In a real app, this would initialize actual ML models
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Initialize TextAnalysisService
+      debugPrint('  📝 Initializing TextAnalysisService...');
+      final textService = TextAnalysisService.instance;
+      final textInitialized = await textService.initialize();
+
+      // Initialize TextThreatDetectionService
+      debugPrint('  🚫 Initializing TextThreatDetectionService...');
+      final textThreatService = TextThreatDetectionService.instance;
+      await textThreatService.initialize();
       
       if (!mounted) return;
       setState(() {
-        _modelsRunning = 1;
-        _aiServiceStatus = 'Loading BERT Model...';
+        _modelsRunning = textInitialized ? 1 : 0;
+        _aiServiceStatus = textInitialized ? 'Text models loaded' : 'Text model failed';
       });
 
-      await Future.delayed(const Duration(milliseconds: 300));
+      if (!textInitialized) {
+        debugPrint('❌ TextAnalysisService initialization failed');
+        if (mounted) {
+          setState(() {
+            _aiServiceStatus = 'Error: Text model failed';
+          });
+        }
+        return;
+      }
+
+      // Initialize VisionAnalysisService
+      debugPrint('  👁️  Initializing VisionAnalysisService...');
+      final visionService = VisionAnalysisService.instance;
+      final visionInitialized = await visionService.initialize();
       
       if (!mounted) return;
       setState(() {
-        _modelsRunning = 2;
-        _aiServiceStatus = 'Loading LSTM Model...';
+        _modelsRunning = visionInitialized ? 2 : 1;
+        _aiServiceStatus = visionInitialized ? 'Vision model loaded' : 'Vision model failed';
       });
 
-      await Future.delayed(const Duration(milliseconds: 300));
+      if (!visionInitialized) {
+        debugPrint('❌ VisionAnalysisService initialization failed');
+        if (mounted) {
+          setState(() {
+            _aiServiceStatus = 'Error: Vision model failed';
+          });
+        }
+        return;
+      }
+
+      // Initialize ScreenMonitoringService
+      debugPrint('  📸 Initializing ScreenMonitoringService...');
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      final childHash = prefs.getChildHash() ?? '';
+      final childName = 'Child'; // You can get this from preferences if stored
+      
+      final screenMonitoring = ScreenMonitoringService.instance;
+      final monitoringInitialized = await screenMonitoring.initialize(
+        childHash: childHash,
+        childName: childName,
+      );
       
       if (!mounted) return;
       setState(() {
-        _modelsRunning = 3;
-        _aiServiceStatus = 'Loading Vision Model...';
+        _modelsRunning = monitoringInitialized ? 3 : 2;
+        _aiServiceStatus = monitoringInitialized ? 'Starting monitoring...' : 'Monitoring failed';
       });
 
-      await Future.delayed(const Duration(milliseconds: 300));
+      if (!monitoringInitialized) {
+        debugPrint('❌ ScreenMonitoringService initialization failed');
+        if (mounted) {
+          setState(() {
+            _aiServiceStatus = 'Error: Monitoring failed';
+          });
+        }
+        return;
+      }
+
+      // Start screen monitoring
+      debugPrint('  🚀 Starting screen monitoring...');
+      final monitoringStarted = await screenMonitoring.startMonitoring();
       
       if (!mounted) return;
       setState(() {
-        _aiModelsLoaded = true;
-        _backgroundMonitoringActive = true;
-        _aiServiceStatus = 'Running';
-        _lastAnalysisTime = DateTime.now();
-        debugPrint('✅ AI Services initialized successfully');
+        _aiModelsLoaded = monitoringStarted;
+        _backgroundMonitoringActive = monitoringStarted;
+        _aiServiceStatus = monitoringStarted ? 'Running' : 'Permission denied';
+        _lastAnalysisTime = monitoringStarted ? DateTime.now() : null;
       });
+
+      if (monitoringStarted) {
+        debugPrint('✅ AI Services initialized and monitoring started successfully');
+      } else {
+        debugPrint('⚠️  AI Services initialized but monitoring not started (permission may be denied)');
+      }
       
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('❌ Error initializing AI Services: $e');
+      debugPrint('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
           _aiServiceStatus = 'Error: Failed to initialize';
@@ -651,13 +713,9 @@ class _ChildScreenState extends State<ChildScreen> {
         }
       }
 
-      List<Application> apps = await DeviceApps.getInstalledApplications(
-        includeAppIcons: true,
-        includeSystemApps: true,
-        onlyAppsWithLaunchIntent: true,
-      );
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(true, true);
 
-      Map<String, Application> appMap = {
+      Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app
       };
 
@@ -750,7 +808,7 @@ class _ChildScreenState extends State<ChildScreen> {
     return _usageStats.where((usage) {
       final app = _apps[usage.packageName];
       if (app == null) return false;
-      return _isBrowserApp(usage.packageName ?? '', app.appName);
+      return _isBrowserApp(usage.packageName ?? '', app.name);
     }).toList();
   }
 
@@ -1595,9 +1653,9 @@ class _ChildScreenState extends State<ChildScreen> {
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
-                                      child: app is ApplicationWithIcon
+                                      child: app.icon != null
                                           ? Image.memory(
-                                              app.icon,
+                                              app.icon!,
                                               width: 48,
                                               height: 48,
                                               fit: BoxFit.cover,
@@ -1609,7 +1667,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                     ),
                                   ),
                                   title: Text(
-                                    app.appName,
+                                    app.name,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white,
@@ -1923,13 +1981,13 @@ class _ChildScreenState extends State<ChildScreen> {
                                 final percentage = ((millis / totalMillis) * 100).clamp(0, 100).toInt();
                                 
                                 // Get app category
-                                String category = _getAppCategory(packageName, app.appName);
+                                String category = _getAppCategory(packageName, app.name);
 
                                 return GestureDetector(
                                   onTap: isExceeded ? () => _showRequestTimeDialog(
                                     context,
                                     packageName: packageName,
-                                    appName: app.appName,
+                                    appName: app.name,
                                   ) : null,
                                   child: Container(
                                     margin: const EdgeInsets.only(bottom: 16),
@@ -1957,9 +2015,9 @@ class _ChildScreenState extends State<ChildScreen> {
                                               ),
                                               child: ClipRRect(
                                                 borderRadius: BorderRadius.circular(10),
-                                                child: app is ApplicationWithIcon
+                                                child: app.icon != null
                                                     ? Image.memory(
-                                                        app.icon,
+                                                        app.icon!,
                                                         width: 40,
                                                         height: 40,
                                                         fit: BoxFit.cover,
@@ -1981,7 +2039,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                                     children: [
                                                       Flexible(
                                                         child: Text(
-                                                          app.appName,
+                                                          app.name,
                                                           style: const TextStyle(
                                                             fontSize: 16,
                                                             fontWeight: FontWeight.w600,

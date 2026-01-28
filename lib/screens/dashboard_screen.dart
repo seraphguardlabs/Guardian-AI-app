@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
-import 'package:device_apps/device_apps.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
@@ -27,7 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _screenTime = 'Unknown';
   bool _loading = true;
   List<UsageInfo> _usageStats = [];
-  Map<String, Application> _apps = {};
+  Map<String, AppInfo> _apps = {};
   List<Map<String, String>> _browserHistory = [];
   Timer? _refreshTimer;
   RestrictionsData? _restrictions;
@@ -280,13 +281,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // Get installed apps for names and icons
-      List<Application> apps = await DeviceApps.getInstalledApplications(
-        includeAppIcons: true,
-        includeSystemApps: true,
-        onlyAppsWithLaunchIntent: true,
-      );
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(true, true);
       
-      Map<String, Application> appMap = {
+      Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app
       };
 
@@ -367,7 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _usageStats.where((usage) {
       final app = _apps[usage.packageName];
       if (app == null) return false;
-      return _isBrowserApp(usage.packageName ?? '', app.appName);
+      return _isBrowserApp(usage.packageName ?? '', app.name);
     }).toList();
   }
 
@@ -896,9 +893,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
-                                      child: app is ApplicationWithIcon
+                                      child: app.icon != null
                                           ? Image.memory(
-                                              app.icon,
+                                              app.icon!,
                                               width: 48,
                                               height: 48,
                                               fit: BoxFit.cover,
@@ -910,7 +907,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                   ),
                                   title: Text(
-                                    app.appName,
+                                    app.name,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white,
@@ -1235,9 +1232,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(12),
-                                          child: app is ApplicationWithIcon
+                                          child: app.icon != null
                                               ? Image.memory(
-                                                  app.icon,
+                                                  app.icon!,
                                                   width: 48,
                                                   height: 48,
                                                   fit: BoxFit.cover,
@@ -1252,7 +1249,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              app.appName,
+                                              app.name,
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w600,
                                                 color: Colors.white,
@@ -1419,16 +1416,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       ..._usageStats.take(10).map((usage) {
                         final app = _apps[usage.packageName];
-                        final appName = app?.appName ?? usage.packageName ?? 'Unknown';
+                        final appName = app?.name ?? usage.packageName ?? 'Unknown';
                         return DropdownMenuItem<String>(
                           value: usage.packageName,
                           child: Row(
                             children: [
-                              if (app is ApplicationWithIcon)
+                              if (app != null && app.icon != null)
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
                                   child: Image.memory(
-                                    app.icon,
+                                    app.icon!,
                                     width: 24,
                                     height: 24,
                                     fit: BoxFit.cover,
@@ -1454,7 +1451,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         selectedPackageName = value;
                         if (value != null) {
                           final app = _apps[value];
-                          selectedAppName = app?.appName ?? value;
+                          selectedAppName = app?.name ?? value;
                         } else {
                           selectedAppName = null;
                         }

@@ -3,6 +3,13 @@ allprojects {
         google()
         mavenCentral()
     }
+    
+    configurations.all {
+        exclude(group = "com.android.support", module = "support-compat")
+        exclude(group = "com.android.support", module = "support-core-ui")
+        exclude(group = "com.android.support", module = "support-core-utils")
+        exclude(group = "com.android.support", module = "versionedparcelable")
+    }
 }
 
 val newBuildDir: Directory =

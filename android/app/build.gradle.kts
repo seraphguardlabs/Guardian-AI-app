@@ -28,6 +28,11 @@ android {
         targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        ndk {
+            abiFilters.add("armeabi-v7a")
+            abiFilters.add("arm64-v8a")
+            abiFilters.add("x86_64")
+        }
     }
 
     buildTypes {
@@ -35,6 +40,15 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
+
+    packaging {
+        resources {
+            excludes.add("META-INF/androidx.appcompat_appcompat.version")
+            excludes.add("META-INF/*.kotlin_module")
         }
     }
 }
@@ -45,4 +59,9 @@ flutter {
 
 dependencies {
     implementation("com.google.android.gms:play-services-location:21.1.0")
+    
+    configurations.all {
+        exclude(group = "com.android.support", module = "appcompat-v7")
+        exclude(group = "com.android.support")
+    }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
@@ -15,6 +16,7 @@ import 'services/time_extension_service.dart';
 import 'services/encryption_service.dart';
 import 'services/text_analysis_service.dart';
 import 'utils/preferences_manager.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,20 +59,144 @@ void main() async {
   }
   print('═══════════════════════════════════════════════════════');
 
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<PreferencesManager>.value(value: prefsManager),
-        Provider<ApiService>(create: (_) => ApiService()),
-        ChangeNotifierProvider(create: (_) => LocationService()),
-        ChangeNotifierProvider(create: (_) => WebSocketService()),
-        ChangeNotifierProvider(create: (_) => AppBlockerService()),
-        ChangeNotifierProvider(create: (_) => ChatService()),
-        ChangeNotifierProvider(create: (_) => TimeExtensionService()),
-      ],
-      child: GuardianAIApp(prefsManager: prefsManager),
-    ),
-  );
+  runApp(GuardianAIAppWrapper());
+}
+
+// Wrapper that handles initialization after app starts
+class GuardianAIAppWrapper extends StatelessWidget {
+  const GuardianAIAppWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Guardian AI',
+      debugShowCheckedModeBanner: false,
+      home: InitializationScreen(),
+    );
+  }
+}
+
+// Screen that performs initialization and then navigates to main app
+class InitializationScreen extends StatefulWidget {
+  const InitializationScreen({super.key});
+
+  @override
+  State<InitializationScreen> createState() => _InitializationScreenState();
+}
+
+class _InitializationScreenState extends State<InitializationScreen> {
+  String _status = 'Initializing...';
+  bool _hasError = false;
+  String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      setState(() => _status = 'Loading preferences...');
+      await Future.delayed(const Duration(milliseconds: 100)); // Let UI update
+      
+      final prefsManager = await PreferencesManager.init();
+      
+      setState(() => _status = 'Initializing encryption...');
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      try {
+        await EncryptionService.instance.initialize();
+      } catch (e) {
+        print('Encryption init failed: $e');
+        // Continue anyway
+      }
+      
+      // Successfully initialized - navigate to main app
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => MultiProvider(
+              providers: [
+                Provider<PreferencesManager>.value(value: prefsManager),
+                Provider<ApiService>(create: (_) => ApiService()),
+                ChangeNotifierProvider(create: (_) => LocationService()),
+                ChangeNotifierProvider(create: (_) => WebSocketService()),
+                ChangeNotifierProvider(create: (_) => AppBlockerService()),
+                ChangeNotifierProvider(create: (_) => ChatService()),
+                ChangeNotifierProvider(create: (_) => TimeExtensionService()),
+              ],
+              child: GuardianAIApp(prefsManager: prefsManager),
+            ),
+          ),
+        );
+      }
+    } catch (e, stackTrace) {
+      print('Initialization error: $e');
+      print('Stack: $stackTrace');
+      
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: _hasError
+            ? Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Initialization Error',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _errorMessage,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _hasError = false;
+                          _errorMessage = '';
+                        });
+                        _initialize();
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const FlutterLogo(size: 100),
+                  const SizedBox(height: 30),
+                  const CircularProgressIndicator(color: Colors.blue),
+                  const SizedBox(height: 20),
+                  Text(
+                    _status,
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
 }
 
 class GuardianAIApp extends StatelessWidget {

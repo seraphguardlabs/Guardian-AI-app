@@ -44,6 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Large ML model files (exceed GitHub's 100MB limit)
-*.onnx.data
-assets/models/*.onnx.data
+# Local package overrides
+packages/
+
+# Large ML model files or archives (exceed GitHub's 100MB limit)
+# These files must be handled via Git LFS or shared separately
+assets/models/bert_predatory.onnx.data
+Guardian_AI_Mobile_Package.zip
+extracted_models/
