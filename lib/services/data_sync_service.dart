@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'websocket_service.dart';
 import 'api_service.dart';
 import '../models/websocket_data.dart';
@@ -10,6 +11,8 @@ class DataSyncService extends ChangeNotifier {
   
   String? _childHash;
   bool _preferWebSocket = true;
+  double? _lastLatitude;
+  double? _lastLongitude;
   
   DataSyncService({
     required WebSocketService webSocketService,
@@ -88,6 +91,21 @@ class DataSyncService extends ChangeNotifier {
     required double latitude,
     required double longitude,
   }) async {
+    // Check if we have moved at least 5 meters since last update
+    if (_lastLatitude != null && _lastLongitude != null) {
+      double distance = Geolocator.distanceBetween(
+        _lastLatitude!,
+        _lastLongitude!,
+        latitude,
+        longitude,
+      );
+
+      if (distance < 5.0) {
+        debugPrint('📡 DataSync: Location update skipped (moved ${distance.toStringAsFixed(2)}m)');
+        return true; // Consider it a "success" because no sync was needed
+      }
+    }
+
     final timestamp = DateTime.now().toUtc().toIso8601String();
     final locationData = LocationData(
       timestamp: timestamp,
@@ -104,7 +122,11 @@ class DataSyncService extends ChangeNotifier {
         longitude: longitude,
       );
       
-      if (success) return true;
+      if (success) {
+        _lastLatitude = latitude;
+        _lastLongitude = longitude;
+        return true;
+      }
       debugPrint('⚠️ DataSync: WebSocket send failed, falling back to HTTP');
     }
     
@@ -119,6 +141,11 @@ class DataSyncService extends ChangeNotifier {
       childHash: _childHash!,
       locationData: locationData,
     );
+    
+    if (result['success'] == true) {
+      _lastLatitude = latitude;
+      _lastLongitude = longitude;
+    }
     
     return result['success'] ?? false;
   }

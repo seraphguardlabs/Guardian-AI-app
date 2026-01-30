@@ -15,7 +15,7 @@ class LocationService extends ChangeNotifier {
   // Location settings for continuous tracking
   final LocationSettings _locationSettings = const LocationSettings(
     accuracy: LocationAccuracy.high,
-    distanceFilter: 10, // Update every 10 meters
+    distanceFilter: 5, // Update every 5 meters
   );
 
   Future<void> startTracking() async {

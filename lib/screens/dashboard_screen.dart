@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -34,6 +35,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   RestrictionsData? _restrictions;
   StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
   StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
+  Position? _lastSentPosition;
 
   @override
   void initState() {
@@ -215,15 +217,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _sendLocationData() async {
     final locationService = Provider.of<LocationService>(context, listen: false);
     final wsService = Provider.of<WebSocketService>(context, listen: false);
-    
-    if (locationService.currentPosition != null) {
+
+    final currentPosition = locationService.currentPosition;
+    if (currentPosition != null) {
+      // Check if we have moved at least 5 meters since last update
+      if (_lastSentPosition != null) {
+        double distance = Geolocator.distanceBetween(
+          _lastSentPosition!.latitude,
+          _lastSentPosition!.longitude,
+          currentPosition.latitude,
+          currentPosition.longitude,
+        );
+
+        if (distance < 5.0) {
+          debugPrint('📍 (Old) Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
+          return;
+        }
+      }
+
       await wsService.sendLocation(
         timestamp: DateTime.now().toUtc().toIso8601String(),
-        latitude: locationService.currentPosition!.latitude,
-        longitude: locationService.currentPosition!.longitude,
+        latitude: currentPosition.latitude,
+        longitude: currentPosition.longitude,
       );
-      
-      debugPrint('📍 Sent location: ${locationService.currentPosition!.latitude}, ${locationService.currentPosition!.longitude}');
+
+      _lastSentPosition = currentPosition;
+      debugPrint('📍 (Old) Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
     }
   }
   

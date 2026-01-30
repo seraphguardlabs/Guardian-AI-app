@@ -16,6 +16,7 @@ class RealTimeDataCollector {
   Timer? _locationTimer;
   Timer? _websiteTimer;
   
+  Position? _lastSentPosition;
   bool _isRunning = false;
   
   RealTimeDataCollector({
@@ -166,6 +167,21 @@ class RealTimeDataCollector {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
+      // Check if we have moved at least 5 meters since last update
+      if (_lastSentPosition != null) {
+        double distance = Geolocator.distanceBetween(
+          _lastSentPosition!.latitude,
+          _lastSentPosition!.longitude,
+          position.latitude,
+          position.longitude,
+        );
+
+        if (distance < 5.0) {
+          debugPrint('📍 RealTimeCollector: Location update skipped (moved ${distance.toStringAsFixed(2)}m)');
+          return;
+        }
+      }
       
       debugPrint('📍 Sending location: ${position.latitude}, ${position.longitude}');
       
@@ -174,6 +190,8 @@ class RealTimeDataCollector {
         latitude: position.latitude,
         longitude: position.longitude,
       );
+
+      _lastSentPosition = position;
       
     } catch (e) {
       debugPrint('❌ Failed to collect location: $e');

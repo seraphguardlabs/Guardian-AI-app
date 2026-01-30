@@ -1,12 +1,12 @@
-import 'dart:ui' as ui;
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 /// Redesigned full-screen location view with:
-/// - Interactive map visualization at the top
+/// - Interactive map visualization (OpenStreetMap)
 /// - Timeline list of locations at the bottom
-/// - Animated path drawing
+/// - Path visualization with polylines
 /// - Location details on tap
 class LocationMapScreen extends StatefulWidget {
   final List<Map<String, dynamic>> locations;
@@ -24,27 +24,19 @@ class LocationMapScreen extends StatefulWidget {
 
 class _LocationMapScreenState extends State<LocationMapScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _pathAnimation;
+  late MapController _mapController;
   int? _selectedLocationIndex;
   bool _showTimeline = true;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    );
-    _pathAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.forward();
+    _mapController = MapController();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -89,6 +81,14 @@ class _LocationMapScreenState extends State<LocationMapScreen>
       final lng = _toDouble(loc['longitude']);
       return lat != null && lng != null;
     }).toList();
+
+    // Convert to latlong points
+    final points = validLocations.map((loc) {
+      return LatLng(_toDouble(loc['latitude'])!, _toDouble(loc['longitude'])!);
+    }).toList();
+
+    // Default center if no points
+    final initialCenter = points.isNotEmpty ? points.first : const LatLng(0, 0);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0F),
@@ -146,39 +146,99 @@ class _LocationMapScreenState extends State<LocationMapScreen>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: Container(
-                  height: _showTimeline ? 280 : 450,
+                  height: _showTimeline ? 320 : 500,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF0D1B2A),
-                        Color(0xFF1B263B),
-                        Color(0xFF0D1B2A),
-                      ],
-                    ),
+                    color: const Color(0xFF1B263B),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
                       color: Colors.white.withOpacity(0.1),
                       width: 1,
                     ),
                   ),
-                  child: AnimatedBuilder(
-                    animation: _pathAnimation,
-                    builder: (context, child) {
-                      return CustomPaint(
-                        painter: _ModernLocationPainter(
-                          locations: validLocations,
-                          animationProgress: _pathAnimation.value,
-                          selectedIndex: _selectedLocationIndex,
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: initialCenter,
+                      initialZoom: points.isNotEmpty ? 15.0 : 2.0,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.guardian_ai.app',
+                        // Add a dark filter to match the app theme
+                        tileBuilder: (context, tileWidget, tile) {
+                          return ColorFiltered(
+                            colorFilter: const ColorFilter.matrix([
+                              -1, 0, 0, 0, 255,
+                              0, -1, 0, 0, 255,
+                              0, 0, -1, 0, 255,
+                              0, 0, 0, 1, 0,
+                            ]),
+                            child: tileWidget,
+                          );
+                        },
+                      ),
+                      if (points.isNotEmpty)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: points,
+                              strokeWidth: 4.0,
+                              color: const Color(0xFF4ECDC4),
+                            ),
+                          ],
                         ),
-                        child: GestureDetector(
-                          onTapDown: (details) {
-                            _handleMapTap(details, validLocations);
-                          },
-                        ),
-                      );
-                    },
+                      MarkerLayer(
+                        markers: List.generate(points.length, (index) {
+                          final point = points[index];
+                          final isFirst = index == 0;
+                          final isLast = index == points.length - 1;
+                          final isSelected = _selectedLocationIndex == index;
+
+                          return Marker(
+                            point: point,
+                            width: 40,
+                            height: 40,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedLocationIndex = isSelected ? null : index;
+                                });
+                              },
+                              child: Column(
+                                children: [
+                                  if (isSelected)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.7),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        _formatTimestamp(validLocations[index]['timestamp']),
+                                        style: const TextStyle(color: Colors.white, fontSize: 8),
+                                      ),
+                                    ),
+                                  Icon(
+                                    isFirst
+                                        ? Icons.my_location
+                                        : isLast
+                                            ? Icons.location_on
+                                            : Icons.circle,
+                                    size: isSelected ? 30 : (isFirst || isLast ? 24 : 12),
+                                    color: isFirst
+                                        ? Colors.red
+                                        : isLast
+                                            ? Colors.green
+                                            : const Color(0xFF4ECDC4),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -226,6 +286,7 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                     return _buildTimelineItem(
                       loc,
                       index,
+                      validLocations.length,
                       isFirst: isFirst,
                       isLast: isLast,
                       isSelected: isSelected,
@@ -371,7 +432,8 @@ class _LocationMapScreenState extends State<LocationMapScreen>
 
   Widget _buildTimelineItem(
     Map<String, dynamic> location,
-    int index, {
+    int index,
+    int totalCount, {
     required bool isFirst,
     required bool isLast,
     required bool isSelected,
@@ -407,9 +469,9 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                     height: isSelected ? 16 : 12,
                     decoration: BoxDecoration(
                       color: isFirst
-                          ? const Color(0xFF4CAF50)
+                          ? const Color(0xFFFF6B6B)
                           : isLast
-                              ? const Color(0xFFFF6B6B)
+                              ? const Color(0xFF4CAF50)
                               : const Color(0xFF4ECDC4),
                       shape: BoxShape.circle,
                       border: isSelected
@@ -418,9 +480,9 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                       boxShadow: [
                         BoxShadow(
                           color: (isFirst
-                                  ? const Color(0xFF4CAF50)
+                                  ? const Color(0xFFFF6B6B)
                                   : isLast
-                                      ? const Color(0xFFFF6B6B)
+                                      ? const Color(0xFF4CAF50)
                                       : const Color(0xFF4ECDC4))
                               .withOpacity(0.4),
                           blurRadius: 8,
@@ -462,24 +524,24 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                           children: [
                             Icon(
                               isFirst
-                                  ? Icons.play_circle_outline
+                                  ? Icons.my_location
                                   : isLast
                                       ? Icons.flag
                                       : Icons.location_on_outlined,
                               color: isFirst
-                                  ? const Color(0xFF4CAF50)
+                                  ? const Color(0xFFFF6B6B)
                                   : isLast
-                                      ? const Color(0xFFFF6B6B)
+                                      ? const Color(0xFF4CAF50)
                                       : const Color(0xFF4ECDC4),
                               size: 16,
                             ),
                             const SizedBox(width: 6),
                             Text(
                               isFirst
-                                  ? 'Start'
+                                  ? 'Current'
                                   : isLast
-                                      ? 'Current'
-                                      : 'Point ${index + 1}',
+                                      ? 'Start'
+                                      : 'Point ${totalCount - index}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
@@ -538,286 +600,3 @@ class _LocationMapScreenState extends State<LocationMapScreen>
   }
 }
 
-/// Modern map painter with animated path and styled markers
-class _ModernLocationPainter extends CustomPainter {
-  final List<Map<String, dynamic>> locations;
-  final double animationProgress;
-  final int? selectedIndex;
-
-  _ModernLocationPainter({
-    required this.locations,
-    required this.animationProgress,
-    this.selectedIndex,
-  });
-
-  static double? _toDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v);
-    return null;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Draw sophisticated grid pattern
-    _drawMapBackground(canvas, size);
-
-    if (locations.isEmpty) {
-      _drawEmptyState(canvas, size);
-      return;
-    }
-
-    // Collect valid points
-    final points = <Offset>[];
-    final lats = <double>[];
-    final lngs = <double>[];
-
-    for (final loc in locations) {
-      final lat = _toDouble(loc['latitude']);
-      final lng = _toDouble(loc['longitude']);
-      if (lat != null && lng != null) {
-        lats.add(lat);
-        lngs.add(lng);
-      }
-    }
-
-    if (lats.isEmpty) {
-      _drawEmptyState(canvas, size);
-      return;
-    }
-
-    final minLat = lats.reduce(math.min);
-    final maxLat = lats.reduce(math.max);
-    final minLng = lngs.reduce(math.min);
-    final maxLng = lngs.reduce(math.max);
-
-    final latRange = (maxLat - minLat).abs().clamp(0.0001, double.infinity);
-    final lngRange = (maxLng - minLng).abs().clamp(0.0001, double.infinity);
-
-    const padding = 40.0;
-    final width = size.width - padding * 2;
-    final height = size.height - padding * 2;
-
-    Offset project(double lat, double lng) {
-      final x = ((lng - minLng) / lngRange) * width + padding;
-      final y = ((maxLat - lat) / latRange) * height + padding;
-      return Offset(x, y);
-    }
-
-    // Build points list (reversed for chronological order)
-    for (final loc in locations.reversed) {
-      final lat = _toDouble(loc['latitude']);
-      final lng = _toDouble(loc['longitude']);
-      if (lat != null && lng != null) {
-        points.add(project(lat, lng));
-      }
-    }
-
-    if (points.isEmpty) return;
-
-    // Draw path glow (animated)
-    final glowPaint = Paint()
-      ..color = const Color(0xFF4ECDC4).withOpacity(0.15)
-      ..strokeWidth = 16
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-
-    final pathPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        points.first,
-        points.last,
-        [
-          const Color(0xFF4CAF50),
-          const Color(0xFF4ECDC4),
-          const Color(0xFFFF6B6B),
-        ],
-        [0.0, 0.5, 1.0],
-      )
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    // Animate path drawing
-    final totalPoints = points.length;
-    final animatedPointCount = (totalPoints * animationProgress).ceil().clamp(1, totalPoints);
-
-    if (animatedPointCount > 1) {
-      final path = Path()..moveTo(points[0].dx, points[0].dy);
-      for (var i = 1; i < animatedPointCount; i++) {
-        path.lineTo(points[i].dx, points[i].dy);
-      }
-      canvas.drawPath(path, glowPaint);
-      canvas.drawPath(path, pathPaint);
-    }
-
-    // Draw location markers
-    for (var i = 0; i < animatedPointCount; i++) {
-      final p = points[i];
-      final isFirst = i == 0;
-      final isLast = i == points.length - 1;
-      final isSelected = selectedIndex != null && 
-          (points.length - 1 - i) == selectedIndex;
-
-      Color markerColor;
-      double markerSize;
-
-      if (isFirst) {
-        markerColor = const Color(0xFF4CAF50);
-        markerSize = 10;
-      } else if (isLast) {
-        markerColor = const Color(0xFFFF6B6B);
-        markerSize = 12;
-      } else {
-        markerColor = const Color(0xFF4ECDC4);
-        markerSize = 6;
-      }
-
-      if (isSelected) {
-        markerSize += 4;
-      }
-
-      // Outer glow
-      final glowMarkerPaint = Paint()
-        ..color = markerColor.withOpacity(0.3)
-        ..style = PaintingStyle.fill
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-      canvas.drawCircle(p, markerSize + 4, glowMarkerPaint);
-
-      // Center dot
-      final markerPaint = Paint()
-        ..color = markerColor
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(p, markerSize, markerPaint);
-
-      // White border for start/end
-      if (isFirst || isLast || isSelected) {
-        final borderPaint = Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2;
-        canvas.drawCircle(p, markerSize, borderPaint);
-      }
-    }
-
-    // Draw labels for start and end
-    if (points.length >= 2 && animationProgress == 1.0) {
-      _drawLabel(canvas, points.first, 'START', const Color(0xFF4CAF50));
-      _drawLabel(canvas, points.last, 'NOW', const Color(0xFFFF6B6B));
-    }
-  }
-
-  void _drawMapBackground(Canvas canvas, Size size) {
-    // Base gradient
-    final bgPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(size.width / 2, size.height / 2),
-        size.width * 0.8,
-        [
-          const Color(0xFF1B263B),
-          const Color(0xFF0D1B2A),
-        ],
-      );
-    canvas.drawRect(Offset.zero & size, bgPaint);
-
-    // Grid lines
-    final gridPaint = Paint()
-      ..color = const Color(0xFF243447)
-      ..strokeWidth = 0.5;
-
-    const gridSpacing = 40.0;
-    for (double x = 0; x <= size.width; x += gridSpacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (double y = 0; y <= size.height; y += gridSpacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    // Corner decorations
-    final cornerPaint = Paint()
-      ..color = Colors.white.withOpacity(0.05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    _drawCorner(canvas, Offset.zero, 20, cornerPaint);
-    _drawCorner(canvas, Offset(size.width, 0), 20, cornerPaint, flipX: true);
-    _drawCorner(canvas, Offset(0, size.height), 20, cornerPaint, flipY: true);
-    _drawCorner(canvas, Offset(size.width, size.height), 20, cornerPaint, flipX: true, flipY: true);
-  }
-
-  void _drawCorner(Canvas canvas, Offset pos, double size, Paint paint,
-      {bool flipX = false, bool flipY = false}) {
-    final dx = flipX ? -size : size;
-    final dy = flipY ? -size : size;
-    canvas.drawLine(pos, Offset(pos.dx + dx, pos.dy), paint);
-    canvas.drawLine(pos, Offset(pos.dx, pos.dy + dy), paint);
-  }
-
-  void _drawLabel(Canvas canvas, Offset point, String text, Color color) {
-    final textStyle = TextStyle(
-      color: color,
-      fontSize: 10,
-      fontWeight: FontWeight.bold,
-    );
-    final textSpan = TextSpan(text: text, style: textStyle);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: ui.TextDirection.ltr,
-    );
-    textPainter.layout();
-
-    final bgRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: Offset(point.dx, point.dy - 25),
-        width: textPainter.width + 12,
-        height: textPainter.height + 6,
-      ),
-      const Radius.circular(4),
-    );
-
-    final bgPaint = Paint()..color = color.withOpacity(0.2);
-    canvas.drawRRect(bgRect, bgPaint);
-
-    final borderPaint = Paint()
-      ..color = color.withOpacity(0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    canvas.drawRRect(bgRect, borderPaint);
-
-    textPainter.paint(
-      canvas,
-      Offset(
-        point.dx - textPainter.width / 2,
-        point.dy - 25 - textPainter.height / 2,
-      ),
-    );
-  }
-
-  void _drawEmptyState(Canvas canvas, Size size) {
-    final textStyle = const TextStyle(
-      color: Colors.white38,
-      fontSize: 14,
-    );
-    final textSpan = TextSpan(text: 'No location data available', style: textStyle);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: ui.TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        (size.width - textPainter.width) / 2,
-        (size.height - textPainter.height) / 2,
-      ),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ModernLocationPainter oldDelegate) {
-    return oldDelegate.locations != locations ||
-        oldDelegate.animationProgress != animationProgress ||
-        oldDelegate.selectedIndex != selectedIndex;
-  }
-}
