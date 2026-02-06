@@ -16,6 +16,9 @@ import 'services/time_extension_service.dart';
 import 'services/encryption_service.dart';
 import 'services/text_analysis_service.dart';
 import 'utils/preferences_manager.dart';
+import 'services/geofence_service.dart';
+import 'services/gamified_permission_service.dart';
+import 'screens/assign_task_screen.dart';
 
 
 void main() async {
@@ -125,6 +128,8 @@ class _InitializationScreenState extends State<InitializationScreen> {
                 ChangeNotifierProvider(create: (_) => AppBlockerService()),
                 ChangeNotifierProvider(create: (_) => ChatService()),
                 ChangeNotifierProvider(create: (_) => TimeExtensionService()),
+                ChangeNotifierProvider(create: (_) => GeofenceService()),
+                ChangeNotifierProvider(create: (_) => GamifiedPermissionService()),
               ],
               child: GuardianAIApp(prefsManager: prefsManager),
             ),
@@ -271,6 +276,7 @@ class GuardianAIApp extends StatelessWidget {
         '/child': (context) => const ChildScreen(),
         '/parent_dashboard': (context) => const ParentDashboardScreen(),
         '/ai_test': (context) => const AITestScreen(),
+        '/assign_task': (context) => const AssignTaskScreen(),
       },
     );
   }

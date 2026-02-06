@@ -1,5 +1,322 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/gamified_permission_service.dart';
+import '../widgets/task_tile.dart';
+
+class AssignTaskScreen extends StatefulWidget {
+  const AssignTaskScreen({super.key});
+
+  @override
+  State<AssignTaskScreen> createState() => _AssignTaskScreenState();
+}
+
+class _AssignTaskScreenState extends State<AssignTaskScreen> {
+  String? _selectedTaskId;
+  bool _isCustom = false;
+
+  void _openAddCustomDialog(GamifiedPermissionService svc) {
+    final titleCtl = TextEditingController();
+    final descCtl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Add New Task',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: titleCtl,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Title',
+                  labelStyle: const TextStyle(color: Colors.white54),
+                  prefixIcon: const Icon(Icons.title, color: Colors.white54),
+                  filled: true,
+                  fillColor: const Color(0xFF0F0F0F),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descCtl,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  labelStyle: const TextStyle(color: Colors.white54),
+                  prefixIcon: const Icon(Icons.description, color: Colors.white54),
+                  filled: true,
+                  fillColor: const Color(0xFF0F0F0F),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF2B4C8F), width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final title = titleCtl.text.trim();
+                        final desc = descCtl.text.trim();
+                        if (title.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Please enter a title')),
+                          );
+                          return;
+                        }
+                        final id = 'custom_${DateTime.now().millisecondsSinceEpoch}';
+                        svc.addCustomTask(id, title, desc);
+                        setState(() {
+                          _selectedTaskId = id;
+                          _isCustom = true;
+                        });
+                        Navigator.of(ctx).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2B4C8F),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Add',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = Provider.of<GamifiedPermissionService>(context);
+    final tasks = svc.suggestedTasks;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F0F0F),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Assign Task',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: Column(
+        children: [
+          // Select Task header
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Select Task',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => _openAddCustomDialog(svc),
+                  icon: const Icon(Icons.add_circle_outline, color: Color(0xFF2B4C8F), size: 20),
+                  label: const Text(
+                    'Add New Task',
+                    style: TextStyle(color: Color(0xFF2B4C8F), fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: tasks.length + 1,
+              itemBuilder: (ctx, i) {
+                if (i == 0) {
+                  // No Task option
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: _selectedTaskId == 'no_task' ? const Color(0xFF2B4C8F).withOpacity(0.15) : const Color(0xFF151515),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _selectedTaskId == 'no_task' ? const Color(0xFF2B4C8F) : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      title: const Text(
+                        'No Task',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Don\'t assign a task for this request',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                      trailing: _selectedTaskId == 'no_task'
+                          ? const Icon(Icons.check_circle, color: Color(0xFF2B4C8F), size: 28)
+                          : const Icon(Icons.circle_outlined, color: Colors.white24, size: 28),
+                      onTap: () => setState(() {
+                        _selectedTaskId = 'no_task';
+                        _isCustom = false;
+                      }),
+                    ),
+                  );
+                }
+                final t = tasks[i - 1];
+                return TaskTile(
+                  title: t.title,
+                  description: t.description,
+                  selected: _selectedTaskId == t.id,
+                  onTap: () => setState(() {
+                    _selectedTaskId = t.id;
+                    _isCustom = t.id.startsWith('custom_');
+                  }),
+                );
+              },
+            ),
+          ),
+
+          // Bottom Send button
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF151515),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _selectedTaskId == null
+                      ? null
+                      : () async {
+                          // For demo purposes we use a static request id
+                          final success = await svc.assignTaskToRequest(
+                            requestId: 'demo_request',
+                            taskId: _selectedTaskId!,
+                            isCustom: _isCustom,
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(success ? 'Task sent successfully!' : 'Failed to assign task'),
+                                backgroundColor: success ? Colors.green : Colors.red,
+                              ),
+                            );
+                            if (success) Navigator.of(context).pop();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _selectedTaskId != null ? const Color(0xFF2B4C8F) : Colors.grey.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Send',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../models/child.dart';
