@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:sqflite/sqflite.dart';
 import '../models/alert.dart';
-import 'background_model_executor.dart';
 import 'websocket_service.dart';
 import 'api_service.dart';
 
@@ -26,7 +25,6 @@ class RealtimeAlertService {
   Database? _database;
   bool _isInitialized = false;
   String? _currentChildHash;
-  StreamSubscription? _modelExecutorSubscription;
   StreamSubscription? _websocketSubscription;
 
   // Controllers
@@ -47,7 +45,6 @@ class RealtimeAlertService {
   /// Initialize the realtime alert service
   Future<bool> initialize(
     Database db,
-    BackgroundModelExecutor backgroundExecutor,
     WebSocketService webSocketService,
   ) async {
     if (_isInitialized) {
@@ -61,10 +58,6 @@ class RealtimeAlertService {
 
       // Create alerts table if needed
       await _createAlertsTable();
-
-      // Listen to background model executor
-      _modelExecutorSubscription =
-          backgroundExecutor.alertStream.listen(_onModelAlert);
 
       // Listen to WebSocket alerts
       _websocketSubscription =
@@ -152,10 +145,10 @@ class RealtimeAlertService {
   }
 
   /// Handle alert from background model executor
-  void _onModelAlert(Alert alert) {
-    _log('🤖 Alert from model: ${alert.severity} - ${alert.id}');
-    addAlert(alert);
-  }
+  // void _onModelAlert(Alert alert) {
+  //   _log('🤖 Alert from model: ${alert.severity} - ${alert.id}');
+  //   addAlert(alert);
+  // }
 
   /// Handle message from WebSocket
   void _onWebSocketMessage(Map<String, dynamic> message) {
@@ -558,7 +551,6 @@ class RealtimeAlertService {
   /// Clean up resources
   void dispose() {
     _log('🧹 Disposing RealtimeAlertService...');
-    _modelExecutorSubscription?.cancel();
     _websocketSubscription?.cancel();
     _alertController.close();
     _alertCountController.close();

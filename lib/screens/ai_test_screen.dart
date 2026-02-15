@@ -21,7 +21,7 @@ class _AITestScreenState extends State<AITestScreen> {
   void initState() {
     super.initState();
     _textAnalysisService = TextAnalysisService.instance;
-    _addLog('🚀 AI Test Screen initialized');
+    _addLog('🚀 Test Screen initialized');
   }
 
   void _addLog(String message) {
@@ -106,7 +106,7 @@ class _AITestScreenState extends State<AITestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🤖 AI Model Test'),
+        title: const Text('🤖 Model Test'),
         centerTitle: true,
         elevation: 2,
       ),
@@ -232,7 +232,7 @@ class _AITestScreenState extends State<AITestScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Click to load AI models from device storage',
+              'Click to load models from device storage',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],

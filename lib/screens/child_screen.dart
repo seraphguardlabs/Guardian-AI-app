@@ -15,10 +15,7 @@ import '../services/encryption_service.dart';
 import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
 import '../services/time_extension_service.dart';
-import '../services/text_analysis_service.dart';
-import '../services/vision_analysis_service.dart';
 import '../services/screen_monitoring_service.dart';
-import '../services/text_threat_detection_service.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
 import '../widgets/app_bottom_nav.dart';
@@ -48,11 +45,6 @@ class _ChildScreenState extends State<ChildScreen> {
   List<String> _examModeApps = [];
   List<Task> _pendingTasks = [];
   bool _loadingTasks = false;
-  bool _aiModelsLoaded = false;
-  bool _backgroundMonitoringActive = false;
-  String _aiServiceStatus = 'Initializing...';
-  DateTime? _lastAnalysisTime;
-  int _modelsRunning = 0;
   Position? _lastSentPosition;
 
   @override
@@ -81,7 +73,7 @@ class _ChildScreenState extends State<ChildScreen> {
       _fetchExamMode();
       _loadDailyLimit();
       _loadPendingTasks();
-      _initializeAIServices();
+      _initializeBackgroundServices();
     });
   }
 
@@ -512,68 +504,16 @@ class _ChildScreenState extends State<ChildScreen> {
     }
   }
 
-  Future<void> _initializeAIServices() async {
-    debugPrint('🤖 Child Screen: Initializing AI Services...');
+  Future<void> _initializeBackgroundServices() async {
+    debugPrint('🤖 Child Screen: Initializing Monitoring Services...');
     if (!mounted) return;
     
     try {
-      setState(() {
-        _aiServiceStatus = 'Initializing...';
-        _modelsRunning = 0;
-      });
-
-      // Initialize TextAnalysisService
-      debugPrint('  📝 Initializing TextAnalysisService...');
-      final textService = TextAnalysisService.instance;
-      final textInitialized = await textService.initialize();
-
-      // Initialize TextThreatDetectionService
-      debugPrint('  🚫 Initializing TextThreatDetectionService...');
-      final textThreatService = TextThreatDetectionService.instance;
-      await textThreatService.initialize();
-      
-      if (!mounted) return;
-      setState(() {
-        _modelsRunning = textInitialized ? 1 : 0;
-        _aiServiceStatus = textInitialized ? 'Text models loaded' : 'Text model failed';
-      });
-
-      if (!textInitialized) {
-        debugPrint('❌ TextAnalysisService initialization failed');
-        if (mounted) {
-          setState(() {
-            _aiServiceStatus = 'Error: Text model failed';
-          });
-        }
-        return;
-      }
-
-      // Initialize VisionAnalysisService
-      debugPrint('  👁️  Initializing VisionAnalysisService...');
-      final visionService = VisionAnalysisService.instance;
-      final visionInitialized = await visionService.initialize();
-      
-      if (!mounted) return;
-      setState(() {
-        _modelsRunning = visionInitialized ? 2 : 1;
-        _aiServiceStatus = visionInitialized ? 'Vision model loaded' : 'Vision model failed';
-      });
-
-      if (!visionInitialized) {
-        debugPrint('❌ VisionAnalysisService initialization failed');
-        if (mounted) {
-          setState(() {
-            _aiServiceStatus = 'Error: Vision model failed';
-          });
-        }
-        return;
-      }
-
       // Initialize ScreenMonitoringService
       debugPrint('  📸 Initializing ScreenMonitoringService...');
       final prefs = Provider.of<PreferencesManager>(context, listen: false);
       final childHash = prefs.getChildHash() ?? '';
-      final childName = 'Child'; // You can get this from preferences if stored
+      final childName = 'Child'; 
       
       final screenMonitoring = ScreenMonitoringService.instance;
       final monitoringInitialized = await screenMonitoring.initialize(
@@ -581,19 +521,8 @@ class _ChildScreenState extends State<ChildScreen> {
         childName: childName,
       );
       
-      if (!mounted) return;
-      setState(() {
-        _modelsRunning = monitoringInitialized ? 3 : 2;
-        _aiServiceStatus = monitoringInitialized ? 'Starting monitoring...' : 'Monitoring failed';
-      });
-
       if (!monitoringInitialized) {
         debugPrint('❌ ScreenMonitoringService initialization failed');
-        if (mounted) {
-          setState(() {
-            _aiServiceStatus = 'Error: Monitoring failed';
-          });
-        }
         return;
       }
 
@@ -601,28 +530,15 @@ class _ChildScreenState extends State<ChildScreen> {
       debugPrint('  🚀 Starting screen monitoring...');
       final monitoringStarted = await screenMonitoring.startMonitoring();
       
-      if (!mounted) return;
-      setState(() {
-        _aiModelsLoaded = monitoringStarted;
-        _backgroundMonitoringActive = monitoringStarted;
-        _aiServiceStatus = monitoringStarted ? 'Running' : 'Permission denied';
-        _lastAnalysisTime = monitoringStarted ? DateTime.now() : null;
-      });
-
       if (monitoringStarted) {
-        debugPrint('✅ AI Services initialized and monitoring started successfully');
+        debugPrint('✅ Monitoring Services initialized and started successfully');
       } else {
-        debugPrint('⚠️  AI Services initialized but monitoring not started (permission may be denied)');
+        debugPrint('⚠️  Monitoring Services initialized but not started (permission may be denied)');
       }
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Error initializing AI Services: $e');
+      debugPrint('❌ Error initializing Services: $e');
       debugPrint('Stack trace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _aiServiceStatus = 'Error: Failed to initialize';
-        });
-      }
     }
   }
 
@@ -1299,9 +1215,6 @@ class _ChildScreenState extends State<ChildScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // AI Service Status Card
-                    _buildAIServiceStatusCard(),
-                    
                     // Screen Time Card - Match parent dashboard theme
                     Container(
                       decoration: BoxDecoration(
@@ -2460,259 +2373,7 @@ class _ChildScreenState extends State<ChildScreen> {
     );
   }
 
-  Widget _buildAIServiceStatusCard() {
-    final isRunning = _aiServiceStatus == 'Running';
-    final statusColor = isRunning ? Colors.green : Colors.orange;
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF1E3A8A).withOpacity(0.8),
-            const Color(0xFF0F172A).withOpacity(0.8),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: statusColor.withOpacity(0.3),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: statusColor.withOpacity(0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.smart_toy,
-                        color: statusColor,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'AI Services',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _aiServiceStatus,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: statusColor,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                if (isRunning)
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.6),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Models Status
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildModelBadge(
-                  'BERT',
-                  _modelsRunning >= 1,
-                ),
-                _buildModelBadge(
-                  'LSTM',
-                  _modelsRunning >= 2,
-                ),
-                _buildModelBadge(
-                  'Vision',
-                  _modelsRunning >= 3,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // Stats Row
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStatColumn(
-                    'Models Running',
-                    '$_modelsRunning/3',
-                  ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: Colors.white.withOpacity(0.1),
-                  ),
-                  _buildStatColumn(
-                    'Background Monitor',
-                    _backgroundMonitoringActive ? 'Active' : 'Inactive',
-                  ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: Colors.white.withOpacity(0.1),
-                  ),
-                  _buildStatColumn(
-                    'Last Analysis',
-                    _lastAnalysisTime != null
-                        ? '${_lastAnalysisTime!.hour}:${_lastAnalysisTime!.minute.toString().padLeft(2, '0')}'
-                        : 'N/A',
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Test Button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _lastAnalysisTime = DateTime.now();
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.white),
-                          SizedBox(width: 12),
-                          Text('AI services tested successfully'),
-                        ],
-                      ),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: statusColor.withOpacity(0.5)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: Text(
-                  'Test AI Services',
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildModelBadge(String modelName, bool isLoaded) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: isLoaded
-            ? Colors.green.withOpacity(0.2)
-            : Colors.grey.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isLoaded
-              ? Colors.green.withOpacity(0.5)
-              : Colors.grey.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isLoaded ? Icons.check_circle : Icons.schedule,
-            size: 14,
-            color: isLoaded ? Colors.green : Colors.grey,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            modelName,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isLoaded ? Colors.green : Colors.white54,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatColumn(String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            color: Colors.white54,
-          ),
-        ),
-      ],
-    );
-  }
   
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
     return Column(

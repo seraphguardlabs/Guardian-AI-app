@@ -49,7 +49,9 @@ class GeofenceService extends ChangeNotifier {
   }
 
   bool removeGeofence(int id) {
-    final removed = _geofences.removeWhere((g) => g.id == id) > 0;
+    final startLen = _geofences.length;
+    _geofences.removeWhere((g) => g.id == id);
+    final removed = _geofences.length < startLen;
     if (removed) notifyListeners();
     return removed;
   }

@@ -328,22 +328,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.14+3"
-  google_mlkit_commons:
-    dependency: "direct main"
-    description:
-      name: google_mlkit_commons
-      sha256: "27d626c66a181351a953eba5b6ff1ff123aadb891b4dab085b292118f039d6ac"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.1"
-  google_mlkit_text_recognition:
-    dependency: "direct main"
-    description:
-      name: google_mlkit_text_recognition
-      sha256: "89c848329355f165ff17ca8645cab5998770e9e25e431fe6dd8261ed9cf7bdc4"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.13.0"
   hooks:
     dependency: transitive
     description:
@@ -535,14 +519,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.2.2"
-  onnxruntime:
-    dependency: "direct main"
-    description:
-      name: onnxruntime
-      sha256: e77ec05acafc135cc5fe7bcdf11b101b39f06513c9d5e9fa02cb1929f6bac72a
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.4.1"
   path:
     dependency: "direct main"
     description:
@@ -719,13 +695,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
-  pytorch_mobile:
-    dependency: "direct main"
-    description:
-      path: "packages/pytorch_mobile"
-      relative: true
-    source: path
-    version: "0.2.3"
   sanitize_html:
     dependency: transitive
     description:

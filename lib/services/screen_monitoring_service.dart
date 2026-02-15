@@ -2,11 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
-import 'vision_analysis_service.dart';
 import 'realtime_alert_service.dart';
 import 'api_service.dart';
-import 'ocr_service.dart';
-import 'text_threat_detection_service.dart';
 import 'api_service.dart';
 import '../models/alert.dart';
 import 'package:uuid/uuid.dart';
@@ -42,7 +39,6 @@ class ScreenMonitoringService {
   String? _currentChildName;
   
   // Services
-  late VisionAnalysisService _visionService;
   late RealtimeAlertService _alertService;
   
   // Getters
@@ -67,14 +63,6 @@ class ScreenMonitoringService {
       
       _currentChildHash = childHash;
       _currentChildName = childName;
-      
-      // Initialize vision service
-      _visionService = VisionAnalysisService.instance;
-      await _visionService.initialize();
-      
-      // Initialize OCR and Text Threat services
-      OCRService.instance.initialize();
-      await TextThreatDetectionService.instance.initialize();
       
       // Initialize alert service
       _alertService = RealtimeAlertService();
@@ -189,88 +177,35 @@ class ScreenMonitoringService {
     _isProcessingQueue = false;
   }
   
-  /// Analyze a screenshot with the vision model
+  /// Analyze a screenshot with the vision model (DISABLED)
   Future<void> _analyzeScreenshot(
     String path,
     int timestamp,
     String? foregroundApp,
   ) async {
     try {
-      final startTime = DateTime.now();
-      debugPrint('🔍 Analyzing screenshot: $path');
+      debugPrint('🔍 Screenshot captured: $path');
       
-      // Analyze with vision model
-      final scores = await _visionService.analyzeScreenshot(path);
+      // AI Integration Removed:
+      // Simply delete the file to save space since we aren't analyzing it.
       
-      _framesAnalyzed++;
-      _lastAnalysisTime = DateTime.now();
-      
-      final analysisTime = DateTime.now().difference(startTime).inMilliseconds;
-      debugPrint('  Analysis completed in ${analysisTime}ms');
-      debugPrint('  Scores: $scores');
-      
-      // Check if explicit content detected
-      final explicitScore = scores['explicit'] ?? 0.0;
-      final violenceScore = scores['violence'] ?? 0.0;
-      final suggestiveScore = scores['suggestive'] ?? 0.0;
-      
-      // Calculate visual risk score (0-100)
-      int visualRiskScore = ((explicitScore * 0.5 + violenceScore * 0.3 + suggestiveScore * 0.2) * 100).toInt();
-      
-      // --- NEW: Text Analysis Integration ---
-      int textRiskScore = 0;
-      String extractedText = '';
-      
-      try {
-        extractedText = await OCRService.instance.extractText(path);
-        if (extractedText.isNotEmpty) {
-          final threatScore = await TextThreatDetectionService.instance.analyzeChatMessage(extractedText);
-          textRiskScore = (threatScore * 100).toInt();
-          debugPrint('  📝 Extracted Text (len=${extractedText.length}): "${extractedText.replaceAll('\n', ' ').substring(0, min(50, extractedText.length))}..."');
-          debugPrint('  📝 Text Threat Score: $textRiskScore%');
-        }
-      } catch (e) {
-        debugPrint('  ⚠️ Text analysis failed: $e');
-      }
-      
-      // Combine scores: Take the maximum of visual and text risk
-      final riskScore = (visualRiskScore > textRiskScore) ? visualRiskScore : textRiskScore;
-      
-      // Generate alert if risk score is high (>60%)
-      if (riskScore >= 60) {
-        await _generateAlert(
-          path: path,
-          riskScore: riskScore,
-          scores: scores,
-          foregroundApp: foregroundApp,
-          extractedText: extractedText,
-          isTextAlert: textRiskScore > visualRiskScore,
-        );
-      }
-      
-      // Conditional cleanup of screenshot file based on risk threshold
       try {
         final file = File(path);
         if (await file.exists()) {
-          // Delete only if risk is below configured threshold
-          if (riskScore < Config.screenshotDeletionRiskThreshold) {
-            await file.delete();
-            debugPrint('  🗑️  Low-risk screenshot deleted: $path');
-          } else {
-            debugPrint('  📁  High-risk screenshot retained for alert: $path');
-          }
+          await file.delete();
+          debugPrint('  🗑️  Screenshot deleted (Analysis disabled)');
         }
       } catch (e) {
-        debugPrint('  ⚠️  Failed to handle screenshot file: $e');
+        debugPrint('  ⚠️  Failed to delete screenshot file: $e');
       }
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Error analyzing screenshot: $e');
+      debugPrint('❌ Error handling screenshot: $e');
       debugPrint('Stack trace: $stackTrace');
     }
   }
   
-  /// Generate an alert for detected inappropriate content
+  /// Generate an alert (DISABLED)
   Future<void> _generateAlert({
     required String path,
     required int riskScore,
@@ -279,70 +214,13 @@ class ScreenMonitoringService {
     String extractedText = '',
     bool isTextAlert = false,
   }) async {
-    try {
-      debugPrint('🚨 Generating alert for high-risk content (score: $riskScore)');
-      
-      final alert = Alert(
-        id: const Uuid().v4(),
-        timestamp: DateTime.now(),
-        riskScore: riskScore,
-        summary: _generateAlertSummary(riskScore, scores, foregroundApp, isTextAlert),
-        severity: Alert.determineSeverity(riskScore),
-        contentType: isTextAlert ? ContentType.TEXT : ContentType.IMAGE,
-        detectedContent: isTextAlert 
-            ? 'Suspicious text detected: "${extractedText.length > 100 ? extractedText.substring(0, 100) + '...' : extractedText}"'
-            : 'Screenshot analysis detected inappropriate content',
-        childHash: _currentChildHash ?? '',
-        childName: _currentChildName ?? 'Unknown',
-      );
-      
-      _alertsGenerated++;
-      
-      // Send alert to parent via WebSocket
-      final apiService = ApiService();
-      await _alertService.syncAlertToServer(
-        alert,
-        apiService,
-        _currentChildName ?? 'Unknown',
-      );
-      
-      debugPrint('✅ Alert generated and sent: ${alert.id}');
-      
-    } catch (e) {
-      debugPrint('❌ Error generating alert: $e');
-    }
+     // Alert generation removed
   }
-  
-  /// Generate alert summary from scores
-  String _generateAlertSummary(
-    int riskScore,
-    Map<String, double> scores,
-    String? foregroundApp,
-    bool isTextAlert,
-  ) {
-    if (isTextAlert) {
-        final severity = Alert.determineSeverity(riskScore);
-        final severityStr = severity.toString().split('.').last.toUpperCase();
-        String appInfo = foregroundApp != null ? ' in $foregroundApp' : '';
-        return '[$severityStr] Predatory text detected$appInfo (Risk: $riskScore%)';
-    }
-    final severity = Alert.determineSeverity(riskScore);
-    final severityStr = severity.toString().split('.').last.toUpperCase();
-    
-    final explicitScore = ((scores['explicit'] ?? 0.0) * 100).toInt();
-    final violenceScore = ((scores['violence'] ?? 0.0) * 100).toInt();
-    final suggestiveScore = ((scores['suggestive'] ?? 0.0) * 100).toInt();
-    
-    String content = '';
-    if (explicitScore > 60) content = 'explicit content';
-    else if (violenceScore > 60) content = 'violent content';
-    else if (suggestiveScore > 60) content = 'suggestive content';
-    else content = 'inappropriate content';
-    
-    String appInfo = foregroundApp != null ? ' in $foregroundApp' : '';
-    
-    return '[$severityStr] Detected $content$appInfo (Risk: $riskScore%)';
+
+  String _generateAlertSummary(int riskScore, Map<String, double> scores, String? foregroundApp, bool isTextAlert) {
+    return 'Analysis Disabled';
   }
+
   
   /// Get monitoring statistics
   Map<String, dynamic> getStatistics() {
