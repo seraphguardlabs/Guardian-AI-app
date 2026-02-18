@@ -6,7 +6,7 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 1. E2E Encryption - Public Key Endpoints
 - **Child Public Key**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/public-key/`
+	- **URL:** `/api/mobile/child/<child_hash>/public-key/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** None (child device)
 	- **Description:**
@@ -14,7 +14,7 @@ This document describes the API endpoints for the `messaging` app, including E2E
 		- `POST`: Set/update the child's public key
 	- **Payload (POST, JSON):** `{ "public_key": "..." }`
 - **Guardian Public Key**
-	- **URL:** `/messaging/api/mobile/guardian/public-key/`
+	- **URL:** `/api/mobile/guardian/public-key/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** Guardian (session or header)
 	- **Description:**
@@ -22,12 +22,12 @@ This document describes the API endpoints for the `messaging` app, including E2E
 		- `POST`: Set/update the guardian's public key
 	- **Payload (POST, JSON):** `{ "public_key": "..." }`
 - **Guardian Public Key by ID**
-	- **URL:** `/messaging/api/mobile/guardian/<guardian_id>/public-key/`
+	- **URL:** `/api/mobile/guardian/<guardian_id>/public-key/`
 	- **Method:** `GET`
 	- **Auth:** None (child device)
 	- **Description:** Retrieve a specific guardian's public key
 - **Child's Guardians' Public Keys**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/guardians/public-keys/`
+	- **URL:** `/api/mobile/child/<child_hash>/guardians/public-keys/`
 	- **Method:** `GET`
 	- **Auth:** None (child device)
 	- **Description:** Retrieve all guardians' public keys for a child
@@ -36,19 +36,19 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 2. Time Extension Requests
 - **List/Create Time Extension Requests**
-	- **URL:** `/messaging/api/mobile/time-extension-requests/`
+	- **URL:** `/api/mobile/time-extension-requests/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** Guardian (session/header) or child (header)
 	- **Description:**
 		- `GET`: List pending requests (guardian or child)
 		- `POST`: Create a new time extension request (child)
 - **Child's Time Extension Requests**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/time-extension-requests/`
+	- **URL:** `/api/mobile/child/<child_hash>/time-extension-requests/`
 	- **Method:** `GET`
 	- **Auth:** Child (header)
 	- **Description:** List time extension requests for a child
 - **Respond to Time Extension Request**
-	- **URL:** `/messaging/api/mobile/time-extension-requests/<request_id>/respond/`
+	- **URL:** `/api/mobile/time-extension-requests/<request_id>/respond/`
 	- **Method:** `POST`
 	- **Auth:** Guardian (session/header)
 	- **Payload (JSON):** `{ "response": "approved|denied", ... }`
@@ -57,17 +57,17 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 3. Gamified Permission System
 - **Suggested Reward Tasks**
-	- **URL:** `/messaging/api/mobile/time-extension-requests/suggested-tasks/`
+	- **URL:** `/api/mobile/time-extension-requests/suggested-tasks/`
 	- **Method:** `GET`
 	- **Auth:** None
 	- **Description:** Get a list of suggested reward tasks
 - **Assign Reward Task**
-	- **URL:** `/messaging/api/mobile/time-extension-requests/<request_id>/assign-task/`
+	- **URL:** `/api/mobile/time-extension-requests/<request_id>/assign-task/`
 	- **Method:** `POST`
 	- **Auth:** Guardian (session/header)
 	- **Payload (JSON):** `{ "task_id": "..." }` or custom task
 - **Approve Time Extension**
-	- **URL:** `/messaging/api/mobile/time-extension-requests/<request_id>/approve/`
+	- **URL:** `/api/mobile/time-extension-requests/<request_id>/approve/`
 	- **Method:** `POST`
 	- **Auth:** Guardian (session/header)
 
@@ -75,26 +75,26 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 4. Chat Messaging (E2E Encrypted)
 - **Guardian-Child Chat**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/chat/`
+	- **URL:** `/api/mobile/child/<child_hash>/chat/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** Guardian (session/header)
 	- **Description:**
 		- `GET`: Retrieve chat messages with a child
 		- `POST`: Send a new message to the child
 - **Child-Guardian Chat**
-	- **URL:** `/messaging/api/mobile/guardian/<guardian_id>/chat/`
+	- **URL:** `/api/mobile/guardian/<guardian_id>/chat/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** Child (header)
 	- **Description:**
 		- `GET`: Retrieve chat messages with a guardian
 		- `POST`: Send a new message to the guardian
 - **Mark Messages Read**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/chat/mark-read/`
+	- **URL:** `/api/mobile/child/<child_hash>/chat/mark-read/`
 	- **Method:** `POST`
 	- **Auth:** Guardian or child
 	- **Payload (JSON):** `{ "message_ids": [1,2,3], "guardian_id": 1 }`
 - **Unread Message Counts**
-	- **URL:** `/messaging/api/mobile/chat/unread/`
+	- **URL:** `/api/mobile/chat/unread/`
 	- **Method:** `GET`
 	- **Auth:** Guardian or child
 
@@ -102,24 +102,24 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 5. Task Endpoints
 - **Guardian Create Task**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/tasks/`
+	- **URL:** `/api/mobile/child/<child_hash>/tasks/`
 	- **Method:** `POST`
 	- **Auth:** Guardian (session/header)
 	- **Payload (JSON):** `{ "title": "...", "description": "..." }`
 - **Guardian View Child Tasks**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/tasks/list/`
+	- **URL:** `/api/mobile/child/<child_hash>/tasks/list/`
 	- **Method:** `GET`
 	- **Auth:** Guardian (session/header)
 - **Child View Tasks**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/my-tasks/`
+	- **URL:** `/api/mobile/child/<child_hash>/my-tasks/`
 	- **Method:** `GET`
 	- **Auth:** Child (header)
 - **Child Mark Task Complete**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/tasks/<task_id>/complete/`
+	- **URL:** `/api/mobile/child/<child_hash>/tasks/<task_id>/complete/`
 	- **Method:** `POST`
 	- **Auth:** Child (header)
 - **Child Mark Task Incomplete**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/tasks/<task_id>/incomplete/`
+	- **URL:** `/api/mobile/child/<child_hash>/tasks/<task_id>/incomplete/`
 	- **Method:** `POST`
 	- **Auth:** Child (header)
 
@@ -127,7 +127,7 @@ This document describes the API endpoints for the `messaging` app, including E2E
 
 ## 6. AI Alert Endpoints
 - **Ingest Data (Child Device -> Server)**
-	- **URL:** `/messaging/api/ingest/`
+	- **URL:** `/api/ingest/`
 	- **Method:** `POST`
 	- **Auth:** Child (header)
 	- **Description:** Ingest AI alert, screen time, location, or site access data from child device
@@ -137,7 +137,7 @@ This document describes the API endpoints for the `messaging` app, including E2E
 		- For location: `{ "type": "location", "payload": { ... } }`
 		- For site access: `{ "type": "site_access", "payload": { ... } }`
 - **Get Alerts (Guardian)**
-	- **URL:** `/messaging/api/mobile/child/<child_hash>/alerts/`
+	- **URL:** `/api/mobile/child/<child_hash>/alerts/`
 	- **Method:** `GET`
 	- **Auth:** Guardian (session/header)
 

@@ -5,7 +5,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 1. Dashboard View
-- **URL:** `/backend/dashboard/`
+- **URL:** `/dashboard/`
 - **Method:** `GET`, `POST`
 - **Auth:** Session (guardian login required)
 - **Description:** Renders the guardian dashboard with activity insights for all linked children. POST creates a new child profile.
@@ -20,7 +20,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 2. API Signup
-- **URL:** `/backend/api/signup/`
+- **URL:** `/api/signup/`
 - **Method:** `POST`
 - **Description:** Mobile app signup endpoint. Creates a new guardian account.
 - **Payload (JSON):**
@@ -50,7 +50,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 3. API Login
-- **URL:** `/backend/api/login/`
+- **URL:** `/api/login/`
 - **Method:** `POST`
 - **Description:** Mobile app login endpoint.
 - **Payload (JSON):**
@@ -80,7 +80,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 4. API Ingest
-- **URL:** `/backend/api/ingest/`
+- **URL:** `/api/ingest/`
 - **Method:** `POST`
 - **Description:** Ingest endpoint for the mobile app to POST metrics for a child.
 - **Payload (JSON):**
@@ -106,7 +106,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 5. Add Child (Mobile)
-- **URL:** `/backend/api/mobile/children/add/`
+- **URL:** `/api/mobile/children/add/`
 - **Method:** `POST`
 - **Auth:** X-Auth-Email and X-Auth-Password headers
 - **Description:** Add a new child under a logged-in guardian.
@@ -140,7 +140,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 ---
 
 ## 6. AI Insights
-- **URL:** `/backend/api/child/<child_hash>/ai-ask/`
+- **URL:** `/api/child/<child_hash>/ai-ask/`
 - **Method:** `POST`
 - **Auth:** Session (guardian login required)
 - **Description:** Get AI-generated insights for a child.
@@ -158,7 +158,7 @@ This document describes the API endpoints for the `backend` app, including dashb
 
 
 ## 8. Child Metrics (Mobile)
-- **URL:** `/backend/api/mobile/child/<child_hash>/metrics/`
+- **URL:** `/api/mobile/child/<child_hash>/metrics/`
 - **Method:** `GET`
 - **Auth:** X-Email and X-Password headers, or session auth
 - **Query Params:**

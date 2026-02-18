@@ -5,7 +5,7 @@ This document describes the API endpoints for the `site_access` app, including d
 ---
 
 ## 1. Dashboard: Get Child Site Access Logs
-- **URL:** `/site_access/dashboard/site-logs/<child_hash>/`
+- **URL:** `/dashboard/site-logs/<child_hash>/`
 - **Method:** `GET`
 - **Auth:** Session (guardian login required)
 - **Description:** Retrieve site access logs for a specific child for dashboard display. Supports optional date range filtering.
@@ -31,7 +31,7 @@ This document describes the API endpoints for the `site_access` app, including d
 ---
 
 ## 2. Mobile: Get Site Access Logs
-- **URL:** `/site_access/api/mobile/child/<child_hash>/site-access/`
+- **URL:** `/api/mobile/child/<child_hash>/site-access/`
 - **Method:** `GET`
 - **Auth:** X-Email and X-Password headers, or session auth
 - **Description:** Retrieve detailed site access/blocked logs for a specific child, with filtering and summary.

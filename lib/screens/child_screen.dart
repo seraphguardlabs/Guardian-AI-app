@@ -526,15 +526,17 @@ class _ChildScreenState extends State<ChildScreen> {
         return;
       }
 
-      // Start screen monitoring
-      debugPrint('  🚀 Starting screen monitoring...');
-      final monitoringStarted = await screenMonitoring.startMonitoring();
+      // Start screen monitoring (DISABLED)
+      // debugPrint('  🚀 Starting screen monitoring...');
+      // final monitoringStarted = await screenMonitoring.startMonitoring();
       
-      if (monitoringStarted) {
-        debugPrint('✅ Monitoring Services initialized and started successfully');
-      } else {
-        debugPrint('⚠️  Monitoring Services initialized but not started (permission may be denied)');
-      }
+      // if (monitoringStarted) {
+      //   debugPrint('✅ Monitoring Services initialized and started successfully');
+      // } else {
+      //   debugPrint('⚠️  Monitoring Services initialized but not started (permission may be denied)');
+      // }
+      debugPrint('✅ Monitoring Services (Screen Capture) Disabled by request');
+
       
     } catch (e, stackTrace) {
       debugPrint('❌ Error initializing Services: $e');

@@ -20,6 +20,10 @@ import '../services/realtime_alert_service.dart';
 import '../models/alert.dart';
 import 'alert_detail_screen.dart';
 import 'risk_alerts_screen.dart';
+import '../services/realtime_alert_service.dart';
+import '../models/alert.dart';
+import 'alert_detail_screen.dart';
+import 'risk_alerts_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -1308,6 +1312,487 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   color: Colors.white,
                 ),
               ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Text(
+                  '${filteredRequests.length} pending',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (filteredRequests.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF151515),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.check_circle_outline, color: Colors.white54, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'No pending time extension requests',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...filteredRequests
+                .take(3)
+                .map((req) => _buildRequestCard(req, service))
+                .toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricsSection() {
+    final cards = <Widget>[_buildMetricsCard()];
+
+    // Additional insight cards
+    cards.add(_buildTopAppsTodayCard());
+    cards.add(_buildRiskSignalsCard());
+    cards.add(_buildActiveAlertsCard());
+    cards.add(_buildWellBeingScoreCard());
+    cards.add(_buildChildCertificatesCard());
+
+    if (cards.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 220,
+          child: PageView.builder(
+            controller: _metricsPageController,
+            itemCount: cards.length,
+            itemBuilder: (context, index) {
+              final left = index == 0 ? 20.0 : 10.0;
+              final right = index == cards.length - 1 ? 20.0 : 10.0;
+              return Padding(
+                padding: EdgeInsets.only(left: left, right: right),
+                child: cards[index],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(cards.length, (index) {
+            final isActive = (_metricsPage - index).abs() < 0.5;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              height: 6,
+              width: isActive ? 22 : 8,
+              decoration: BoxDecoration(
+                color: isActive ? Colors.white : Colors.white24,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  // --- Metrics / insights cards ---
+
+  Widget _buildTopAppsTodayCard() {
+    final apps = (_appUsage?['apps'] as List?) ?? [];
+    final topApps = apps.take(3).toList();
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF2E1065), Color(0xFF4C1D95)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/top_apps_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Text(
+                  topApps.isEmpty ? '-' : topApps.length.toString(),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Top Apps Today',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (topApps.isEmpty)
+              const Text(
+                'No app usage data yet',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white70,
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: topApps.map((app) {
+                  final name = (app['name'] ?? app['domain'] ?? 'App').toString();
+                  final iconUrl = app['icon_url']?.toString();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (iconUrl != null && iconUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              iconUrl,
+                              width: 18,
+                              height: 18,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.apps, size: 16, color: Colors.white);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRiskSignalsCard() {
+    // Calculate actual risk level based on alerts
+    String riskLevel = 'No Data';
+    Color riskLevelColor = Colors.white;
+    
+    if (_activeAlerts.isNotEmpty) {
+      final highAlertCount = _activeAlerts.where((a) => a.severity == AlertSeverity.HIGH).length;
+      final totalAlerts = _activeAlerts.length;
+      final highPercentage = (highAlertCount / totalAlerts) * 100;
+      
+      if (highPercentage >= 61) {
+        riskLevel = 'High';
+        riskLevelColor = const Color(0xFFFF4F92);
+      } else if (highPercentage >= 31) {
+        riskLevel = 'Medium';
+        riskLevelColor = Colors.orange;
+      } else {
+        riskLevel = 'Low';
+        riskLevelColor = Colors.blue;
+      }
+    }
+    
+    // Calculate change percent (for now using a placeholder)
+    const changePercent = '+23%';
+    const changeLabel = '18.6%';
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF6A3A19), Color(0xFF9B4A1C)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/risk_signals_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildPillBadge(
+                      riskLevel.toUpperCase(),
+                      backgroundColor: riskLevel == 'No Data' ? Colors.white : riskLevelColor.withOpacity(0.2),
+                      textColor: riskLevel == 'No Data' ? const Color(0xFF6A3A19) : riskLevelColor,
+                      horizontalPadding: 14,
+                      verticalPadding: 4,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildPillBadge(
+                      changeLabel,
+                      backgroundColor: Colors.black.withOpacity(0.24),
+                      textColor: Colors.white,
+                      fontSize: 11,
+                      horizontalPadding: 10,
+                      verticalPadding: 3,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Risk Signals',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '$changePercent since last month',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveAlertsCard() {
+    final totalAlerts = _activeAlerts.length;
+    final criticalCount = _activeAlerts.where((a) => a.severity == AlertSeverity.HIGH).length;
+    final warningCount = _activeAlerts.where((a) => a.severity == AlertSeverity.MEDIUM || a.severity == AlertSeverity.LOW).length;
+
+    return _buildMetricsBaseCard(
+      gradientColors: const [Color(0xFF5C101B), Color(0xFF8A182A)],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconTile(
+                  assetPath: 'assets/images/active_alerts_icon.png',
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                ),
+                const Spacer(),
+                Text(
+                  '$totalAlerts',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Active Alerts',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (totalAlerts == 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'No alerts detected today',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              )
+            else
+              Column(
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (criticalCount > 0)
+                        _buildPillBadge(
+                          '$criticalCount Critical (HIGH)',
+                          backgroundColor: const Color(0xFFFF4C4C),
+                          textColor: Colors.white,
+                        ),
+                      if (warningCount > 0)
+                        _buildPillBadge(
+                          '$warningCount Warning (MEDIUM + LOW)',
+                          backgroundColor: Colors.white.withOpacity(0.20),
+                          textColor: Colors.white,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  ..._activeAlerts.take(3).map((alert) {
+                    final severity = alert.severity;
+                    final badgeColor = severity == AlertSeverity.HIGH
+                        ? const Color(0xFFFF4C4C)
+                        : severity == AlertSeverity.MEDIUM
+                            ? const Color(0xFFFFA500)
+                            : const Color(0xFF2B4C8F);
+                    
+                    final timeAgo = _formatTimeAgo(alert.timestamp);
+                    final severityText = severity.toString().split('.').last;
+                    
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AlertDetailScreen(alert: alert),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: badgeColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  severityText,
+                                  style: TextStyle(
+                                    color: badgeColor,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      alert.summary.length > 60
+                                          ? '${alert.summary.substring(0, 60)}...'
+                                          : alert.summary,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          alert.childName,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        Text(
+                                          timeAgo,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.white60,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inSeconds < 60) {
+      return 'just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+     ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(

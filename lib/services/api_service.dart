@@ -476,6 +476,83 @@ class ApiService {
     }
   }
   
+  /// REST API: Fetch geofences for a child
+  Future<Map<String, dynamic>> getGeofences(
+    String email, 
+    String password, 
+    String childHash
+  ) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/geofences/');
+    
+    try {
+      debugPrint('Fetching geofences from: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
+      
+      debugPrint('Geofence response: ${response.statusCode} ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        // Ensure success field is present
+        if (data['status'] == 'ok' || data['success'] == true) {
+          return {'success': true, 'data': data};
+        } else {
+          return {'success': false, 'error': data['message'] ?? 'Unknown error'};
+        }
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// REST API: Create a new geofence for a child
+  Future<Map<String, dynamic>> createGeofence(
+    String email,
+    String password,
+    String childHash,
+    Map<String, dynamic> geofenceData,
+  ) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/geofences/');
+    
+    try {
+      // Remove created_at as it's not part of the documented payload
+      final payload = {
+        'label': geofenceData['label'],
+        'latitude': geofenceData['latitude'],
+        'longitude': geofenceData['longitude'],
+        'radius': geofenceData['radius'],
+        'trigger_on': geofenceData['trigger_on'] ?? 'both',
+      };
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'error': 'HTTP ${response.statusCode}: ${response.body}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
   /// Fetch child metrics (aggregated overview)
   Future<Map<String, dynamic>> fetchChildMetrics(String email, String password, String childHash) async {
     final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/metrics/');

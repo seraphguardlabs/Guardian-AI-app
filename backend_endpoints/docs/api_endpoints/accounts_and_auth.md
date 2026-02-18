@@ -1,5 +1,5 @@
 # 10. Add Child (Mobile)
-- **URL:** `/accounts/api/mobile/children/add/`
+- **URL:** `/api/mobile/children/add/`
 - **Method:** `POST`
 - **Auth:** X-Auth-Email and X-Auth-Password headers
 - **Description:** Add a new child under a logged-in guardian.
@@ -34,7 +34,7 @@
 ---
 
 ## 9. Delete Guardian Account
-- **URL:** `/accounts/delete-account/`
+- **URL:** `/delete-account/`
 - **Method:** `POST`
 - **Auth:** Email and password required in payload (no login required)
 - **Description:** Deletes the specified guardian account, all children registered under that account, and all related data (documents, screen time, messaging, etc.).
@@ -69,7 +69,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 1. Landing Page
-- **URL:** `/accounts/`
+- **URL:** `/`
 - **Method:** `GET`
 - **Description:** Serves the landing page (HTML).
 - **Payload:** None
@@ -78,7 +78,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 2. Signup
-- **URL:** `/accounts/signup/`
+- **URL:** `/signup/`
 - **Method:** `GET`, `POST`
 - **Description:** Register a new guardian account.
 - **Payload (POST):**
@@ -92,7 +92,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 3. Login
-- **URL:** `/accounts/login/`
+- **URL:** `/login/`
 - **Method:** `GET`, `POST`
 - **Description:** Log in as a guardian.
 - **Payload (POST):**
@@ -105,7 +105,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 4. Logout
-- **URL:** `/accounts/logout/`
+- **URL:** `/logout/`
 - **Method:** `GET`
 - **Description:** Log out the current user.
 - **Payload:** None
@@ -114,7 +114,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 5. Password Reset Info
-- **URL:** `/accounts/password-reset/`
+- **URL:** `/password-reset/`
 - **Method:** `GET`
 - **Description:** Shows password reset info page (for production, use Django's built-in password reset views).
 - **Payload:** None
@@ -123,7 +123,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 6. Delete Child
-- **URL:** `/accounts/child/<child_hash>/delete/`
+- **URL:** `/child/<child_hash>/delete/`
 - **Method:** `POST`
 - **Auth:** Guardian must be logged in and own the child
 - **Description:** Deletes a child and all related data (CASCADE delete).
@@ -154,7 +154,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 7. Upload Child Profile Image
-- **URL:** `/accounts/child/<child_hash>/upload-profile-image/`
+- **URL:** `/child/<child_hash>/upload-profile-image/`
 - **Method:** `POST`
 - **Auth:** Guardian must be logged in and own the child
 - **Description:** Upload or update a child's profile image. Accepts image files (jpg, jpeg, png, gif, webp, max 5MB). Converts to WEBP.
@@ -187,7 +187,7 @@ This document describes the API endpoints for the `accounts` app, including auth
 ---
 
 ## 8. Get Profile Image
-- **URL:** `/accounts/get-profile-image/`
+- **URL:** `/get-profile-image/`
 - **Method:** `GET` or `POST`
 - **Description:** Retrieve a child's profile image by `child_hash`.
 - **Payload:**

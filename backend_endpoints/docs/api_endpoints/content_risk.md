@@ -5,7 +5,7 @@ This document describes the API endpoints for the `content_risk` app, including 
 ---
 
 ## 1. Dashboard: Get Child Risk Logs
-- **URL:** `/content_risk/dashboard/risk-logs/<child_hash>/`
+- **URL:** `/dashboard/risk-logs/<child_hash>/`
 - **Method:** `GET`
 - **Auth:** Session (guardian login required)
 - **Description:** Retrieve content risk logs for a specific child for dashboard display. Supports optional date range filtering.
@@ -37,7 +37,7 @@ This document describes the API endpoints for the `content_risk` app, including 
 ---
 
 ## 2. Mobile: Submit Content Risk (Child App)
-- **URL:** `/content_risk/api/mobile/child/<child_hash>/content-risk/submit/`
+- **URL:** `/api/mobile/child/<child_hash>/content-risk/submit/`
 - **Method:** `POST`
 - **Description:** Submit one or more content risk detection events for a child.
 - **Payload (JSON):**
@@ -85,7 +85,7 @@ This document describes the API endpoints for the `content_risk` app, including 
 ---
 
 ## 3. Mobile: Get Content Risk Logs (Parent App)
-- **URL:** `/content_risk/api/mobile/child/<child_hash>/content-risk/`
+- **URL:** `/api/mobile/child/<child_hash>/content-risk/`
 - **Method:** `GET`
 - **Auth:** X-Email and X-Password headers, or session auth
 - **Description:** Retrieve content risk logs for a specific child, with filtering and summary.

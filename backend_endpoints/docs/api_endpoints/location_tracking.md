@@ -5,7 +5,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 ---
 
 ## 1. Dashboard: Get Child Location Data
-- **URL:** `/location_tracking/dashboard/locations/<child_hash>/`
+- **URL:** `/dashboard/locations/<child_hash>/`
 - **Method:** `GET`
 - **Auth:** Session (guardian login required)
 - **Description:** Retrieve location data for a specific child for dashboard display. Supports optional date range filtering.
@@ -31,7 +31,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 ---
 
 ## 2. Mobile: Get Location History
-- **URL:** `/location_tracking/api/mobile/child/<child_hash>/locations/`
+- **URL:** `/api/mobile/child/<child_hash>/locations/`
 - **Method:** `GET`
 - **Auth:** X-Email and X-Password headers, or session auth
 - **Description:** Retrieve detailed location history for a specific child, with filtering and summary.
@@ -71,7 +71,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 
 ## 3. Geofence APIs
 - **List/Create Geofences**
-	- **URL:** `/location_tracking/api/mobile/child/<child_hash>/geofences/`
+	- **URL:** `/api/mobile/child/<child_hash>/geofences/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** X-Email and X-Password headers, or session auth
 	- **Description:**
@@ -108,7 +108,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 			```
 		- On error: `{ "status": "error", "message": "<error_message>" }`
 - **Delete Geofence**
-	- **URL:** `/location_tracking/api/mobile/child/<child_hash>/geofences/<geofence_id>/`
+	- **URL:** `/api/mobile/child/<child_hash>/geofences/<geofence_id>/`
 	- **Method:** `DELETE`
 	- **Auth:** X-Email and X-Password headers, or session auth
 	- **Response (JSON):** `{ "status": "ok", "message": "Geofence deleted" }` or error
@@ -116,7 +116,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 ---
 
 ## 4. Geofence Event Ingestion (HTTP Fallback)
-- **URL:** `/location_tracking/api/ingest/`
+- **URL:** `/api/ingest/`
 - **Method:** `POST`
 - **Description:** Ingest geofence event from child device. Expects X-Child-Hash header and JSON body.
 - **Headers:**
@@ -139,7 +139,7 @@ This document describes the API endpoints for the `location_tracking` app, inclu
 ---
 
 ## 5. Geofence Alerts/History
-- **URL:** `/location_tracking/api/mobile/child/<child_hash>/geofence-alerts/`
+- **URL:** `/api/mobile/child/<child_hash>/geofence-alerts/`
 - **Method:** `GET`
 - **Auth:** X-Email and X-Password headers, or session auth
 - **Description:** Retrieve geofence entry/exit events for a child (currently returns empty list; event storage not implemented).

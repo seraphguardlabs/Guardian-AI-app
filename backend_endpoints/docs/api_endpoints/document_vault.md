@@ -5,7 +5,7 @@ This document describes the API endpoints for the `document_vault` app, includin
 ---
 
 ## 1. Dashboard
-- **URL:** `/document_vault/vault/`
+- **URL:** `/vault/`
 - **Method:** `GET`
 - **Auth:** Session (guardian login required)
 - **Description:** Renders the document vault dashboard with folders, recent documents, starred items, and storage usage.
@@ -15,12 +15,12 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 2. Child-based Storage APIs
 - **List Children for Vault**
-	- **URL:** `/document_vault/api/vault/children/`
+	- **URL:** `/api/vault/children/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Description:** List all children for whom the guardian has vault access.
 - **Child Vault Overview**
-	- **URL:** `/document_vault/api/vault/children/<child_hash>/`
+	- **URL:** `/api/vault/children/<child_hash>/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Description:** Overview of vault usage and contents for a specific child.
@@ -29,7 +29,7 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 3. Folder APIs
 - **List Folders**
-	- **URL:** `/document_vault/api/vault/folders/`
+	- **URL:** `/api/vault/folders/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Query Params:**
@@ -58,7 +58,7 @@ This document describes the API endpoints for the `document_vault` app, includin
 		}
 		```
 - **Create Folder**
-	- **URL:** `/document_vault/api/vault/folders/create/`
+	- **URL:** `/api/vault/folders/create/`
 	- **Method:** `POST`
 	- **Auth:** Session
 	- **Payload (JSON):**
@@ -71,19 +71,19 @@ This document describes the API endpoints for the `document_vault` app, includin
 		- On success: `{ "status": "success", ... }`
 		- On error: `{ "status": "error", "message": "<error_message>" }`
 - **Folder Details**
-	- **URL:** `/document_vault/api/vault/folders/<folder_id>/`
+	- **URL:** `/api/vault/folders/<folder_id>/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Description:** Get folder details, subfolders, documents, and breadcrumb path.
 - **Update Folder**
-	- **URL:** `/document_vault/api/vault/folders/<folder_id>/update/`
+	- **URL:** `/api/vault/folders/<folder_id>/update/`
 	- **Method:** `PUT`, `PATCH`
 	- **Auth:** Session
 	- **Payload (JSON):**
 		- Any of: `name`, `description`, `color`, `is_starred`
 	- **Response (JSON):** `{ "status": "success", ... }`
 - **Delete Folder**
-	- **URL:** `/document_vault/api/vault/folders/<folder_id>/delete/`
+	- **URL:** `/api/vault/folders/<folder_id>/delete/`
 	- **Method:** `DELETE`
 	- **Auth:** Session
 	- **Response (JSON):** `{ "status": "success", "message": "...", "deleted": { ... } }`
@@ -92,7 +92,7 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 4. Document APIs
 - **List Documents**
-	- **URL:** `/document_vault/api/vault/documents/`
+	- **URL:** `/api/vault/documents/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Query Params:**
@@ -122,7 +122,7 @@ This document describes the API endpoints for the `document_vault` app, includin
 		}
 		```
 - **Upload Document**
-	- **URL:** `/document_vault/api/vault/documents/upload/`
+	- **URL:** `/api/vault/documents/upload/`
 	- **Method:** `POST`
 	- **Auth:** Session
 	- **Payload (multipart/form-data):**
@@ -134,30 +134,30 @@ This document describes the API endpoints for the `document_vault` app, includin
 		- `tags` (JSON array, optional)
 	- **Response (JSON):** `{ "status": "success", ... }` or error
 - **Document Details**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/`
+	- **URL:** `/api/vault/documents/<document_id>/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Response (JSON):** `{ "status": "success", "document": { ... } }`
 - **Update Document**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/update/`
+	- **URL:** `/api/vault/documents/<document_id>/update/`
 	- **Method:** `PUT`, `PATCH`
 	- **Auth:** Session
 	- **Payload (JSON):**
 		- Any of: `display_name`, `description`, `tags`, `is_starred`, `folder_id`
 	- **Response (JSON):** `{ "status": "success", ... }`
 - **Delete Document**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/delete/`
+	- **URL:** `/api/vault/documents/<document_id>/delete/`
 	- **Method:** `DELETE`
 	- **Auth:** Session
 	- **Query Param:** `permanent` (optional, if true, hard delete)
 	- **Response (JSON):** `{ "status": "success", ... }`
 - **Restore Document**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/restore/`
+	- **URL:** `/api/vault/documents/<document_id>/restore/`
 	- **Method:** `POST`
 	- **Auth:** Session
 	- **Response (JSON):** `{ "status": "success", ... }`
 - **Download Document**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/download/`
+	- **URL:** `/api/vault/documents/<document_id>/download/`
 	- **Method:** `GET`
 	- **Auth:** Session
 	- **Response (JSON):** `{ "status": "success", "download_url": "...", ... }`
@@ -166,18 +166,18 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 5. Trash APIs
 - **List Trash**
-	- **URL:** `/document_vault/api/vault/trash/`
+	- **URL:** `/api/vault/trash/`
 	- **Method:** `GET`
 	- **Auth:** Session
 - **Empty Trash**
-	- **URL:** `/document_vault/api/vault/trash/empty/`
+	- **URL:** `/api/vault/trash/empty/`
 	- **Method:** `POST`
 	- **Auth:** Session
 
 ---
 
 ## 6. Storage Quota API
-- **URL:** `/document_vault/api/vault/quota/`
+- **URL:** `/api/vault/quota/`
 - **Method:** `GET`
 - **Auth:** Session
 
@@ -185,19 +185,19 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 7. Share Links APIs
 - **Create Share Link**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/share/`
+	- **URL:** `/api/vault/documents/<document_id>/share/`
 	- **Method:** `POST`
 	- **Auth:** Session
 - **List Share Links**
-	- **URL:** `/document_vault/api/vault/documents/<document_id>/shares/`
+	- **URL:** `/api/vault/documents/<document_id>/shares/`
 	- **Method:** `GET`
 	- **Auth:** Session
 - **Delete Share Link**
-	- **URL:** `/document_vault/api/vault/shares/<link_id>/delete/`
+	- **URL:** `/api/vault/shares/<link_id>/delete/`
 	- **Method:** `DELETE`
 	- **Auth:** Session
 - **Access Shared Document (Public)**
-	- **URL:** `/document_vault/vault/share/<token>/`
+	- **URL:** `/vault/share/<token>/`
 	- **Method:** `GET`, `POST`
 	- **Auth:** None (public)
 
@@ -205,18 +205,18 @@ This document describes the API endpoints for the `document_vault` app, includin
 
 ## 8. Bulk Operations APIs
 - **Bulk Move**
-	- **URL:** `/document_vault/api/vault/bulk/move/`
+	- **URL:** `/api/vault/bulk/move/`
 	- **Method:** `POST`
 	- **Auth:** Session
 - **Bulk Delete**
-	- **URL:** `/document_vault/api/vault/bulk/delete/`
+	- **URL:** `/api/vault/bulk/delete/`
 	- **Method:** `POST`
 	- **Auth:** Session
 
 ---
 
 ## 9. Search API
-- **URL:** `/document_vault/api/vault/search/`
+- **URL:** `/api/vault/search/`
 - **Method:** `GET`
 - **Auth:** Session
 
