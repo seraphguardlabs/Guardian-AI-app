@@ -1,0 +1,123 @@
+API Verification: Time Extension Requests
+
+============================================================
+1. SENDING TIME EXTENSION REQUEST (Child App)
+============================================================
+Method: WebSocket (Primary) or HTTP POST (Fallback)
+
+A. WebSocket Endpoint:
+----------------------
+URL: wss://seraphguardlabs.com/ws/child/<child_hash>/time-extension/
+Type: time_extension_request
+
+Payload:
+{
+  "type": "time_extension_request",
+  "data": {
+    "child_hash": "<child_hash>",
+    "app_domain": "<package_name>",      // e.g. 'com.instagram.android' (optional but recommended)
+    "app_name": "<app_name>",            // e.g. 'Instagram' (optional)
+    "requested_hours": <double>,         // e.g. 1.0
+    "message_encrypted": "<base64_string>",  // RSA encrypted reason/message
+    "guardian_id": <int>                 // ID of the guardian (fetched via getGuardianPublicKey)
+  }
+}
+
+B. HTTP Endpoint (Fallback):
+----------------------------
+URL: https://seraphguardlabs.com/api/mobile/time-extension-requests/create/
+Method: POST
+Headers:
+  Content-Type: application/json
+  X-Child-Hash: <child_hash>
+
+Body:
+{
+  "child_hash": "<child_hash>",
+  "app_domain": "<package_name>",
+  "app_name": "<app_name>",
+  "requested_hours": <double>,
+  "message_encrypted": "<base64_string>",
+  "guardian_id": <int>
+}
+
+============================================================
+2. LOADING PENDING REQUESTS (Parent App)
+============================================================
+Method: WebSocket (Real-time) or HTTP GET (Initial Load/Fallback)
+
+A. WebSocket Endpoint:
+----------------------
+URL: wss://seraphguardlabs.com/ws/guardian/time-extension
+Event: pending_requests (Server sends this event to client)
+
+Response Structure:
+{
+  "type": "pending_requests",
+  "requests": [
+    {
+       "request_id": <int>,
+       "child_hash": "<string>",
+       "child_name": "<string>",
+       "app_domain": "<string>",
+       "requested_hours": <double>,
+       "message_encrypted": "<string>",
+       "status": "pending",
+       "created": "<iso_timestamp>"
+    },
+    ...
+  ]
+}
+
+B. HTTP Endpoint:
+-----------------
+URL: https://seraphguardlabs.com/api/mobile/time-extension-requests/?status=pending
+Method: GET
+Headers:
+  Content-Type: application/json
+  X-Email: <parent_email>
+  X-Password: <parent_password>
+
+Response:
+{
+  "requests": [
+    // Same structure as WebSocket requests list above
+  ]
+}
+
+============================================================
+3. RESPONDING TO REQUEST (Parent App)
+============================================================
+Method: WebSocket (Primary) or HTTP POST (Fallback)
+
+A. WebSocket Endpoint:
+----------------------
+URL: wss://seraphguardlabs.com/ws/guardian/time-extension
+Type: time_extension_response
+
+Payload:
+{
+  "type": "time_extension_response",
+  "data": {
+    "request_id": <int>,
+    "action": "approve" | "deny",
+    "granted_hours": <double>,        // Required if approved
+    "response_encrypted": "<string>"  // Optional encrypted message back to child
+  }
+}
+
+B. HTTP Endpoint (Fallback):
+----------------------------
+URL: https://seraphguardlabs.com/api/mobile/time-extension-requests/<request_id>/respond/
+Method: POST
+Headers:
+  Content-Type: application/json
+  X-Email: <parent_email>
+  X-Password: <parent_password>
+
+Body:
+{
+  "action": "approve" | "deny",
+  "granted_hours": <double>,
+  "response_encrypted": "<string>"
+}

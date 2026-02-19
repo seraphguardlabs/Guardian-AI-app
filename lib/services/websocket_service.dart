@@ -239,6 +239,8 @@ class WebSocketService extends ChangeNotifier {
     required String date,
     required int totalScreenTime,
     required Map<String, Map<String, int>> appWiseData,
+    int? timezoneOffsetMinutes,
+    String? timezoneName,
   }) async {
     final message = {
       'type': 'screen_time',
@@ -246,6 +248,8 @@ class WebSocketService extends ChangeNotifier {
         'date': date,
         'total_screen_time': totalScreenTime,
         'app_wise_data': appWiseData,
+        if (timezoneOffsetMinutes != null) 'timezone_offset_minutes': timezoneOffsetMinutes,
+        if (timezoneName != null) 'timezone_name': timezoneName,
       },
     };
     

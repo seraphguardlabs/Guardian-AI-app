@@ -8,7 +8,7 @@ import '../models/websocket_data.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
 import '../utils/preferences_manager.dart';
-import 'encryption_service.dart';
+// import 'encryption_service.dart';
 
 class ApiService {
   static const String baseUrl = 'https://seraphguardlabs.com';
@@ -1030,120 +1030,7 @@ class ApiService {
     }
   }
 
-  /// Upload child's public key to server
-  /// This is called when selecting a child profile to ensure encryption keys are synced
-  Future<Map<String, dynamic>> uploadChildPublicKey({
-    required String childHash,
-    required String publicKey,
-  }) async {
-    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
-    
-    try {
-      debugPrint('══════════════════════════════════════════════════════');
-      debugPrint('📤 UPLOADING CHILD PUBLIC KEY TO SERVER');
-      debugPrint('   Child Hash: $childHash');
-      debugPrint('   Endpoint: $url');
-      debugPrint('══════════════════════════════════════════════════════');
-      
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'public_key': publicKey,
-        }),
-      );
 
-      debugPrint('📥 Server Response:');
-      debugPrint('   - Status Code: \${response.statusCode}');
-      debugPrint('   - Response Body: \${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        debugPrint('══════════════════════════════════════════════════════');
-        debugPrint('✅ CHILD PUBLIC KEY SUCCESSFULLY UPLOADED!');
-        debugPrint('   Child Hash: $childHash');
-        debugPrint('   Status: \${response.statusCode}');
-        debugPrint('══════════════════════════════════════════════════════');
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
-        debugPrint('══════════════════════════════════════════════════════');
-        debugPrint('❌ CHILD PUBLIC KEY UPLOAD FAILED!');
-        debugPrint('   Status: \${response.statusCode}');
-        debugPrint('   Response: \${response.body}');
-        debugPrint('══════════════════════════════════════════════════════');
-        return {
-          'success': false,
-          'error': errorData['message'] ?? 'Upload failed',
-        };
-      }
-    } catch (e) {
-      debugPrint('❌ Upload child public key error: $e');
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
-    }
-  }
-
-  /// Get child's public key from server (for encryption)
-  Future<Map<String, dynamic>> getChildPublicKey({
-    required String childHash,
-  }) async {
-    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
-    
-    try {
-      debugPrint('🔑 Fetching child public key from server');
-      debugPrint('   Child Hash: $childHash');
-      debugPrint('   Endpoint: $url');
-      
-      final response = await http.get(url);
-
-      debugPrint('📥 Server Response:');
-      debugPrint('   - Status Code: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final publicKey = data['public_key'] as String?;
-        
-        if (publicKey != null && publicKey.isNotEmpty) {
-          debugPrint('✅ Child public key successfully retrieved');
-          return {
-            'success': true,
-            'public_key': publicKey,
-            'child_hash': data['child_hash'],
-            'child_name': data['child_name'],
-          };
-        } else {
-          debugPrint('⚠️ Public key is null or empty');
-          return {
-            'success': false,
-            'error': 'Public key not found',
-          };
-        }
-      } else {
-        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
-        debugPrint('❌ Failed to get child public key');
-        debugPrint('   Status: ${response.statusCode}');
-        debugPrint('   Response: ${response.body}');
-        return {
-          'success': false,
-          'error': errorData['message'] ?? 'Failed to get public key',
-        };
-      }
-    } catch (e) {
-      debugPrint('❌ Get child public key error: $e');
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
-    }
-  }
 
   // ========== TASK API METHODS ==========
 
@@ -1617,6 +1504,7 @@ class ApiService {
         'success': false,
         'error': errorData['message'] ?? 'Failed to acknowledge alert',
       };
+
     } catch (e) {
       debugPrint('❌ Acknowledge alert error: $e');
       return {
@@ -1625,4 +1513,106 @@ class ApiService {
       };
     }
   }
+
+  // ===========================================================================
+  // ENCRYPTION & KEY MANAGEMENT
+  // ===========================================================================
+
+  /// Upload the child's public key (Child App)
+  Future<Map<String, dynamic>> uploadChildPublicKey({
+    required String childHash,
+    required String publicKey,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/upload/');
+    
+    try {
+      debugPrint('═══════════════════════════════════════════════════════');
+      debugPrint('🔐 KEY UPLOAD: Uploading child public key...');
+      debugPrint('   URL: $url');
+      debugPrint('   Child Hash: $childHash');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Child-Hash': childHash, // Auth via hash
+        },
+        body: jsonEncode({
+          'public_key': publicKey,
+          'device_name': 'Child Device', // Optional metadata
+        }),
+      );
+
+      debugPrint('📥 Key upload response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('✅ Public key uploaded successfully');
+        return {'success': true};
+      } else {
+        debugPrint('❌ Failed to upload key: ${response.body}');
+        return {'success': false, 'error': 'Failed to upload key'};
+      }
+    } catch (e) {
+      debugPrint('❌ Key upload error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Get the child's public key (Parent App)
+  Future<String?> getChildPublicKey({
+    required String parentEmail,
+    required String parentPassword,
+    required String childHash,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
+    
+    try {
+      debugPrint('🔍 Fetching child public key for: $childHash');
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Email': parentEmail,
+          'X-Password': parentPassword,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['public_key'] as String?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error fetching child key: $e');
+      return null;
+    }
+  }
+
+  /// Get all guardians' public keys for a child (Child App)
+  Future<List<String>> getGuardianPublicKeys({
+    required String childHash,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/guardians/public-keys/');
+    
+    try {
+      debugPrint('🔍 Fetching guardian public keys for child: $childHash');
+      final response = await http.get(
+        url,
+        headers: {
+          'X-Child-Hash': childHash,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final keys = (data['public_keys'] as List?)?.map((k) => k.toString()).toList() ?? [];
+        debugPrint('✅ Found ${keys.length} guardian keys');
+        return keys;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('❌ Error fetching guardian keys: $e');
+      return [];
+    }
+  }
 }
+

@@ -44,6 +44,18 @@ class MainActivity: FlutterActivity() {
                 } else {
                     result.error("UNAVAILABLE", "Screen time not available.", null)
                 }
+            } else if (call.method == "getScreenTimeDetails") {
+                if (!hasUsageStatsPermission()) {
+                    result.error("PERMISSION", "Usage access not granted.", null)
+                } else {
+                    val details = computeScreenTimeDetails()
+                    result.success(
+                        mapOf(
+                            "totalSeconds" to details.first,
+                            "perAppSeconds" to details.second
+                        )
+                    )
+                }
             } else if (call.method == "openAccessibilitySettings") {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -204,81 +216,17 @@ class MainActivity: FlutterActivity() {
             return "Please grant usage access permission and try again."
         }
 
-        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val details = computeScreenTimeDetails()
+        val totalPerPackage = details.second
+        val totalTime = totalPerPackage.values.fold(0L) { acc, v -> acc + v } * 1000
 
-        // Use the device's local time zone and calendar day
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
-        // Start at today's local midnight (not a rolling 24-hour window)
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
         val startTime = calendar.timeInMillis
-
-        // Build a set of user-launchable, non-system app package names
-        val pm = packageManager
-        val installedApps = pm.getInstalledApplications(0)
-        val allowedPackages = mutableSetOf<String>()
-
-        // Detect the default launcher (home) app so we can exclude it
-        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolveInfo = pm.resolveActivity(homeIntent, 0)
-        val launcherPackage = resolveInfo?.activityInfo?.packageName
-
-        for (app in installedApps) {
-            val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
-            val isSystemApp = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-            // Exclude system apps, the launcher, and our own app package
-            if (
-                launchIntent != null &&
-                !isSystemApp &&
-                app.packageName != launcherPackage &&
-                app.packageName != packageName
-            ) {
-                allowedPackages.add(app.packageName)
-            }
-        }
-
-        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
-        if (usageEvents == null) {
-            return "No usage stats found."
-        }
-
-        val lastForeground = mutableMapOf<String, Long>()
-        val totalPerPackage = mutableMapOf<String, Long>()
-        val event = UsageEvents.Event()
-
-        while (usageEvents.hasNextEvent()) {
-            usageEvents.getNextEvent(event)
-            val pkg = event.packageName ?: continue
-            if (!allowedPackages.contains(pkg)) continue
-
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    lastForeground[pkg] = event.timeStamp
-                }
-                UsageEvents.Event.ACTIVITY_PAUSED,
-                UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    val startTs = lastForeground.remove(pkg)
-                    if (startTs != null && event.timeStamp >= startTs) {
-                        val diff = event.timeStamp - startTs
-                        totalPerPackage[pkg] = (totalPerPackage[pkg] ?: 0L) + diff
-                    }
-                }
-            }
-        }
-
-        // If any apps are still considered foreground at the end window, close them at endTime
-        for ((pkg, startTs) in lastForeground) {
-            if (!allowedPackages.contains(pkg)) continue
-            if (endTime > startTs) {
-                val diff = endTime - startTs
-                totalPerPackage[pkg] = (totalPerPackage[pkg] ?: 0L) + diff
-            }
-        }
-
-        val totalTime = totalPerPackage.values.fold(0L) { acc, v -> acc + v }
 
         // Debug logging: show top apps contributing to screen time
         if (totalPerPackage.isNotEmpty()) {
@@ -289,9 +237,9 @@ class MainActivity: FlutterActivity() {
             Log.d("GuardianScreenTime", "===== Today app usage (foreground intervals) =====")
             Log.d("GuardianScreenTime", "Window: start=$startTime end=$endTime")
 
-            for ((pkg, timeMs) in sorted) {
-                val h = timeMs / 1000 / 60 / 60
-                val m = (timeMs / 1000 / 60) % 60
+            for ((pkg, timeSeconds) in sorted) {
+                val h = timeSeconds / 60 / 60
+                val m = (timeSeconds / 60) % 60
                 Log.d("GuardianScreenTime", "$pkg -> ${h}h ${m}m")
             }
 
@@ -305,6 +253,114 @@ class MainActivity: FlutterActivity() {
         val minutes = (totalTime / 1000 / 60) % 60
 
         return "${hours}h ${minutes}m today"
+    }
+
+    private fun computeScreenTimeDetails(): Pair<Long, Map<String, Long>> {
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+
+        val calendar = Calendar.getInstance()
+        val endTime = calendar.timeInMillis
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+
+        val allowedPackages = buildAllowedPackages()
+
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        if (usageEvents == null) {
+            return Pair(0L, emptyMap())
+        }
+
+        var screenInteractive = false
+        var currentApp: String? = null
+        var currentStart: Long? = null
+        val totalPerPackage = mutableMapOf<String, Long>()
+        val event = UsageEvents.Event()
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val pkg = event.packageName
+
+            when (event.eventType) {
+                UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    screenInteractive = true
+                }
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                    if (currentApp != null && currentStart != null) {
+                        val diff = event.timeStamp - currentStart!!
+                        if (diff > 0) {
+                            totalPerPackage[currentApp!!] = (totalPerPackage[currentApp!!] ?: 0L) + diff
+                        }
+                    }
+                    currentApp = null
+                    currentStart = null
+                    screenInteractive = false
+                }
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (pkg == null || !allowedPackages.contains(pkg) || !screenInteractive) {
+                        continue
+                    }
+                    if (currentApp != null && currentStart != null && currentApp != pkg) {
+                        val diff = event.timeStamp - currentStart!!
+                        if (diff > 0) {
+                            totalPerPackage[currentApp!!] = (totalPerPackage[currentApp!!] ?: 0L) + diff
+                        }
+                    }
+                    currentApp = pkg
+                    currentStart = event.timeStamp
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    if (pkg == null || currentApp == null || currentStart == null || pkg != currentApp) {
+                        continue
+                    }
+                    val diff = event.timeStamp - currentStart!!
+                    if (diff > 0) {
+                        totalPerPackage[currentApp!!] = (totalPerPackage[currentApp!!] ?: 0L) + diff
+                    }
+                    currentApp = null
+                    currentStart = null
+                }
+            }
+        }
+
+        if (currentApp != null && currentStart != null && screenInteractive && endTime > currentStart!!) {
+            val diff = endTime - currentStart!!
+            if (diff > 0) {
+                totalPerPackage[currentApp!!] = (totalPerPackage[currentApp!!] ?: 0L) + diff
+            }
+        }
+
+        val totalSeconds = totalPerPackage.values.fold(0L) { acc, v -> acc + v } / 1000
+        val perAppSeconds = totalPerPackage.mapValues { it.value / 1000 }
+        return Pair(totalSeconds, perAppSeconds)
+    }
+
+    private fun buildAllowedPackages(): Set<String> {
+        val pm = packageManager
+        val installedApps = pm.getInstalledApplications(0)
+        val allowedPackages = mutableSetOf<String>()
+
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = pm.resolveActivity(homeIntent, 0)
+        val launcherPackage = resolveInfo?.activityInfo?.packageName
+
+        for (app in installedApps) {
+            val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
+            if (
+                launchIntent != null &&
+                app.packageName != launcherPackage &&
+                app.packageName != packageName
+            ) {
+                allowedPackages.add(app.packageName)
+            }
+        }
+
+        return allowedPackages
     }
 
     private fun hasUsageStatsPermission(): Boolean {

@@ -51,11 +51,15 @@ class DataSyncService extends ChangeNotifier {
     required String date,
     required int totalScreenTime,
     required Map<String, Map<String, int>> appWiseData,
+    int? timezoneOffsetMinutes,
+    String? timezoneName,
   }) async {
     final screenTimeData = ScreenTimeData(
       date: date,
       totalScreenTime: totalScreenTime,
       appWiseData: appWiseData,
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
+      timezoneName: timezoneName,
     );
     
     // Try WebSocket first
@@ -65,6 +69,8 @@ class DataSyncService extends ChangeNotifier {
         date: date,
         totalScreenTime: totalScreenTime,
         appWiseData: appWiseData,
+        timezoneOffsetMinutes: timezoneOffsetMinutes,
+        timezoneName: timezoneName,
       );
       
       if (success) return true;

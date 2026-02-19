@@ -32,6 +32,8 @@ class _ChildScreenState extends State<ChildScreen> {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
+  int? _screenTimeSeconds;
+  Map<String, int> _nativeAppUsageSeconds = {};
   double? _dailyLimitHours; // Global daily limit from server or default
   bool _loading = true;
   List<UsageInfo> _usageStats = [];
@@ -299,28 +301,42 @@ class _ChildScreenState extends State<ChildScreen> {
   }
 
   Future<void> _sendScreenTimeData() async {
-    if (_usageStats.isEmpty) return;
+    if (_usageStats.isEmpty && _nativeAppUsageSeconds.isEmpty) return;
 
     final wsService = Provider.of<WebSocketService>(context, listen: false);
 
     int totalSeconds = 0;
     final appWiseData = <String, Map<String, int>>{};
+    final hour = DateTime.now().hour.toString().padLeft(2, '0');
 
-    for (var usage in _usageStats) {
-      final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
-      final seconds = millis ~/ 1000;
-      totalSeconds += seconds;
-      final hour = DateTime.now().hour.toString().padLeft(2, '0');
-      final packageName = usage.packageName ?? 'unknown';
-      appWiseData[packageName] = {hour: seconds};
+    if (_nativeAppUsageSeconds.isNotEmpty) {
+      for (final entry in _nativeAppUsageSeconds.entries) {
+        final seconds = entry.value;
+        if (seconds <= 0) continue;
+        totalSeconds += seconds;
+        appWiseData[entry.key] = {hour: seconds};
+      }
+    } else {
+      for (var usage in _usageStats) {
+        final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+        final seconds = millis ~/ 1000;
+        if (seconds <= 0) continue;
+        totalSeconds += seconds;
+        final packageName = usage.packageName ?? 'unknown';
+        appWiseData[packageName] = {hour: seconds};
+      }
     }
 
     final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final tzOffsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
+    final tzName = DateTime.now().timeZoneName;
 
     await wsService.sendScreenTime(
       date: dateStr,
       totalScreenTime: totalSeconds,
       appWiseData: appWiseData,
+      timezoneOffsetMinutes: tzOffsetMinutes,
+      timezoneName: tzName,
     );
 
     debugPrint('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
@@ -377,18 +393,49 @@ class _ChildScreenState extends State<ChildScreen> {
   }
 
   Future<void> _getScreenTime() async {
-    String screenTime;
+    String screenTime = 'Unknown';
+    int? totalSeconds;
+    Map<String, int> perAppSeconds = {};
+
     try {
-      final String result = await platform.invokeMethod('getScreenTime');
-      screenTime = result;
-    } on PlatformException catch (e) {
-      screenTime = "Failed to get screen time: '${e.message}'.";
+      final dynamic details = await platform.invokeMethod('getScreenTimeDetails');
+      if (details is Map) {
+        final dynamic total = details['totalSeconds'];
+        if (total is num) {
+          totalSeconds = total.toInt();
+        }
+        final dynamic perApp = details['perAppSeconds'];
+        if (perApp is Map) {
+          perAppSeconds = perApp.map((key, value) {
+            final pkg = key.toString();
+            final seconds = (value is num) ? value.toInt() : 0;
+            return MapEntry(pkg, seconds);
+          });
+        }
+      }
+    } on PlatformException catch (_) {
+      // Fall back to legacy method below.
+    } catch (_) {
+      // Fall back to legacy method below.
+    }
+
+    if (totalSeconds != null) {
+      screenTime = '${_formatDurationFromSeconds(totalSeconds)} today';
+    } else {
+      try {
+        final String result = await platform.invokeMethod('getScreenTime');
+        screenTime = result;
+      } on PlatformException catch (e) {
+        screenTime = "Failed to get screen time: '${e.message}'.";
+      }
     }
 
     if (!mounted) return;
 
     setState(() {
       _screenTime = screenTime;
+      _screenTimeSeconds = totalSeconds;
+      _nativeAppUsageSeconds = perAppSeconds;
       _loading = false;
     });
     // After updating screen time, check if the global daily limit is exceeded
@@ -468,28 +515,44 @@ class _ChildScreenState extends State<ChildScreen> {
       debugPrint('📋 ✅ Received ${tasks.length} tasks from API');
       debugPrint('📋 Tasks: ${tasks.map((t) => t.id).toList()}');
       
+
       // Decrypt task titles and descriptions
       final encryptionService = EncryptionService.instance;
       debugPrint('📋 Starting decryption...');
       List<Task> decryptedTasks = tasks.map((task) {
-        final decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
-        final decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
+        String? decryptedTitle;
+        String? decryptedDescription;
         
-        debugPrint('📋 Task ${task.id}: decrypted=${decryptedTitle != null}');
-        
-        if (decryptedTitle != null || decryptedDescription != null) {
-          return Task(
-            id: task.id,
-            title: decryptedTitle ?? task.title,
-            description: decryptedDescription ?? task.description,
-            isCompleted: task.isCompleted,
-            completedAt: task.completedAt,
-            created: task.created,
-            updated: task.updated,
-            assignedBy: task.assignedBy,
-          );
+        try {
+          if (task.title.isNotEmpty) {
+            decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
+          }
+        } catch (e) {
+          debugPrint('⚠️ Decryption failed for title (Task ${task.id}): $e');
+          decryptedTitle = task.title; // Fallback to raw title
         }
-        return task;
+        
+        try {
+          if (task.description.isNotEmpty) {
+            decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
+          }
+        } catch (e) {
+          debugPrint('⚠️ Decryption failed for description (Task ${task.id}): $e');
+          decryptedDescription = task.description; // Fallback to raw description
+        }
+        
+        debugPrint('📋 Task ${task.id}: decrypted=${decryptedTitle != task.title}');
+        
+        return Task(
+          id: task.id,
+          title: decryptedTitle ?? task.title,
+          description: decryptedDescription ?? task.description,
+          isCompleted: task.isCompleted,
+          completedAt: task.completedAt,
+          created: task.created,
+          updated: task.updated,
+          assignedBy: task.assignedBy,
+        );
       }).toList();
       
       debugPrint('📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks');
@@ -578,7 +641,12 @@ class _ChildScreenState extends State<ChildScreen> {
       return;
     }
 
-    final usedHours = _parseScreenTimeHours(_screenTime!);
+    double? usedHours;
+    if (_screenTimeSeconds != null) {
+      usedHours = _screenTimeSeconds! / 3600.0;
+    } else {
+      usedHours = _parseScreenTimeHours(_screenTime);
+    }
     if (usedHours == null) return;
 
     final limitHours = _dailyLimitHours!;
@@ -650,7 +718,7 @@ class _ChildScreenState extends State<ChildScreen> {
         }
       }
 
-      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: true, withIcon: true);
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: true);
 
       Map<String, AppInfo> appMap = {
         for (var app in apps) app.packageName: app
@@ -706,7 +774,32 @@ class _ChildScreenState extends State<ChildScreen> {
     }
   }
 
+  List<MapEntry<String, int>> get _displayUsageEntries {
+    if (_nativeAppUsageSeconds.isNotEmpty) {
+      final entries = _nativeAppUsageSeconds.entries
+          .where((entry) => entry.value > 0)
+          .toList();
+      entries.sort((a, b) => b.value.compareTo(a.value));
+      return entries;
+    }
+
+    final entries = <MapEntry<String, int>>[];
+    for (var usage in _usageStats) {
+      final packageName = usage.packageName ?? 'unknown';
+      final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+      final seconds = millis ~/ 1000;
+      if (seconds > 0) {
+        entries.add(MapEntry(packageName, seconds));
+      }
+    }
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
+
   String get _totalUsageTime {
+    if (_screenTimeSeconds != null) {
+      return _formatDurationFromSeconds(_screenTimeSeconds!);
+    }
     if (_usageStats.isEmpty) return '0m';
     int totalMillis = 0;
     for (var usage in _usageStats) {
@@ -749,13 +842,23 @@ class _ChildScreenState extends State<ChildScreen> {
     }).toList();
   }
 
+  List<MapEntry<String, int>> get _browserUsageEntries {
+    final entries = _displayUsageEntries.where((entry) {
+      final app = _apps[entry.key];
+      if (app == null) return false;
+      return _isBrowserApp(entry.key, app.name);
+    }).toList();
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
+
   String get _totalBrowserTime {
-    if (_browserUsageStats.isEmpty) return '0m';
-    int totalMillis = 0;
-    for (var usage in _browserUsageStats) {
-      totalMillis += int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+    if (_browserUsageEntries.isEmpty) return '0m';
+    int totalSeconds = 0;
+    for (var entry in _browserUsageEntries) {
+      totalSeconds += entry.value;
     }
-    return _formatDuration(totalMillis.toString());
+    return _formatDurationFromSeconds(totalSeconds);
   }
 
   Future<void> _getBrowserHistory() async {
@@ -801,23 +904,23 @@ class _ChildScreenState extends State<ChildScreen> {
   }
 
   String _calculateScreenTimePercentage() {
-    // Use _totalUsageTime (e.g., "2h 15m" or "45m") for actual usage
-    final timeStr = _totalUsageTime;
     final dailyLimitHours = _dailyLimitHours ?? 8.0;
 
     try {
       double totalHours = 0.0;
-
-      // Extract hours
-      final hoursMatch = RegExp(r'(\d+)h').firstMatch(timeStr);
-      if (hoursMatch != null) {
-        totalHours += double.parse(hoursMatch.group(1)!);
-      }
-
-      // Extract minutes
-      final minutesMatch = RegExp(r'(\d+)m').firstMatch(timeStr);
-      if (minutesMatch != null) {
-        totalHours += double.parse(minutesMatch.group(1)!) / 60;
+      if (_screenTimeSeconds != null) {
+        totalHours = _screenTimeSeconds! / 3600.0;
+      } else {
+        // Fallback to the formatted string (e.g., "2h 15m" or "45m")
+        final timeStr = _totalUsageTime;
+        final hoursMatch = RegExp(r'(\d+)h').firstMatch(timeStr);
+        if (hoursMatch != null) {
+          totalHours += double.parse(hoursMatch.group(1)!);
+        }
+        final minutesMatch = RegExp(r'(\d+)m').firstMatch(timeStr);
+        if (minutesMatch != null) {
+          totalHours += double.parse(minutesMatch.group(1)!) / 60;
+        }
       }
 
       final percentage = ((totalHours / dailyLimitHours) * 100).clamp(0, 100).toInt();
@@ -863,23 +966,37 @@ class _ChildScreenState extends State<ChildScreen> {
   }
 
   bool _hasExceededApps() {
-    if (_restrictions == null || _usageStats.isEmpty) return false;
+    if (_restrictions == null) return false;
     
     for (var usage in _usageStats) {
       final packageName = usage.packageName ?? '';
       final hasLimit = _restrictions!.restrictedApps.containsKey(packageName);
-      if (hasLimit) {
-        final limitHours = _restrictions!.restrictedApps[packageName];
-        if (limitHours != null) {
-          final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
-          final usedHours = millis / 1000 / 3600;
-          if (usedHours >= limitHours) {
-            return true;
-          }
-        }
+      if (!hasLimit) continue;
+      final limitHours = _restrictions!.restrictedApps[packageName];
+      if (limitHours == null) continue;
+
+      double usedHours;
+      if (_nativeAppUsageSeconds.isNotEmpty && _nativeAppUsageSeconds.containsKey(packageName)) {
+        usedHours = _nativeAppUsageSeconds[packageName]! / 3600.0;
+      } else {
+        final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
+        usedHours = millis / 1000 / 3600;
+      }
+
+      if (usedHours >= limitHours) {
+        return true;
       }
     }
     return false;
+  }
+
+  String _formatDurationFromSeconds(int seconds) {
+    if (seconds <= 0) return '0m';
+    final duration = Duration(seconds: seconds);
+    if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes.remainder(60)}m';
+    }
+    return '${duration.inMinutes}m';
   }
 
   void _handleBottomNavTap(int index) {
@@ -1484,7 +1601,7 @@ class _ChildScreenState extends State<ChildScreen> {
                     ],
                     
                     // App Usage Summary Card
-                    if (_usageStats.isNotEmpty) ...[
+                    if (_displayUsageEntries.isNotEmpty) ...[
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -1497,7 +1614,7 @@ class _ChildScreenState extends State<ChildScreen> {
                             _buildStatItem(
                               context,
                               Icons.apps_rounded,
-                              '${_usageStats.length}',
+                              '${_displayUsageEntries.length}',
                               'Apps Used',
                             ),
                             Container(
@@ -1518,7 +1635,7 @@ class _ChildScreenState extends State<ChildScreen> {
                     ],
                     
                     // Browser Usage Section
-                    if (_browserUsageStats.isNotEmpty) ...[
+                    if (_browserUsageEntries.isNotEmpty) ...[
                       Row(
                         children: [
                           const Icon(Icons.language_rounded, size: 20, color: Color(0xFF317AF7)),
@@ -1563,10 +1680,10 @@ class _ChildScreenState extends State<ChildScreen> {
                           ),
                           child: ListView.builder(
                             padding: const EdgeInsets.all(8),
-                            itemCount: _browserUsageStats.length,
+                            itemCount: _browserUsageEntries.length,
                             itemBuilder: (context, index) {
-                              final usage = _browserUsageStats[index];
-                              final app = _apps[usage.packageName];
+                              final entry = _browserUsageEntries[index];
+                              final app = _apps[entry.key];
                               
                               if (app == null) return const SizedBox.shrink();
 
@@ -1623,7 +1740,7 @@ class _ChildScreenState extends State<ChildScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      _formatDuration(usage.totalTimeInForeground),
+                                      _formatDurationFromSeconds(entry.value),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
@@ -1847,7 +1964,7 @@ class _ChildScreenState extends State<ChildScreen> {
                     const SizedBox(height: 12),
                     
                     // App Usage List
-                    _usageStats.isEmpty
+                    _displayUsageEntries.isEmpty
                         ? Container(
                             padding: const EdgeInsets.all(32),
                             decoration: BoxDecoration(
@@ -1884,17 +2001,17 @@ class _ChildScreenState extends State<ChildScreen> {
                             children: [
                               // Total usage across all apps (for percentage of total time)
                               ...(() {
-                                int totalMillisAll = 0;
-                                for (var u in _usageStats) {
-                                  totalMillisAll += int.tryParse(u.totalTimeInForeground ?? '0') ?? 0;
+                                int totalSecondsAll = 0;
+                                for (var entry in _displayUsageEntries) {
+                                  totalSecondsAll += entry.value;
                                 }
 
-                                return _usageStats.take(10).map((usage) {
-                                final app = _apps[usage.packageName];
+                                return _displayUsageEntries.take(10).map((entry) {
+                                final app = _apps[entry.key];
                                 if (app == null) return const SizedBox.shrink();
 
                                 // Check if this app has a time limit
-                                final packageName = usage.packageName ?? '';
+                                final packageName = entry.key;
                                 final hasLimit = _restrictions?.restrictedApps.containsKey(packageName) ?? false;
                                 final limitHours = hasLimit ? _restrictions!.restrictedApps[packageName] : null;
                                 
@@ -1903,16 +2020,16 @@ class _ChildScreenState extends State<ChildScreen> {
                                 final effectiveLimit = isBlockedByExamMode ? 0.0 : limitHours;
                                 
                                 // Calculate time used
-                                final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
-                                final usedHours = millis / 1000 / 3600;
-                                final usedMinutes = (millis / 1000 / 60).round();
+                                final seconds = entry.value;
+                                final usedHours = seconds / 3600;
+                                final usedMinutes = (seconds / 60).round();
                                 
                                 // Check if limit is exceeded
                                 final isExceeded = (hasLimit && effectiveLimit != null && usedHours >= effectiveLimit) || isBlockedByExamMode;
                                 
                                 // Calculate percentage of total app usage time
-                                final totalMillis = totalMillisAll == 0 ? 1 : totalMillisAll;
-                                final percentage = ((millis / totalMillis) * 100).clamp(0, 100).toInt();
+                                final totalSeconds = totalSecondsAll == 0 ? 1 : totalSecondsAll;
+                                final percentage = ((seconds / totalSeconds) * 100).clamp(0, 100).toInt();
                                 
                                 // Get app category
                                 String category = _getAppCategory(packageName, app.name);
@@ -2099,7 +2216,7 @@ class _ChildScreenState extends State<ChildScreen> {
                               }).toList();
                             })(),
                               // Load Earlier Activities Button
-                              if (_usageStats.length > 10)
+                              if (_displayUsageEntries.length > 10)
                                 Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   child: TextButton(

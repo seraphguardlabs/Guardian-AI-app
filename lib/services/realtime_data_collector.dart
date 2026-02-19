@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,8 @@ import '../models/websocket_data.dart';
 /// Real-time data collector and sender
 /// This service continuously collects and sends data via WebSocket
 class RealTimeDataCollector {
+  static const MethodChannel _screenTimeChannel = MethodChannel('com.guardian_ai/screen_time');
+
   final WebSocketService _wsService;
   final String _childHash;
   
@@ -98,37 +101,55 @@ class RealTimeDataCollector {
   /// Collect screen time data from UsageStats
   Future<void> _collectAndSendScreenTime() async {
     try {
-      final endDate = DateTime.now();
-      final startDate = DateTime(endDate.year, endDate.month, endDate.day);
-      
-      // Get usage stats for today
-      final stats = await UsageStats.queryUsageStats(
-        startDate,
-        endDate,
-      );
-      
-      if (stats.isEmpty) {
-        debugPrint('⚠️ No screen time data available');
-        return;
-      }
-      
-      // Calculate total screen time and app-wise breakdown
       int totalScreenTime = 0;
       final appWiseData = <String, Map<String, int>>{};
-      
-      for (final stat in stats) {
-        final packageName = stat.packageName ?? 'unknown';
-        final usageTime = int.parse(stat.totalTimeInForeground ?? '0') ~/ 1000; // Convert to seconds
-        
-        if (usageTime > 0) {
-          totalScreenTime += usageTime;
-          
-          // Get the hour of usage (simplified - you may want more accurate hourly breakdown)
-          final hour = DateTime.now().hour.toString().padLeft(2, '0');
-          
-          appWiseData[packageName] = {
-            hour: usageTime,
-          };
+      final hour = DateTime.now().hour.toString().padLeft(2, '0');
+
+      try {
+        final dynamic details = await _screenTimeChannel.invokeMethod('getScreenTimeDetails');
+        if (details is Map) {
+          final dynamic total = details['totalSeconds'];
+          if (total is num) {
+            totalScreenTime = total.toInt();
+          }
+          final dynamic perApp = details['perAppSeconds'];
+          if (perApp is Map) {
+            perApp.forEach((key, value) {
+              final seconds = (value is num) ? value.toInt() : 0;
+              if (seconds > 0) {
+                appWiseData[key.toString()] = {hour: seconds};
+              }
+            });
+          }
+        }
+      } on PlatformException {
+        // Fall back to UsageStats below.
+      } catch (_) {
+        // Fall back to UsageStats below.
+      }
+
+      if (totalScreenTime == 0 || appWiseData.isEmpty) {
+        final endDate = DateTime.now();
+        final startDate = DateTime(endDate.year, endDate.month, endDate.day);
+
+        final stats = await UsageStats.queryUsageStats(
+          startDate,
+          endDate,
+        );
+
+        if (stats.isEmpty) {
+          debugPrint('⚠️ No screen time data available');
+          return;
+        }
+
+        for (final stat in stats) {
+          final packageName = stat.packageName ?? 'unknown';
+          final usageTime = int.parse(stat.totalTimeInForeground ?? '0') ~/ 1000; // Convert to seconds
+
+          if (usageTime > 0) {
+            totalScreenTime += usageTime;
+            appWiseData[packageName] = {hour: usageTime};
+          }
         }
       }
       
@@ -139,12 +160,16 @@ class RealTimeDataCollector {
       
       // Send via WebSocket
       final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final tzOffsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
+      final tzName = DateTime.now().timeZoneName;
       debugPrint('📱 Sending screen time: ${totalScreenTime}s, ${appWiseData.length} apps');
       
       await _wsService.sendScreenTime(
         date: dateStr,
         totalScreenTime: totalScreenTime,
         appWiseData: appWiseData,
+        timezoneOffsetMinutes: tzOffsetMinutes,
+        timezoneName: tzName,
       );
       
     } catch (e) {

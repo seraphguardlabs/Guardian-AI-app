@@ -136,17 +136,55 @@ class MonitoringService : Service() {
             calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
             calendar.set(java.util.Calendar.MINUTE, 0)
             calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
             val startTime = calendar.timeInMillis
             val endTime = System.currentTimeMillis()
-            
+
             val stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
                 startTime,
                 endTime
             )
-            
-            val appStat = stats?.find { it.packageName == packageName }
-            return (appStat?.totalTimeInForeground ?: 0) / 1000 // Convert to seconds
+
+            val appStat = stats?.firstOrNull { it.packageName == packageName }
+            if (appStat != null && appStat.totalTimeInForeground > 0) {
+                return appStat.totalTimeInForeground / 1000
+            }
+
+            val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+            if (usageEvents == null) return 0
+
+            var lastForeground: Long? = null
+            var totalMs = 0L
+            val event = android.app.usage.UsageEvents.Event()
+
+            while (usageEvents.hasNextEvent()) {
+                usageEvents.getNextEvent(event)
+                val pkg = event.packageName ?: continue
+                if (pkg != packageName) continue
+
+                when (event.eventType) {
+                    android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED,
+                    android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                        lastForeground = event.timeStamp
+                    }
+                    android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED,
+                    android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED,
+                    android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        val startTs = lastForeground
+                        if (startTs != null && event.timeStamp >= startTs) {
+                            totalMs += (event.timeStamp - startTs)
+                        }
+                        lastForeground = null
+                    }
+                }
+            }
+
+            if (lastForeground != null && endTime > lastForeground!!) {
+                totalMs += (endTime - lastForeground!!)
+            }
+
+            return totalMs / 1000 // Convert to seconds
         } catch (e: Exception) {
             android.util.Log.e("MonitoringService", "Error getting app usage: ${e.message}")
         }

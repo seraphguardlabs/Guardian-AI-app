@@ -4,11 +4,15 @@ class ScreenTimeData {
   final String date;
   final int totalScreenTime; // in seconds
   final Map<String, Map<String, int>> appWiseData; // packageName -> hour -> seconds
+  final int? timezoneOffsetMinutes; // Local offset from UTC in minutes
+  final String? timezoneName;
 
   ScreenTimeData({
     required this.date,
     required this.totalScreenTime,
     required this.appWiseData,
+    this.timezoneOffsetMinutes,
+    this.timezoneName,
   });
 
   Map<String, dynamic> toJson() {
@@ -16,6 +20,8 @@ class ScreenTimeData {
       'date': date,
       'total_screen_time': totalScreenTime,
       'app_wise_data': appWiseData,
+      if (timezoneOffsetMinutes != null) 'timezone_offset_minutes': timezoneOffsetMinutes,
+      if (timezoneName != null) 'timezone_name': timezoneName,
     };
   }
 
@@ -35,6 +41,8 @@ class ScreenTimeData {
       date: json['date'] as String,
       totalScreenTime: json['total_screen_time'] as int,
       appWiseData: appWiseData,
+      timezoneOffsetMinutes: json['timezone_offset_minutes'] as int?,
+      timezoneName: json['timezone_name'] as String?,
     );
   }
 }
