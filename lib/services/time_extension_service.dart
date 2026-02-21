@@ -430,12 +430,21 @@ class TimeExtensionService extends ChangeNotifier {
         final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
         
         final completer = Completer<bool>();
+        final connectionCompleter = Completer<bool>();
+        bool payloadSent = false;
         final subscription = channel.stream.listen(
           (message) {
             debugPrint('📨 WEBSOCKET MESSAGE: $message');
             try {
               final data = json.decode(message as String);
-              if (data['type'] == 'success' || data['type'] == 'request_created') {
+              if (data['type'] == 'connection_established' && !connectionCompleter.isCompleted) {
+                connectionCompleter.complete(true);
+                if (!payloadSent) {
+                  channel.sink.add(json.encode(payload));
+                  payloadSent = true;
+                  debugPrint('📤 WEBSOCKET: Payload sent after connection established');
+                }
+              } else if (data['type'] == 'success' || data['type'] == 'request_created') {
                 if (!completer.isCompleted) completer.complete(true);
               } else if (data['type'] == 'error') {
                 debugPrint('❌ WEBSOCKET ERROR: ${data['message']}');
@@ -447,28 +456,40 @@ class TimeExtensionService extends ChangeNotifier {
           },
           onError: (e) {
             debugPrint('❌ WEBSOCKET CONNECTION ERROR: $e');
+            if (!connectionCompleter.isCompleted) connectionCompleter.complete(false);
             if (!completer.isCompleted) completer.complete(false);
           },
           onDone: () {
+            if (!connectionCompleter.isCompleted) connectionCompleter.complete(false);
             if (!completer.isCompleted) completer.complete(false);
           }
         );
 
-        // Give connection a moment
-        await Future.delayed(const Duration(milliseconds: 500));
-        channel.sink.add(json.encode(payload));
-        debugPrint('📤 WEBSOCKET: Payload sent');
-
-        wsSuccess = await completer.future.timeout(
+        // Wait for connection acknowledgement before sending
+        final connected = await connectionCompleter.future.timeout(
           const Duration(seconds: 5),
           onTimeout: () {
-            debugPrint('⏱️ WEBSOCKET: Timeout waiting for confirmation');
+            debugPrint('⏱️ WEBSOCKET: Timeout waiting for connection acknowledgement');
             return false;
           },
         );
-        
-        await subscription.cancel();
-        await channel.sink.close();
+
+        if (!connected) {
+          await subscription.cancel();
+          await channel.sink.close();
+          wsSuccess = false;
+        } else {
+          wsSuccess = await completer.future.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              debugPrint('⏱️ WEBSOCKET: Timeout waiting for confirmation');
+              return false;
+            },
+          );
+
+          await subscription.cancel();
+          await channel.sink.close();
+        }
       } catch (e) {
         debugPrint('❌ WEBSOCKET FAILED: $e');
         wsSuccess = false;
@@ -483,7 +504,7 @@ class TimeExtensionService extends ChangeNotifier {
       // 2. HTTP Fallback
       debugPrint('⚠️ WEBSOCKET FAILED: Trying HTTP fallback...');
       debugPrint('📡 API (HTTP): Sending POST request');
-      final httpUrl = Uri.parse('$baseUrl/api/mobile/time-extension-requests/create/');
+      final httpUrl = Uri.parse('$baseUrl/api/mobile/time-extension-requests/');
       debugPrint('   URL: $httpUrl');
       
       // HTTP payload structure might differ slightly (usually just the 'data' part)

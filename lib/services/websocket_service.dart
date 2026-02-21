@@ -291,9 +291,12 @@ class WebSocketService extends ChangeNotifier {
   /// Send a message through WebSocket
   Future<bool> _sendMessage(Map<String, dynamic> message) async {
     if (!isConnected) {
-      debugPrint('⚠️ WebSocket: Not connected, buffering message');
-      _bufferMessage(message);
-      return false;
+      final connected = await _ensureConnected();
+      if (!connected) {
+        debugPrint('⚠️ WebSocket: Not connected, buffering message');
+        _bufferMessage(message);
+        return false;
+      }
     }
     
     try {
@@ -306,6 +309,41 @@ class WebSocketService extends ChangeNotifier {
       _bufferMessage(message);
       return false;
     }
+  }
+
+  Future<bool> _ensureConnected({Duration timeout = const Duration(seconds: 5)}) async {
+    if (isConnected) return true;
+    if (_childHash == null) return false;
+
+    if (_status == WebSocketStatus.disconnected || _status == WebSocketStatus.failed) {
+      await _establishConnection();
+    }
+
+    if (isConnected) return true;
+
+    final completer = Completer<bool>();
+    late VoidCallback listener;
+    Timer? timer;
+
+    listener = () {
+      if (isConnected) {
+        timer?.cancel();
+        removeListener(listener);
+        if (!completer.isCompleted) {
+          completer.complete(true);
+        }
+      }
+    };
+
+    addListener(listener);
+    timer = Timer(timeout, () {
+      removeListener(listener);
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+    });
+
+    return completer.future;
   }
   
   /// Buffer message for later sending
