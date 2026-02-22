@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
@@ -34,7 +34,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _refreshTimer;
   RestrictionsData? _restrictions;
   StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
-  StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
   Position? _lastSentPosition;
 
   @override
@@ -67,7 +66,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
-    _wsRestrictionsSubscription?.cancel();
     // Stop location tracking
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
@@ -92,39 +90,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (childHash != null && childHash.isNotEmpty) {
       final wsService = Provider.of<WebSocketService>(context, listen: false);
       await wsService.connect(childHash);
-      debugPrint('🔌 WebSocket connected for child: $childHash');
+      debugPrint('≡ƒöî WebSocket connected for child: $childHash');
       
       // Listen for incoming messages from server
       _wsMessageSubscription = wsService.messages.listen((message) {
         if (message['type'] == 'restrictions_update') {
-          debugPrint('🚫 Received restrictions update via WebSocket');
+          debugPrint('≡ƒÜ½ Received restrictions update via WebSocket');
           _fetchRestrictions();
         }
       });
       
-      // Listen for restrictions updates from dedicated WSS connection
-      _wsRestrictionsSubscription = wsService.restrictions.listen((message) {
-        if (message['type'] == 'restrictions_update') {
-          debugPrint('🚫 Received restrictions from WSS');
-          final restrictedApps = message['restricted_apps'] as Map<String, dynamic>? ?? {};
-          
-          // Update app blocker service
-          final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
-          appBlocker.updateRestrictions(restrictedApps);
-          
-          // Update background monitoring service
-          BackgroundMonitoringService.updateRestrictions(restrictedApps);
-          
-          // Also update local restrictions data for UI
-          if (mounted) {
-            setState(() {
-              _restrictions = RestrictionsData.fromJson(restrictedApps);
-            });
-          }
-        }
-      });
     } else {
-      debugPrint('⚠️ No child hash found, skipping WebSocket connection');
+      debugPrint('ΓÜá∩╕Å No child hash found, skipping WebSocket connection');
     }
   }
   
@@ -133,7 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final childHash = prefsManager.getChildHash();
     
     if (childHash == null || childHash.isEmpty) {
-      debugPrint('⚠️ No child hash, skipping restrictions fetch');
+      debugPrint('ΓÜá∩╕Å No child hash, skipping restrictions fetch');
       return;
     }
     
@@ -153,7 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _restrictions = restrictions;
       });
-      debugPrint('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
+      debugPrint('Γ£à Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
       
       // Update app blocker service
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
@@ -168,7 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final wsService = Provider.of<WebSocketService>(context, listen: false);
     
     if (!wsService.isConnected) {
-      debugPrint('⚠️ WebSocket not connected, skipping data send');
+      debugPrint('ΓÜá∩╕Å WebSocket not connected, skipping data send');
       return;
     }
     
@@ -211,7 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appWiseData: appWiseData,
     );
     
-    debugPrint('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
+    debugPrint('≡ƒô▒ Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
   }
   
   Future<void> _sendLocationData() async {
@@ -230,7 +207,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
 
         if (distance < 5.0) {
-          debugPrint('📍 (Old) Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
+          debugPrint('≡ƒôì (Old) Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
           return;
         }
       }
@@ -242,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
 
       _lastSentPosition = currentPosition;
-      debugPrint('📍 (Old) Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      debugPrint('≡ƒôì (Old) Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
     }
   }
   
@@ -261,7 +238,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     
     await wsService.sendSiteAccess(logs: logs);
     
-    debugPrint('🌐 Sent ${logs.length} website visits');
+    debugPrint('≡ƒîÉ Sent ${logs.length} website visits');
   }
 
   Future<void> _getScreenTime() async {
@@ -758,7 +735,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
-                                              'Accuracy: ±${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
+                                              'Accuracy: ┬▒${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
                                               style: TextStyle(
                                                 color: Colors.white70,
                                               ),
@@ -1372,11 +1349,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final TextEditingController reasonController = TextEditingController();
     String? selectedPackageName;
     String? selectedAppName;
+    final timeExtService = context.read<TimeExtensionService>();
     
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+      builder: (context) => ChangeNotifierProvider.value(
+        value: timeExtService,
+        child: StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -1524,6 +1504,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              Consumer<TimeExtensionService>(
+                builder: (context, service, child) {
+                  final statusText = service.childWsStatusMessage ?? 'Not connected';
+                  final responseText = service.lastChildWsResponse ?? 'No response yet';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: service.childWsConnected
+                                  ? Colors.greenAccent
+                                  : Colors.redAccent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Time Extension WS: $statusText',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Server response: $responseText',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -1657,9 +1675,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
-        ),
       ),
-    );
+    ),
+  ),
+);
   }
   
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {

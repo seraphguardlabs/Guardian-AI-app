@@ -42,7 +42,6 @@ class _ChildScreenState extends State<ChildScreen> {
   Timer? _refreshTimer;
   RestrictionsData? _restrictions;
   StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
-  StreamSubscription<Map<String, dynamic>>? _wsRestrictionsSubscription;
   bool _examMode = false;
   List<String> _examModeApps = [];
   List<Task> _pendingTasks = [];
@@ -116,7 +115,6 @@ class _ChildScreenState extends State<ChildScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
-    _wsRestrictionsSubscription?.cancel();
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
     super.dispose();
@@ -147,27 +145,6 @@ class _ChildScreenState extends State<ChildScreen> {
           _fetchRestrictions();
           debugPrint('🎓 Fetching exam mode after WebSocket restrictions update');
           _fetchExamMode(); // Also check exam mode when restrictions update
-        }
-      });
-
-      _wsRestrictionsSubscription = wsService.restrictions.listen((message) {
-        if (message['type'] == 'restrictions_update') {
-          debugPrint('🚫 Received restrictions from WSS');
-          final restrictedApps = message['restricted_apps'] as Map<String, dynamic>? ?? {};
-
-          // Also fetch exam mode to get effective restrictions
-          _fetchExamMode().then((_) {
-            final effectiveRestrictions = _getEffectiveRestrictions();
-            final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
-            appBlocker.updateRestrictions(effectiveRestrictions);
-            BackgroundMonitoringService.updateRestrictions(effectiveRestrictions);
-          });
-
-          if (mounted) {
-            setState(() {
-              _restrictions = RestrictionsData.fromJson(restrictedApps);
-            });
-          }
         }
       });
     } else {
@@ -2245,36 +2222,39 @@ class _ChildScreenState extends State<ChildScreen> {
   void _showRequestTimeDialog(BuildContext context, {String? packageName, String? appName}) {
     final TextEditingController hoursController = TextEditingController();
     final TextEditingController reasonController = TextEditingController();
+    final timeExtService = context.read<TimeExtensionService>();
     
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF317AF7), Color(0xFF15335C)],
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.access_time, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Request Extra Time',
-              style: TextStyle(color: Colors.white, fontSize: 18),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => ChangeNotifierProvider.value(
+        value: timeExtService,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
             children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF317AF7), Color(0xFF15335C)],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.access_time, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Request Extra Time',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               if (appName != null) ...[
                 const Text(
                   'Requesting time for:',
@@ -2348,6 +2328,44 @@ class _ChildScreenState extends State<ChildScreen> {
                     borderSide: BorderSide.none,
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+              Consumer<TimeExtensionService>(
+                builder: (context, service, child) {
+                  final statusText = service.childWsStatusMessage ?? 'Not connected';
+                  final responseText = service.lastChildWsResponse ?? 'No response yet';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: service.childWsConnected
+                                  ? Colors.greenAccent
+                                  : Colors.redAccent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Time Extension WS: $statusText',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Server response: $responseText',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),
@@ -2489,7 +2507,8 @@ class _ChildScreenState extends State<ChildScreen> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
 

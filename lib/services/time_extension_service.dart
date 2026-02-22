@@ -7,17 +7,24 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 import '../models/time_extension_request.dart';
 import 'encryption_service.dart';
+import '../utils/preferences_manager.dart';
 
 class TimeExtensionService extends ChangeNotifier {
   static const String baseUrl = 'https://seraphguardlabs.com';
   static const String wsUrl = 'wss://seraphguardlabs.com/ws/guardian/time-extension';
   
   WebSocketChannel? _channel;
+  WebSocketChannel? _childChannel;
   List<TimeExtensionRequest> _pendingRequests = [];
   List<TimeExtensionRequest> _allRequests = [];
   bool _isConnected = false;
   bool _isConnecting = false;
   bool _isAuthenticated = false;
+  bool _childWsConnected = false;
+  bool _childWsConnecting = false;
+  String? _childWsStatusMessage;
+  String? _childWsResponseMessage;
+  Completer<bool>? _childRequestCompleter;
   DateTime? _lastConnectionAttempt;
   int _reconnectAttempts = 0;
   
@@ -28,6 +35,9 @@ class TimeExtensionService extends ChangeNotifier {
   List<TimeExtensionRequest> get allRequests => _allRequests;
   bool get isConnected => _isConnected;
   bool get isAuthenticated => _isAuthenticated;
+  bool get childWsConnected => _childWsConnected;
+  String? get childWsStatusMessage => _childWsStatusMessage;
+  String? get lastChildWsResponse => _childWsResponseMessage;
   Stream<TimeExtensionRequest> get newRequestStream => _newRequestController.stream;
 
   TimeExtensionService() {
@@ -36,6 +46,7 @@ class TimeExtensionService extends ChangeNotifier {
     Future.delayed(const Duration(milliseconds: 500), () {
       debugPrint('⏰ TimeExt: Auto-connecting...');
       connect();
+      connectChildSocket();
     });
   }
 
@@ -221,14 +232,13 @@ class TimeExtensionService extends ChangeNotifier {
     }
   }
 
-  void _onWebSocketError(Object error) {
+  void _onWebSocketError(error) {
     debugPrint('❌ TimeExt WebSocket error: $error');
     _isConnected = false;
     _isConnecting = false;
     _isAuthenticated = false;
     notifyListeners();
   }
-
 
   void _onWebSocketDisconnected() {
     if (_isConnected) {
@@ -359,6 +369,112 @@ class TimeExtensionService extends ChangeNotifier {
     }
   }
 
+  Future<void> connectChildSocket({String? childHash}) async {
+    if (_childWsConnecting || _childWsConnected) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final resolvedChildHash = childHash ?? prefs.getString('child_hash');
+
+    if (resolvedChildHash == null || resolvedChildHash.isEmpty) {
+      _childWsStatusMessage = 'Child profile not found';
+      notifyListeners();
+      return;
+    }
+
+    _childWsConnecting = true;
+    _childWsStatusMessage = 'Connecting...';
+    notifyListeners();
+
+    try {
+      final uri = Uri.parse('wss://seraphguardlabs.com/ws/child/$resolvedChildHash/time-extension/');
+      debugPrint('📡 TimeExt: Connecting child WebSocket at: $uri');
+      _childChannel = WebSocketChannel.connect(uri);
+
+      _childChannel!.stream.listen(
+        _onChildWebSocketMessage,
+        onError: _onChildWebSocketError,
+        onDone: _onChildWebSocketDisconnected,
+        cancelOnError: false,
+      );
+
+      _childWsConnected = true;
+      _childWsConnecting = false;
+      _childWsStatusMessage = 'Connected';
+      notifyListeners();
+    } catch (e) {
+      _childWsConnected = false;
+      _childWsConnecting = false;
+      _childWsStatusMessage = 'Connection failed';
+      _childWsResponseMessage = e.toString();
+      notifyListeners();
+      debugPrint('❌ TimeExt: Child WebSocket connection error: $e');
+    }
+  }
+
+  void _onChildWebSocketMessage(dynamic message) {
+    try {
+      debugPrint('📨 TimeExt (child): Received message: $message');
+      final data = json.decode(message as String);
+      final messageType = data['type'];
+
+      if (messageType == 'connection_established') {
+        _childWsConnected = true;
+        _childWsStatusMessage = data['message'] ?? 'Connection established';
+        notifyListeners();
+        return;
+      }
+
+      if (messageType == 'request_created' || messageType == 'request_received' || messageType == 'success') {
+        _childWsResponseMessage = data['message'] ?? messageType;
+        notifyListeners();
+        if (_childRequestCompleter != null && !_childRequestCompleter!.isCompleted) {
+          _childRequestCompleter!.complete(true);
+        }
+        return;
+      }
+
+      if (messageType == 'error') {
+        _childWsResponseMessage = data['message'] ?? 'Server error';
+        notifyListeners();
+        if (_childRequestCompleter != null && !_childRequestCompleter!.isCompleted) {
+          _childRequestCompleter!.complete(false);
+        }
+        return;
+      }
+
+      _childWsResponseMessage = data['message'] ?? 'Unknown response';
+      notifyListeners();
+    } catch (e) {
+      _childWsResponseMessage = 'Failed to parse server response';
+      notifyListeners();
+      debugPrint('❌ TimeExt: Error parsing child response: $e');
+    }
+  }
+
+  void _onChildWebSocketError(error) {
+    _childWsConnected = false;
+    _childWsConnecting = false;
+    _childWsStatusMessage = 'Connection error';
+    _childWsResponseMessage = error.toString();
+    notifyListeners();
+    if (_childRequestCompleter != null && !_childRequestCompleter!.isCompleted) {
+      _childRequestCompleter!.complete(false);
+    }
+    debugPrint('❌ TimeExt child WebSocket error: $error');
+  }
+
+  void _onChildWebSocketDisconnected() {
+    _childWsConnected = false;
+    _childWsConnecting = false;
+    _childWsStatusMessage = 'Disconnected';
+    notifyListeners();
+    if (_childRequestCompleter != null && !_childRequestCompleter!.isCompleted) {
+      _childRequestCompleter!.complete(false);
+    }
+    debugPrint('🔌 TimeExt: Child WebSocket disconnected');
+  }
 
   // Create a new time extension request (from child side)
   Future<bool> createRequest({
@@ -370,176 +486,202 @@ class TimeExtensionService extends ChangeNotifier {
     String? messageEncrypted,
   }) async {
     try {
-      debugPrint('═══════════════════════════════════════════════════════');
-      debugPrint('🚀 TIME EXTENSION REQUEST: Start');
-      debugPrint('   Child Hash: $childHash');
-      debugPrint('   Hours: $requestedHours');
-      debugPrint('   Reason: $reason');
-      debugPrint('   App: $appName ($packageName)');
+      _childWsResponseMessage = null;
+      notifyListeners();
+
+      debugPrint('\n📤 TimeExt: Creating new time extension request');
+      debugPrint('📤 TimeExt: Child: $childHash');
+      debugPrint('📤 TimeExt: Hours: $requestedHours');
+      debugPrint('📤 TimeExt: Reason (plaintext): $reason');
+      debugPrint('📤 TimeExt: Package: $packageName');
+      debugPrint('📤 TimeExt: App: $appName');
 
       // Fetch parent's public key and encrypt the message
       String? encryptedMessage = messageEncrypted;
-      int? guardianId;
+      final prefsManager = await PreferencesManager.init();
+      int? guardianId = prefsManager.getGuardianId();
       
       if (encryptedMessage == null) {
-        debugPrint('🔐 ENCRYPTION: Fetching parent keys...');
+        debugPrint('🔐 TimeExt: Fetching parent public key for encryption...');
         final parentData = await _fetchParentPublicKeyAndId(childHash);
         final parentPublicKey = parentData['public_key'];
-        guardianId = parentData['guardian_id'];
+        guardianId = guardianId ?? parentData['guardian_id'];
         
         if (parentPublicKey != null && parentPublicKey.isNotEmpty) {
           try {
-            debugPrint('🔐 ENCRYPTION: Encrypting with parent key...');
+            debugPrint('🔐 TimeExt: Encrypting message with parent public key...');
             final encryptionService = EncryptionService.instance;
             encryptedMessage = encryptionService.encryptWithPublicKey(reason, parentPublicKey);
-            debugPrint('✅ ENCRYPTION: Message encrypted successfully');
+            debugPrint('✅ TimeExt: Message encrypted successfully');
+            debugPrint('🔐 TimeExt: Encrypted message (base64): ${encryptedMessage.substring(0, 50)}...');
           } catch (e) {
-            debugPrint('❌ ENCRYPTION: Failed: $e');
-            debugPrint('⚠️ FALLBACK: Using base64 encoding');
+            debugPrint('❌ TimeExt: Encryption failed: $e');
+            debugPrint('⚠️ TimeExt: Sending base64-encoded plaintext as fallback');
             encryptedMessage = base64.encode(utf8.encode(reason));
           }
         } else {
-          debugPrint('⚠️ KEYS: Parent public key not found');
-          debugPrint('⚠️ FALLBACK: Using base64 encoding');
+          debugPrint('⚠️ TimeExt: Parent public key not available');
+          debugPrint('⚠️ TimeExt: Sending base64-encoded plaintext as fallback');
           encryptedMessage = base64.encode(utf8.encode(reason));
         }
       }
 
-      final payload = {
-        'type': 'time_extension_request',
-        'data': { 
-          'child_hash': childHash, // Ensure child hash is sent 
-          'app_domain': packageName ?? '',
-          'app_name': appName ?? '',
-          'requested_hours': requestedHours,
-          'message_encrypted': encryptedMessage,
-          if (guardianId != null) 'guardian_id': guardianId,
-        }
-      };
+      // Ensure we always have a message to send (server requires NOT NULL)
+      if (encryptedMessage == null || encryptedMessage.isEmpty) {
+        debugPrint('⚠️ TimeExt: No encrypted message, using base64-encoded plaintext');
+        encryptedMessage = base64.encode(utf8.encode(reason));
+      }
 
-      debugPrint('📦 PAYLOAD PREPARED:');
-      debugPrint(const JsonEncoder.withIndent('  ').convert(payload));
+      // Refresh guardian_id from preferences after any fetch
+      guardianId = guardianId ?? prefsManager.getGuardianId();
 
-      // 1. Try WebSocket
-      debugPrint('📡 API (WEBSOCKET): Attempting connection...');
+      // Use WebSocket for sending time extension request
+      debugPrint('📡 TimeExt: Sending via WebSocket...');
       final wsUrl = 'wss://seraphguardlabs.com/ws/child/$childHash/time-extension/';
-      debugPrint('   URL: $wsUrl');
+      debugPrint('📡 TimeExt: Connecting to: $wsUrl');
       
-      bool wsSuccess = false;
       try {
-        final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+        if (!_childWsConnected || _childChannel == null) {
+          await connectChildSocket(childHash: childHash);
+        }
+
+        final channel = _childChannel ?? WebSocketChannel.connect(Uri.parse(wsUrl));
         
-        final completer = Completer<bool>();
-        final connectionCompleter = Completer<bool>();
-        bool payloadSent = false;
-        final subscription = channel.stream.listen(
-          (message) {
-            debugPrint('📨 WEBSOCKET MESSAGE: $message');
-            try {
-              final data = json.decode(message as String);
-              if (data['type'] == 'connection_established' && !connectionCompleter.isCompleted) {
-                connectionCompleter.complete(true);
-                if (!payloadSent) {
-                  channel.sink.add(json.encode(payload));
-                  payloadSent = true;
-                  debugPrint('📤 WEBSOCKET: Payload sent after connection established');
-                }
-              } else if (data['type'] == 'success' || data['type'] == 'request_created') {
-                if (!completer.isCompleted) completer.complete(true);
-              } else if (data['type'] == 'error') {
-                debugPrint('❌ WEBSOCKET ERROR: ${data['message']}');
-                if (!completer.isCompleted) completer.complete(false);
-              }
-            } catch (e) {
-              if (!completer.isCompleted) completer.complete(false);
-            }
-          },
-          onError: (e) {
-            debugPrint('❌ WEBSOCKET CONNECTION ERROR: $e');
-            if (!connectionCompleter.isCompleted) connectionCompleter.complete(false);
-            if (!completer.isCompleted) completer.complete(false);
-          },
-          onDone: () {
-            if (!connectionCompleter.isCompleted) connectionCompleter.complete(false);
-            if (!completer.isCompleted) completer.complete(false);
+        final payload = {
+          'type': 'time_extension_request',
+          'data': {
+            'app_domain': packageName ?? '',
+            'requested_hours': requestedHours,
+            'message_encrypted': encryptedMessage,
+            if (guardianId != null) 'guardian_id': guardianId,
           }
-        );
+        };
+        
+        debugPrint('📦 TimeExt: Sending payload: ${json.encode(payload)}');
+        
+        // For persistent child socket, rely on the shared listener
+        bool success = true;
+        Completer<bool>? completer;
+        StreamSubscription? subscription;
 
-        // Wait for connection acknowledgement before sending
-        final connected = await connectionCompleter.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            debugPrint('⏱️ WEBSOCKET: Timeout waiting for connection acknowledgement');
-            return false;
-          },
-        );
-
-        if (!connected) {
-          await subscription.cancel();
-          await channel.sink.close();
-          wsSuccess = false;
+        if (channel == _childChannel) {
+          _childRequestCompleter = Completer<bool>();
+          completer = _childRequestCompleter;
         } else {
-          wsSuccess = await completer.future.timeout(
-            const Duration(seconds: 5),
+          success = false;
+          completer = Completer<bool>();
+          subscription = channel.stream.listen(
+            (message) {
+              try {
+                debugPrint('📨 TimeExt: Received response: $message');
+                final data = json.decode(message as String);
+                final messageType = data['type'];
+
+                debugPrint('📨 TimeExt: Message type: $messageType');
+
+                if (messageType == 'connection_established') {
+                  _childWsConnected = true;
+                  _childWsStatusMessage = data['message'] ?? 'Connection established';
+                  notifyListeners();
+                  return;
+                }
+
+                if (messageType == 'pending_requests') {
+                  debugPrint('ℹ️ TimeExt: Ignoring pending_requests message (not relevant for child)');
+                  return;
+                }
+
+                if (messageType == 'success' || messageType == 'request_received' || messageType == 'request_created') {
+                  _childWsResponseMessage = data['message'] ?? messageType;
+                  notifyListeners();
+                  debugPrint('✅ TimeExt: Request sent successfully');
+                  success = true;
+                  if (!completer!.isCompleted) {
+                    completer.complete(true);
+                  }
+                } else if (messageType == 'error') {
+                  _childWsResponseMessage = data['message'] ?? 'Server error';
+                  notifyListeners();
+                  debugPrint('❌ TimeExt: Error from server: ${data['message']}');
+                  if (!completer!.isCompleted) {
+                    completer.complete(false);
+                  }
+                } else {
+                  _childWsResponseMessage = data['message'] ?? 'Unknown response';
+                  notifyListeners();
+                  debugPrint('ℹ️ TimeExt: Unknown message type: $messageType');
+                }
+              } catch (e) {
+                _childWsResponseMessage = 'Failed to parse server response';
+                notifyListeners();
+                debugPrint('❌ TimeExt: Error parsing response: $e');
+                if (!completer!.isCompleted) {
+                  completer.complete(false);
+                }
+              }
+            },
+            onError: (error) {
+              _childWsConnected = false;
+              _childWsStatusMessage = 'Connection error';
+              _childWsResponseMessage = error.toString();
+              notifyListeners();
+              debugPrint('❌ TimeExt: WebSocket error: $error');
+              if (!completer!.isCompleted) {
+                completer.complete(false);
+              }
+            },
+            onDone: () {
+              _childWsConnected = false;
+              _childWsStatusMessage = 'Disconnected';
+              notifyListeners();
+              debugPrint('🔌 TimeExt: WebSocket closed');
+              if (!completer!.isCompleted) {
+                completer.complete(success);
+              }
+            },
+          );
+        }
+        
+        // Send the payload
+        channel.sink.add(json.encode(payload));
+        debugPrint('✅ TimeExt: Payload sent, waiting for response...');
+        
+        // Wait a bit for response, but don't fail if we don't get one
+        if (completer != null) {
+          final result = await completer.future.timeout(
+            const Duration(seconds: 3),
             onTimeout: () {
-              debugPrint('⏱️ WEBSOCKET: Timeout waiting for confirmation');
-              return false;
+              debugPrint('⏱️ TimeExt: No response received, but assuming success since message was sent');
+              _childWsResponseMessage = 'No response from server yet';
+              notifyListeners();
+              return true; // Assume success if message was sent
             },
           );
 
-          await subscription.cancel();
-          await channel.sink.close();
+          // Clean up
+          await subscription?.cancel();
+          if (channel != _childChannel) {
+            await channel.sink.close();
+          }
+          if (_childRequestCompleter == completer) {
+            _childRequestCompleter = null;
+          }
+          debugPrint('✅ TimeExt: Request completed with result: $result');
+          return result;
         }
+
+        return true;
+        
       } catch (e) {
-        debugPrint('❌ WEBSOCKET FAILED: $e');
-        wsSuccess = false;
-      }
-
-      if (wsSuccess) {
-        debugPrint('✅ SUCCESS: Request sent via WebSocket');
-        debugPrint('═══════════════════════════════════════════════════════');
-        return true;
-      }
-
-      // 2. HTTP Fallback
-      debugPrint('⚠️ WEBSOCKET FAILED: Trying HTTP fallback...');
-      debugPrint('📡 API (HTTP): Sending POST request');
-      final httpUrl = Uri.parse('$baseUrl/api/mobile/time-extension-requests/');
-      debugPrint('   URL: $httpUrl');
-      
-      // HTTP payload structure might differ slightly (usually just the 'data' part)
-      final httpPayload = payload['data'];
-      
-      final response = await http.post(
-        httpUrl,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Child-Hash': childHash,
-        },
-        body: jsonEncode(httpPayload),
-      );
-
-      debugPrint('📥 HTTP RESPONSE: ${response.statusCode}');
-      debugPrint('📥 BODY: ${response.body}');
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        debugPrint('✅ SUCCESS: Request sent via HTTP');
-        debugPrint('═══════════════════════════════════════════════════════');
-        return true;
-      } else {
-        debugPrint('❌ HTTP FAILED: ${response.body}');
-        debugPrint('═══════════════════════════════════════════════════════');
+        debugPrint('❌ TimeExt: WebSocket connection error: $e');
         return false;
       }
-
     } catch (e, stackTrace) {
-      debugPrint('❌ CRITICAL ERROR: $e');
-      debugPrint('❌ STACK TRACE: $stackTrace');
-      debugPrint('═══════════════════════════════════════════════════════');
+      debugPrint('❌ TimeExt: Error creating request: $e');
+      debugPrint('❌ TimeExt: Stack trace: $stackTrace');
       return false;
     }
   }
-
 
   // Fetch parent's public key and guardian ID for encryption
   Future<Map<String, dynamic>> _fetchParentPublicKeyAndId(String childHash) async {
@@ -565,6 +707,11 @@ class TimeExtensionService extends ChangeNotifier {
         final publicKey = data['public_key'] as String?;
         final guardianId = data['guardian_id'] as int?;
         
+        if (guardianId != null) {
+          final prefsManager = await PreferencesManager.init();
+          await prefsManager.setGuardianId(guardianId);
+        }
+
         if (publicKey != null && publicKey.isNotEmpty) {
           debugPrint('✅ TimeExt: Parent public key fetched successfully');
           debugPrint('✅ TimeExt: Guardian ID: $guardianId');
@@ -586,6 +733,11 @@ class TimeExtensionService extends ChangeNotifier {
   @override
   void dispose() {
     disconnect();
+    try {
+      _childChannel?.sink.close(ws_status.normalClosure);
+    } catch (e) {
+      debugPrint('⚠️ TimeExt: Error closing child WebSocket: $e');
+    }
     _newRequestController.close();
     super.dispose();
   }

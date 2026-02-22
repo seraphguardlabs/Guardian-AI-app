@@ -8,7 +8,6 @@ This document lists all the APIs used in the SeraphGuard project, including REST
 *   **Restrictions Base URL:** `https://seraphguardlabs.com`
 *   **Chat WebSocket URL:** `wss://seraphguardlabs.com/ws/guardian/chat`
 *   **Ingest WebSocket URL:** `wss://seraphguardlabs.com/ws/ingest`
-*   **Restrictions WebSocket URL:** `wss://seraphguardlabs.com/ws/restrictions`
 
 ---
 

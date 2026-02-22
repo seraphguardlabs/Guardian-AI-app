@@ -136,7 +136,6 @@ static const String baseUrl = 'https://seraphguardlabs.com';
 ```dart
 // In lib/services/websocket_service.dart
 static const String wsBaseUrl = 'wss://seraphguardlabs.com/ws/ingest';
-static const String wsRestrictionsUrl = 'wss://seraphguardlabs.com/ws/restrictions';
 ```
 
 ### Database Configuration

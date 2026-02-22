@@ -24,6 +24,7 @@ import '../services/realtime_alert_service.dart';
 import '../models/alert.dart';
 import 'alert_detail_screen.dart';
 import 'risk_alerts_screen.dart';
+import 'geofence_management_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -32,7 +33,8 @@ class ParentDashboardScreen extends StatefulWidget {
   State<ParentDashboardScreen> createState() => _ParentDashboardScreenState();
 }
 
-class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
+class _ParentDashboardScreenState extends State<ParentDashboardScreen>
+  with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   List<Child> _children = [];
   Child? _selectedChild;
@@ -47,6 +49,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Map<String, dynamic>? _todayScreenTime; // Today's actual screen time data
   double? _dailyLimitHours; // Global daily screen time limit in hours
   late final PageController _metricsPageController;
+  late final AnimationController _loadingPulseController;
   double _metricsPage = 0;
   bool _examMode = false;
   List<String> _examModeApps = [];
@@ -60,6 +63,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   void initState() {
     super.initState();
     _metricsPageController = PageController(viewportFraction: 0.9);
+    _loadingPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
     _metricsPageController.addListener(() {
       if (!mounted) return;
       setState(() {
@@ -92,6 +99,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   @override
   void dispose() {
     _metricsPageController.dispose();
+    _loadingPulseController.dispose();
     _newRequestSubscription?.cancel();
     _alertSubscription?.cancel();
     super.dispose();
@@ -788,6 +796,43 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool showLoading = _isLoading || (_selectedChild != null && _isLoadingData);
+    final Widget dashboardContent;
+    if (showLoading) {
+      dashboardContent = _buildLoadingState(key: const ValueKey('loading'));
+    } else if (_selectedChild != null) {
+      dashboardContent = Column(
+        key: const ValueKey('content'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_metrics != null) _buildMetricsSection(),
+          const SizedBox(height: 16),
+
+          Consumer<TimeExtensionService>(
+            builder: (context, timeExtService, _) {
+              return _buildPendingRequestsSection(timeExtService);
+            },
+          ),
+          const SizedBox(height: 16),
+
+          if (_screenTime != null) _buildScreenTimeCard(),
+          const SizedBox(height: 16),
+
+          if (_appUsage != null) _buildAppUsageCard(),
+          const SizedBox(height: 16),
+
+          // Always show locations card (handles empty state internally)
+          _buildLocationsCard(),
+          const SizedBox(height: 16),
+
+          if (_siteAccess != null) _buildSiteAccessCard(),
+          const SizedBox(height: 16),
+        ],
+      );
+    } else {
+      dashboardContent = _buildEmptyState(key: const ValueKey('empty'));
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -1066,40 +1111,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   ],
                 ),
               ),
-
-              if (_selectedChild != null) ...[
-                if (_isLoadingData)
-                  const Padding(
-                    padding: EdgeInsets.all(40.0),
-                    child: Center(
-                      child: CircularProgressIndicator(color: Colors.purple),
-                    ),
-                  )
-                else ...[
-                  if (_metrics != null) _buildMetricsSection(),
-                  const SizedBox(height: 16),
-
-                  Consumer<TimeExtensionService>(
-                    builder: (context, timeExtService, _) {
-                      return _buildPendingRequestsSection(timeExtService);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (_screenTime != null) _buildScreenTimeCard(),
-                  const SizedBox(height: 16),
-
-                  if (_appUsage != null) _buildAppUsageCard(),
-                  const SizedBox(height: 16),
-
-                  // Always show locations card (handles empty state internally)
-                  _buildLocationsCard(),
-                  const SizedBox(height: 16),
-
-                  if (_siteAccess != null) _buildSiteAccessCard(),
-                  const SizedBox(height: 16),
-                ],
-              ],
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: dashboardContent,
+              ),
             ],
           ),
         ),
@@ -1110,6 +1127,156 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         onTap: _handleBottomNavTap,
         isParent: true,
       ),
+    );
+  }
+
+  Widget _buildLoadingState({Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSkeletonCard(
+            height: 140,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 140, height: 14),
+                const SizedBox(height: 16),
+                _buildSkeletonLine(width: 220, height: 12),
+                const SizedBox(height: 12),
+                _buildSkeletonLine(width: 180, height: 12),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildSkeletonCard(
+            height: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 160, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 240, height: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildSkeletonCard(
+            height: 160,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 120, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 180, height: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildSkeletonCard(
+            height: 180,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 140, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 220, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 200, height: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState({Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0E1420),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF1B2433)),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.people_alt_outlined, color: Colors.white70, size: 28),
+            SizedBox(height: 12),
+            Text(
+              'No child profile selected',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Choose a child to load dashboard insights and controls.',
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonCard({required double height, required Widget child}) {
+    return AnimatedBuilder(
+      animation: _loadingPulseController,
+      builder: (context, _) {
+        final base = const Color(0xFF0F1624);
+        final highlight = const Color(0xFF1B263B);
+        final fill = Color.lerp(base, highlight, _loadingPulseController.value) ?? base;
+        return Container(
+          height: height,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF1B2433)),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _buildSkeletonLine({required double width, required double height}) {
+    return AnimatedBuilder(
+      animation: _loadingPulseController,
+      builder: (context, _) {
+        final base = const Color(0xFF1C2638);
+        final highlight = const Color(0xFF24324A);
+        final fill = Color.lerp(base, highlight, _loadingPulseController.value) ?? base;
+        return Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        );
+      },
     );
   }
 
@@ -2822,23 +2989,46 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                       ),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: locations.isEmpty 
-                          ? Colors.grey.withOpacity(0.2)
-                          : Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      locations.isEmpty
-                          ? 'No data'
-                          : '${summary['total_count']} tracked',
-                      style: TextStyle(
-                        color: locations.isEmpty ? Colors.grey : Colors.green,
-                        fontSize: 11,
+                  Row(
+                    children: [
+                      // Geofencing Button
+                      IconButton(
+                        icon: const Icon(Icons.share_location_outlined, color: Colors.blueAccent),
+                        tooltip: 'Manage Geofences',
+                        onPressed: () {
+                          if (_selectedChild != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => GeofenceManagementScreen(
+                                  child: _selectedChild!,
+                                ),
+                              ),
+                            );
+                          }
+                        },
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      // Status Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: locations.isEmpty 
+                              ? Colors.grey.withOpacity(0.2)
+                              : Colors.green.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          locations.isEmpty
+                            ? 'No data'
+                            : '${summary['total_count']} tracked',
+                          style: TextStyle(
+                            color: locations.isEmpty ? Colors.grey : Colors.green,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

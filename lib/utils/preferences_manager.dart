@@ -29,6 +29,7 @@ class PreferencesManager {
   static const String _keyIsParentLoggedIn = 'is_parent_logged_in';
   static const String _keyPublicKey = 'public_key';
   static const String _keyPrivateKey = 'private_key';
+  static const String _keyGuardianId = 'guardian_id';
   static const String _keyViewMode = 'view_mode'; // 'parent' or 'child'
   static const String _keyLastRoute = 'last_route';
   static const String _keyTaskMetadata = 'task_metadata'; // Stores unencrypted task titles/descriptions
@@ -122,6 +123,15 @@ class PreferencesManager {
 
   String? getPrivateKey() {
     return _prefs.getString(_keyPrivateKey);
+  }
+
+  // Guardian ID
+  Future<void> setGuardianId(int guardianId) async {
+    await _prefs.setInt(_keyGuardianId, guardianId);
+  }
+
+  int? getGuardianId() {
+    return _prefs.getInt(_keyGuardianId);
   }
 
   // View Mode (parent or child)
