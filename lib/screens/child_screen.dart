@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -55,6 +56,12 @@ class _ChildScreenState extends State<ChildScreen>
   late final Animation<double> _entranceFade;
   late final AnimationController _loadingPulseController;
 
+  // ── Permission gate ──────────────────────────────────────────────────────
+  bool _awaitingPermissions = true;
+  bool _locationGranted      = false;
+  bool _usageStatsGranted    = false;
+  bool _checkingPermissions  = false;
+
   @override
   void initState() {
     super.initState();
@@ -67,32 +74,108 @@ class _ChildScreenState extends State<ChildScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-    BackgroundMonitoringService.start();
-    LocationBackgroundService.start();   // keep running even when app is closed
-    _refreshData();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _refreshData();
-    });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('🎓 Child Screen: Post-frame callback starting...');
-      final prefs = Provider.of<PreferencesManager>(context, listen: false);
-      prefs.setViewMode('child');
-      prefs.setLastRoute('/child');
-      
-      // Upload child's public key to server
-      _uploadChildPublicKey();
-      
-      final locationService = Provider.of<LocationService>(context, listen: false);
-      locationService.startTracking();
-      _initializeWebSocket();
-      _fetchRestrictions();
-      debugPrint('🎓 Child Screen: Calling _fetchExamMode() from initState');
-      _fetchExamMode();
-      _loadDailyLimit();
-      _loadPendingTasks();
-      _initializeBackgroundServices();
-    });
+    // ⚠️  Do NOT start any service or load any data until permissions pass.
+    // Everything is gated through _initPermissionGate().
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initPermissionGate());
+  }
+
+  // ── Permission gate ──────────────────────────────────────────────────────
+
+  Future<void> _initPermissionGate() async {
+    if (!mounted) return;
+    await _checkAllPermissions();
+    if (_locationGranted && _usageStatsGranted) {
+      _startServicesAndLoad();
+    }
+  }
+
+  /// Silently checks current permission state (no dialogs).
+  Future<void> _checkAllPermissions() async {
+    // Location
+    final locStatus = await Permission.locationWhenInUse.status;
+    final locGranted = locStatus.isGranted || locStatus.isLimited;
+
+    // Usage stats (PACKAGE_USAGE_STATS) — checked via UsageStats
+    bool? usageGranted = await UsageStats.checkUsagePermission();
+
+    if (mounted) {
+      setState(() {
+        _locationGranted   = locGranted;
+        _usageStatsGranted = usageGranted == true;
+        _awaitingPermissions =
+            !(_locationGranted && _usageStatsGranted);
+      });
+    }
+  }
+
+  /// Called by the "Grant Permissions" button on the permission screen.
+  Future<void> _requestPermissions() async {
+    if (_checkingPermissions) return;
+    if (mounted) setState(() => _checkingPermissions = true);
+
+    // 1. Location
+    if (!_locationGranted) {
+      final status = await Permission.locationWhenInUse.request();
+      if (mounted) setState(() => _locationGranted = status.isGranted || status.isLimited);
+    }
+
+    // 2. Background location (best-effort — Android shows its own dialog after fine)
+    if (_locationGranted) {
+      final bgStatus = await Permission.locationAlways.status;
+      if (!bgStatus.isGranted) {
+        await Permission.locationAlways.request();
+      }
+    }
+
+    // 3. Usage stats — must go to system settings
+    if (!_usageStatsGranted) {
+      final granted = await UsageStats.checkUsagePermission();
+      if (granted != true) {
+        await UsageStats.grantUsagePermission(); // opens Settings; user comes back
+        await Future.delayed(const Duration(milliseconds: 500));
+        final recheckGranted = await UsageStats.checkUsagePermission();
+        if (mounted) setState(() => _usageStatsGranted = recheckGranted == true);
+      } else {
+        if (mounted) setState(() => _usageStatsGranted = true);
+      }
+    }
+
+    if (mounted) setState(() => _checkingPermissions = false);
+
+    // If all granted now → start everything
+    if (_locationGranted && _usageStatsGranted) {
+      if (mounted) setState(() => _awaitingPermissions = false);
+      _startServicesAndLoad();
+    }
+  }
+
+  /// Called only after all permissions are confirmed.  Mirrors what initState
+  /// previously did immediately (and unsafely).
+  void _startServicesAndLoad() {
+    if (!mounted) return;
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    prefs.setViewMode('child');
+    prefs.setLastRoute('/child');
+
+    // Start native foreground services — safe now that permissions exist
+    BackgroundMonitoringService.start();
+    LocationBackgroundService.start();
+
+    // Start data loading
+    _refreshData();
+    _refreshTimer ??= Timer.periodic(const Duration(seconds: 30), (_) => _refreshData());
+
+    // Network + server calls
+    _uploadChildPublicKey();
+    final locationService = Provider.of<LocationService>(context, listen: false);
+    locationService.startTracking();
+    _initializeWebSocket();
+    _fetchRestrictions();
+    _fetchExamMode();
+    _loadDailyLimit();
+    _loadPendingTasks();
+    _initializeBackgroundServices();
   }
 
   Future<void> _uploadChildPublicKey() async {
@@ -703,14 +786,10 @@ class _ChildScreenState extends State<ChildScreen>
 
   Future<void> _initUsageStats() async {
     try {
+      // Permission is guaranteed by the permission gate before this is called.
+      // Just return early if somehow still not granted (do NOT open settings here).
       bool? isPermissionGranted = await UsageStats.checkUsagePermission();
-      if (isPermissionGranted == null || !isPermissionGranted) {
-        await UsageStats.grantUsagePermission();
-        isPermissionGranted = await UsageStats.checkUsagePermission();
-        if (isPermissionGranted == null || !isPermissionGranted) {
-          return;
-        }
-      }
+      if (isPermissionGranted != true) return;
 
       List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: true);
 
@@ -1209,7 +1288,9 @@ class _ChildScreenState extends State<ChildScreen>
         ),
       ),
       drawer: _buildChildDrawer(context, childName),
-      body: Container(
+      body: _awaitingPermissions
+          ? _buildPermissionSetup()
+          : Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
             image: AssetImage('assets/images/mountain.png'),
@@ -2454,6 +2535,206 @@ class _ChildScreenState extends State<ChildScreen>
           ),
         ),
       ],
+    );
+  }
+
+  // ───────────────── Permission setup screen ─────────────────
+
+  Widget _buildPermissionSetup() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF050608), Color(0xFF0D1B3E)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              // Shield icon
+              Center(
+                child: Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF317AF7), Color(0xFF15335C)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF317AF7).withOpacity(0.45),
+                        blurRadius: 28,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.security_rounded, color: Colors.white, size: 46),
+                ),
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'Permissions Required',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Guardian AI needs access to a few system features to keep you safe and track your activity.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
+              ),
+              const SizedBox(height: 36),
+              // Permission rows
+              _buildPermRow(
+                icon: Icons.location_on_rounded,
+                title: 'Location',
+                subtitle: 'For safety monitoring & geofencing',
+                granted: _locationGranted,
+              ),
+              const SizedBox(height: 16),
+              _buildPermRow(
+                icon: Icons.bar_chart_rounded,
+                title: 'Usage Access',
+                subtitle: 'For screen time & app usage tracking',
+                granted: _usageStatsGranted,
+              ),
+              const SizedBox(height: 40),
+              // Grant button
+              SizedBox(
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _checkingPermissions ? null : _requestPermissions,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF317AF7),
+                    disabledBackgroundColor: const Color(0xFF317AF7).withOpacity(0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _checkingPermissions
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          (_locationGranted && _usageStatsGranted)
+                              ? 'Continue'
+                              : 'Grant Permissions',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Skip / already granted path — re-check without dialogs
+              TextButton(
+                onPressed: _checkingPermissions
+                    ? null
+                    : () async {
+                        await _checkAllPermissions();
+                        if (!mounted) return;
+                        if (_locationGranted && _usageStatsGranted) {
+                          setState(() => _awaitingPermissions = false);
+                          _startServicesAndLoad();
+                        }
+                      },
+                child: const Text(
+                  'Already granted? Tap here',
+                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPermRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool granted,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1624),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: granted
+              ? Colors.greenAccent.withOpacity(0.45)
+              : const Color(0xFF1B2433),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: granted
+                  ? Colors.greenAccent.withOpacity(0.12)
+                  : const Color(0xFF317AF7).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              color: granted ? Colors.greenAccent : const Color(0xFF317AF7),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            granted ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+            color: granted ? Colors.greenAccent : Colors.white24,
+            size: 22,
+          ),
+        ],
+      ),
     );
   }
 
