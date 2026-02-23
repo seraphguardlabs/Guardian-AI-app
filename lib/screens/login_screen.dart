@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/encryption_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import '../models/child.dart';
 import 'profile_selection_screen.dart';
 
@@ -13,7 +14,11 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bgController;
+  late final Animation<double> _bgAnim;
+
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -31,6 +36,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat(reverse: true);
+    _bgAnim = CurvedAnimation(parent: _bgController, curve: Curves.easeInOut);
     // Check if already logged in when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLoginStatus();
@@ -299,91 +309,134 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0),
-          child: Column(
-            children: [
-              const Spacer(flex: 2),
-              // Shield Logo
-              SizedBox(
-                width: 100,
-                height: 100,
-                child: Image.asset(
-                  'assets/images/shield_logo.png',
-                  fit: BoxFit.contain,
-                ),
+      backgroundColor: AppTheme.background,
+      body: AnimatedBuilder(
+        animation: _bgAnim,
+        builder: (_, child) {
+          final t = _bgAnim.value;
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color.lerp(const Color(0xFF0A0A0F), const Color(0xFF0D1020), t)!,
+                  Color.lerp(const Color(0xFF101020), const Color(0xFF0A0A1A), t)!,
+                  Color.lerp(const Color(0xFF0A0A0F), const Color(0xFF080810), t)!,
+                ],
               ),
-              const SizedBox(height: 32),
-              // Title
-              const Text(
-                'Welcome to the Guardian AI',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
+            ),
+            child: child,
+          );
+        },
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Column(
+              children: [
+                const Spacer(flex: 2),
+                // Shield Logo – scales + fades in
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 0),
+                  duration: const Duration(milliseconds: 700),
+                  beginOffset: const Offset(0, -0.2),
+                  child: _AnimatedLogo(),
                 ),
-              ),
-              const SizedBox(height: 12),
-              // Subtitle
-              const Text(
-                'Empowering your child\'s journey\ntoday for a successful tomorrow',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.white54,
-                  height: 1.5,
-                ),
-              ),
-              const Spacer(flex: 3),
-              // Login Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _showLoginDialog,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A3C8B),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 32),
+                // Title
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 200),
+                  child: const Text(
+                    'Welcome to the Guardian AI',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      letterSpacing: 0.3,
                     ),
-                    elevation: 0,
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
+                ),
+                const SizedBox(height: 12),
+                // Subtitle
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 350),
+                  child: const Text(
+                    'Empowering your child\'s journey\ntoday for a successful tomorrow',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white54,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+                const Spacer(flex: 3),
+                // Login Button
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 500),
+                  beginOffset: const Offset(0, 0.4),
+                  child: TapBounce(
+                    onTap: _isLoading ? null : _showLoginDialog,
+                    child: Container(
+                      width: double.infinity,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1A3C8B), Color(0xFF0F2A6B)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Create Account Button
-              TextButton(
-                onPressed: _isLoading ? null : _showSignupDialog,
-                child: const Text(
-                  'Create an account',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white54,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF1A3C8B).withOpacity(0.35),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Login',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                    ),
                   ),
                 ),
-              ),
-              const Spacer(flex: 1),
-            ],
+                const SizedBox(height: 16),
+                // Create Account Button
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 620),
+                  beginOffset: const Offset(0, 0.4),
+                  child: TextButton(
+                    onPressed: _isLoading ? null : _showSignupDialog,
+                    child: const Text(
+                      'Create an account',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(flex: 1),
+              ],
+            ),
           ),
         ),
       ),
@@ -789,11 +842,78 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _bgController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _signupNameController.dispose();
     _signupEmailController.dispose();
     _signupPasswordController.dispose();
     super.dispose();
+  }
+}
+
+/// Animated shield logo with subtle scale + glow pulse.
+class _AnimatedLogo extends StatefulWidget {
+  const _AnimatedLogo();
+
+  @override
+  State<_AnimatedLogo> createState() => _AnimatedLogoState();
+}
+
+class _AnimatedLogoState extends State<_AnimatedLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.97, end: 1.03)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _glow = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (_, __) => Container(
+        width: 110,
+        height: 110,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF1A3C8B).withOpacity(0.3 + _glow.value * 0.25),
+              blurRadius: 24 + _glow.value * 16,
+              spreadRadius: 2 + _glow.value * 4,
+            ),
+          ],
+        ),
+        child: Transform.scale(
+          scale: _scale.value,
+          child: SizedBox(
+            width: 110,
+            height: 110,
+            child: Image.asset(
+              'assets/images/shield_logo.png',
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

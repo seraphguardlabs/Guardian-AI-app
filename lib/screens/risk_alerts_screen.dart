@@ -5,6 +5,7 @@ import '../models/alert.dart';
 import '../services/realtime_alert_service.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import 'alert_detail_screen.dart';
 
 /// Dedicated full-screen risk alerts page
@@ -230,9 +231,13 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
                     final severityText = alert.severity.toString().split('.').last;
                     final contentTypeLabel = _contentTypeLabel(alert.contentType);
 
-                    return Padding(
+                    return FadeSlideIn(
+                      delay: Duration(milliseconds: 50 * index),
+                      duration: const Duration(milliseconds: 400),
+                      beginOffset: const Offset(0.05, 0),
+                      child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: GestureDetector(
+                      child: TapBounce(
                         onTap: () {
                           Navigator.push(
                             context,
@@ -403,6 +408,7 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
                           ),
                         ),
                       ),
+                    ),
                     );
                   },
                 ),

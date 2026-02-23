@@ -8,6 +8,7 @@ import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import '../services/location_service.dart';
 import '../services/websocket_service.dart';
 import '../services/api_service.dart';
@@ -23,7 +24,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with TickerProviderStateMixin {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
@@ -36,9 +38,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<Map<String, dynamic>>? _wsMessageSubscription;
   Position? _lastSentPosition;
 
+  late final AnimationController _entranceController;
+  late final Animation<double> _entranceFade;
+  late final Animation<Offset> _entranceSlide;
+
   @override
   void initState() {
     super.initState();
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _entranceFade = CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
+    _entranceSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic));
     
     // Start background monitoring service
     BackgroundMonitoringService.start();
@@ -66,6 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
+    _entranceController.dispose();
     // Stop location tracking
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
@@ -78,6 +93,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _initUsageStats(),
       _getBrowserHistory(),
     ]);
+    
+    // Animate entrance after first data load
+    if (!_entranceController.isCompleted) {
+      _entranceController.forward();
+    }
     
     // Send data via WebSocket after collecting
     _sendDataViaWebSocket();
@@ -469,13 +489,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 6),
                 Consumer<WebSocketService>(
                   builder: (context, wsService, child) {
-                    return Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: wsService.isConnected ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
-                      ),
+                    return PulsingDot(
+                      color: wsService.isConnected ? Colors.green : Colors.grey,
+                      size: 8,
                     );
                   },
                 ),
@@ -582,10 +598,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF5B4A9F)))
-            : RefreshIndicator(
-                color: const Color(0xFF5B4A9F),
-                onRefresh: _refreshData,
-                child: SingleChildScrollView(
+            : FadeTransition(
+                opacity: _entranceFade,
+                child: SlideTransition(
+                  position: _entranceSlide,
+                  child: RefreshIndicator(
+                    color: const Color(0xFF5B4A9F),
+                    onRefresh: _refreshData,
+                    child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -746,13 +766,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.center,
                                           children: [
-                                            Container(
-                                              width: 8,
-                                              height: 8,
-                                              decoration: BoxDecoration(
-                                                color: Colors.greenAccent,
-                                                shape: BoxShape.circle,
-                                              ),
+                                            PulsingDot(
+                                              color: Colors.greenAccent,
+                                              size: 10,
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
@@ -1328,6 +1344,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
+          ),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showRequestTimeDialog(context),

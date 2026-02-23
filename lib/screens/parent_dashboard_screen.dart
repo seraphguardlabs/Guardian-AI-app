@@ -9,6 +9,7 @@ import '../services/encryption_service.dart';
 import '../models/time_extension_request.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import 'weekly_activity_screen.dart';
 import 'location_map_screen.dart';
 import '../widgets/weekly_activity_chart.dart';
@@ -908,102 +909,224 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         ),
       ),
       drawer: Drawer(
-        backgroundColor: const Color(0xFF050608),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF101722), Color(0xFF050608)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.12),
-                    child: _selectedChild?.profileImageUrl != null
-                        ? ClipOval(
-                            child: Image.network(
-                              'https://seraphguardlabs.com${_selectedChild!.profileImageUrl}',
-                              width: 56,
-                              height: 56,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(Icons.person, color: Colors.white, size: 26);
-                              },
-                            ),
-                          )
-                        : const Icon(Icons.person, color: Colors.white, size: 26),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _selectedChild != null
-                        ? "${_selectedChild!.firstName}'s profile"
-                        : 'Parent profile',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D1B3E), Color(0xFF0A0A0F)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // ── Header ──
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1A3C8B), Color(0xFF0D1B3E)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
                   ),
-                ],
-              ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 66,
+                        height: 66,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5B4A9F), Color(0xFF317AF7)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF5B4A9F).withOpacity(0.55),
+                              blurRadius: 22,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.admin_panel_settings_rounded,
+                            color: Colors.white, size: 32),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Parent Account',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_selectedChild != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              PulsingDot(color: Colors.greenAccent, size: 6),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Monitoring ${_selectedChild!.firstName}',
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Row(
+                          children: [
+                            PulsingDot(color: Colors.white38, size: 6),
+                            const SizedBox(width: 6),
+                            const Text('No child selected',
+                                style: TextStyle(
+                                    color: Colors.white38, fontSize: 12)),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+
+                // ── Menu ──
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      _parentDrawerSectionLabel('INSIGHTS'),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 60),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.insights_outlined,
+                          label: 'Growth Trends',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showMenuFeatureComingSoon('Growth Trends');
+                          },
+                        ),
+                      ),
+                      _parentDrawerSectionLabel('SETTINGS'),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 120),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.notifications_none_outlined,
+                          label: 'Notifications',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showMenuFeatureComingSoon('Notifications');
+                          },
+                        ),
+                      ),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 160),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.settings_outlined,
+                          label: 'Settings',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showMenuFeatureComingSoon('Settings');
+                          },
+                        ),
+                      ),
+                      _parentDrawerSectionLabel('HELP'),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 200),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.headset_mic_outlined,
+                          label: 'Support',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showMenuFeatureComingSoon('Support');
+                          },
+                        ),
+                      ),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 230),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.info_outline,
+                          label: 'Information',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showMenuFeatureComingSoon('Information');
+                          },
+                        ),
+                      ),
+                      const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        child: Divider(color: Colors.white10, height: 1),
+                      ),
+                      _parentDrawerSectionLabel('ACCOUNT'),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 280),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.logout_rounded,
+                          label: 'Logout',
+                          isDestructive: true,
+                          onTap: _handleLogout,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Footer ──
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF5B4A9F).withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.shield_rounded,
+                            color: Color(0xFF9B8ADF), size: 16),
+                      ),
+                      const SizedBox(width: 10),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Guardian AI',
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                          Text('v1.0  •  Parent Mode',
+                              style: TextStyle(
+                                  color: Colors.white30, fontSize: 10)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _buildDrawerMenuItem(
-              icon: Icons.insights_outlined,
-              label: 'Growth Trends',
-              onTap: () {
-                Navigator.pop(context);
-                _showMenuFeatureComingSoon('Growth Trends');
-              },
-            ),
-            _buildDrawerMenuItem(
-              icon: Icons.headset_mic_outlined,
-              label: 'Support',
-              onTap: () {
-                Navigator.pop(context);
-                _showMenuFeatureComingSoon('Support');
-              },
-            ),
-            _buildDrawerMenuItem(
-              icon: Icons.settings_outlined,
-              label: 'Settings',
-              onTap: () {
-                Navigator.pop(context);
-                _showMenuFeatureComingSoon('Settings');
-              },
-            ),
-            _buildDrawerMenuItem(
-              icon: Icons.notifications_none_outlined,
-              label: 'Notifications',
-              onTap: () {
-                Navigator.pop(context);
-                _showMenuFeatureComingSoon('Notifications');
-              },
-            ),
-            _buildDrawerMenuItem(
-              icon: Icons.info_outline,
-              label: 'Information',
-              onTap: () {
-                Navigator.pop(context);
-                _showMenuFeatureComingSoon('Information');
-              },
-            ),
-            const Divider(color: Colors.white12, height: 24),
-            _buildDrawerMenuItem(
-              icon: Icons.logout,
-              label: 'Logout',
-              isDestructive: true,
-              onTap: _handleLogout,
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
       body: Container(
@@ -1244,14 +1367,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     return AnimatedBuilder(
       animation: _loadingPulseController,
       builder: (context, _) {
-        final base = const Color(0xFF0F1624);
-        final highlight = const Color(0xFF1B263B);
-        final fill = Color.lerp(base, highlight, _loadingPulseController.value) ?? base;
+        final t = _loadingPulseController.value;
         return Container(
           height: height,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: fill,
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + t * 2, 0),
+              end: Alignment(1.0 + t * 2, 0),
+              colors: const [
+                Color(0xFF0F1624),
+                Color(0xFF1B263B),
+                Color(0xFF0F1624),
+              ],
+            ),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: const Color(0xFF1B2433)),
           ),
@@ -1262,21 +1391,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   }
 
   Widget _buildSkeletonLine({required double width, required double height}) {
-    return AnimatedBuilder(
-      animation: _loadingPulseController,
-      builder: (context, _) {
-        final base = const Color(0xFF1C2638);
-        final highlight = const Color(0xFF24324A);
-        final fill = Color.lerp(base, highlight, _loadingPulseController.value) ?? base;
-        return Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(8),
-          ),
-        );
-      },
+    return ShimmerBox(
+      width: width == double.infinity ? MediaQuery.of(context).size.width - 80 : width,
+      height: height,
+      borderRadius: 8,
     );
   }
 
@@ -1399,9 +1517,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     Widget? trailing,
     VoidCallback? onTap,
   }) {
-    final Color circleColor = selected
+    final Color iconBg = selected
         ? const Color(0xFF1E3A8A)
-        : const Color(0xFF151515);
+        : isDestructive
+            ? const Color(0xFF3A1A1A)
+            : const Color(0xFF1C2A50);
 
     final Color iconColor = selected
         ? Colors.white
@@ -1410,42 +1530,71 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
             : Colors.white70;
 
     final TextStyle textStyle = TextStyle(
-      color: isDestructive
-          ? const Color(0xFFF97373)
-          : Colors.white,
+      color: isDestructive ? const Color(0xFFF97373) : Colors.white,
       fontSize: 14,
       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: InkWell
-        (
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 2.0),
+      child: TapBounce(
+        onTap: onTap ?? () {},
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: selected
+                ? const LinearGradient(
+                    colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF317AF7).withOpacity(0.25),
+                      blurRadius: 12,
+                    )
+                  ]
+                : null,
+          ),
           child: Row(
             children: [
               Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: circleColor,
-                  shape: BoxShape.circle,
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(icon, color: iconColor, size: 20),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  label,
-                  style: textStyle,
-                ),
+                child: Text(label, style: textStyle),
               ),
-              if (trailing != null) trailing,
+              if (trailing != null) trailing
+              else if (!isDestructive)
+                const Icon(Icons.chevron_right_rounded,
+                    color: Colors.white24, size: 18),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _parentDrawerSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 10, 22, 4),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white30,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.6,
         ),
       ),
     );

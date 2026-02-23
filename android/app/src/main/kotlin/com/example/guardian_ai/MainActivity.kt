@@ -26,6 +26,7 @@ class MainActivity: FlutterActivity() {
     private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
     private val MONITORING_CHANNEL = "com.example.guardian_ai/monitoring_service"
     private val SCREEN_CAPTURE_CHANNEL = "com.example.guardian_ai/screen_capture"
+    private val LOCATION_SERVICE_CHANNEL = "com.example.guardian_ai/location_service"
     
     private val SCREEN_CAPTURE_REQUEST_CODE = 1000
     private var screenCaptureResultCallback: MethodChannel.Result? = null
@@ -150,11 +151,28 @@ class MainActivity: FlutterActivity() {
                     ScreenCaptureService.stop(this)
                     result.success(true)
                 }
-                else -> {
-                    result.notImplemented()
-                }
+                else -> result.notImplemented()
             }
         }
+
+        // Location Background Service Channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOCATION_SERVICE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startLocationService" -> {
+                        LocationForegroundService.startService(this)
+                        result.success(true)
+                    }
+                    "stopLocationService" -> {
+                        LocationForegroundService.stopService(this)
+                        result.success(true)
+                    }
+                    "isLocationServiceRunning" -> {
+                        result.success(LocationForegroundService.isServiceRunning)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
     
     private fun getForegroundApp(): String? {

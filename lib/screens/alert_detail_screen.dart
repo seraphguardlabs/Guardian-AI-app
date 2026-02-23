@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/alert.dart';
+import '../utils/app_theme.dart';
 
 /// Detail screen for displaying full alert information with parent action options
 class AlertDetailScreen extends StatefulWidget {
@@ -71,7 +72,9 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     final riskLevel = _getRiskLevel(alert.riskScore);
 
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
+        backgroundColor: AppTheme.surface,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
@@ -89,24 +92,24 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Summary Section
-              _buildSummaryCard(alert),
+              FadeSlideIn(delay: const Duration(milliseconds: 0), child: _buildSummaryCard(alert)),
               const SizedBox(height: 20),
 
               // Risk Score Section
-              _buildRiskScoreCard(alert, riskColor, riskLevel),
+              FadeSlideIn(delay: const Duration(milliseconds: 100), child: _buildRiskScoreCard(alert, riskColor, riskLevel)),
               const SizedBox(height: 20),
 
               // Content Details Section
-              _buildContentDetailsCard(alert),
+              FadeSlideIn(delay: const Duration(milliseconds: 200), child: _buildContentDetailsCard(alert)),
               const SizedBox(height: 20),
 
               // Alert Info Section
-              _buildAlertInfoCard(alert),
+              FadeSlideIn(delay: const Duration(milliseconds: 300), child: _buildAlertInfoCard(alert)),
               const SizedBox(height: 30),
 
               // Recommended Actions Section
               if (_shouldShowActions(alert))
-                _buildActionsSection(alert)
+                FadeSlideIn(delay: const Duration(milliseconds: 400), child: _buildActionsSection(alert))
               else
                 const SizedBox(height: 16),
             ],

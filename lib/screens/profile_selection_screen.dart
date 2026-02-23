@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import '../services/api_service.dart';
 
 class ProfileSelectionScreen extends StatefulWidget {
@@ -88,135 +89,165 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            children: [
-              const SizedBox(height: 80),
-              
-              // Logo and Title
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2B4C8F),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  color: Colors.white,
-                  size: 64,
-                ),
-              ),
-              
-              const SizedBox(height: 32),
-              
-              const Text(
-                'Welcome to the Guardian AI',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              
-              const SizedBox(height: 12),
-              
-              const Text(
-                'Empowering your child\'s journey\ntoday for a successful tomorrow',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              
-              const Spacer(),
-              
-              // Parent Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushReplacementNamed(context, '/parent_dashboard');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2B4C8F),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Parent',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // Child Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : () {
-                    debugPrint('👆 Child button pressed. Children count: ${_childrenList.length}');
-                    if (_childrenList.isNotEmpty) {
-                      // If there's only one child, select it automatically
-                      if (_childrenList.length == 1) {
-                        debugPrint('   Single child found, auto-selecting...');
-                        _selectChild(_childrenList[0]);
-                      } else {
-                        // Show child selection dialog
-                        debugPrint('   Multiple children found, showing dialog...');
-                        _showChildSelectionDialog();
-                      }
-                    } else {
-                      // Show add child dialog when no children exist
-                      debugPrint('   No children found, showing add child dialog...');
-                      _showAddChildDialog();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A1A1A),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: Color(0xFF2B2B2B), width: 1),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text(
-                          'Child',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
+      backgroundColor: AppTheme.background,
+      body: AnimatedGradientBg(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              children: [
+                const SizedBox(height: 80),
+                
+                // Logo and Title
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 0),
+                  duration: const Duration(milliseconds: 600),
+                  beginOffset: const Offset(0, -0.3),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.blueGrad,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withOpacity(0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
                         ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      color: Colors.white,
+                      size: 64,
+                    ),
+                  ),
                 ),
-              ),
-              
-              const SizedBox(height: 60),
-            ],
+                
+                const SizedBox(height: 32),
+                
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 180),
+                  child: const Text(
+                    'Welcome to the Guardian AI',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 300),
+                  child: const Text(
+                    'Empowering your child\'s journey\ntoday for a successful tomorrow',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+                
+                const Spacer(),
+                
+                // Parent Button
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 450),
+                  beginOffset: const Offset(0, 0.5),
+                  child: TapBounce(
+                    onTap: () {
+                      Navigator.pushReplacementNamed(context, '/parent_dashboard');
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.blueGrad,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primary.withOpacity(0.35),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        'Parent',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Child Button
+                FadeSlideIn(
+                  delay: const Duration(milliseconds: 570),
+                  beginOffset: const Offset(0, 0.5),
+                  child: TapBounce(
+                    onTap: _isLoading ? null : () {
+                      debugPrint('👆 Child button pressed. Children count: ${_childrenList.length}');
+                      if (_childrenList.isNotEmpty) {
+                        if (_childrenList.length == 1) {
+                          debugPrint('   Single child found, auto-selecting...');
+                          _selectChild(_childrenList[0]);
+                        } else {
+                          debugPrint('   Multiple children found, showing dialog...');
+                          _showChildSelectionDialog();
+                        }
+                      } else {
+                        debugPrint('   No children found, showing add child dialog...');
+                        _showAddChildDialog();
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      alignment: Alignment.center,
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'Child',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 60),
+              ],
+            ),
           ),
         ),
       ),

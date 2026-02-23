@@ -8,12 +8,14 @@ import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import '../services/location_service.dart';
 import '../services/websocket_service.dart';
 import '../services/api_service.dart';
 import '../services/encryption_service.dart';
 import '../services/app_blocker_service.dart';
 import '../services/background_monitoring_service.dart';
+import '../services/location_background_service.dart';
 import '../services/time_extension_service.dart';
 import '../services/screen_monitoring_service.dart';
 import '../models/restrictions_data.dart';
@@ -28,7 +30,8 @@ class ChildScreen extends StatefulWidget {
   State<ChildScreen> createState() => _ChildScreenState();
 }
 
-class _ChildScreenState extends State<ChildScreen> {
+class _ChildScreenState extends State<ChildScreen>
+    with TickerProviderStateMixin {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
@@ -48,10 +51,24 @@ class _ChildScreenState extends State<ChildScreen> {
   bool _loadingTasks = false;
   Position? _lastSentPosition;
 
+  late final AnimationController _entranceController;
+  late final Animation<double> _entranceFade;
+  late final AnimationController _loadingPulseController;
+
   @override
   void initState() {
     super.initState();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _entranceFade = CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
+    _loadingPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
     BackgroundMonitoringService.start();
+    LocationBackgroundService.start();   // keep running even when app is closed
     _refreshData();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshData();
@@ -113,6 +130,8 @@ class _ChildScreenState extends State<ChildScreen> {
 
   @override
   void dispose() {
+    _entranceController.dispose();
+    _loadingPulseController.dispose();
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
     final locationService = Provider.of<LocationService>(context, listen: false);
@@ -127,7 +146,11 @@ class _ChildScreenState extends State<ChildScreen> {
       _getBrowserHistory(),
       _loadPendingTasks(),
     ]);
+    if (mounted) {
+      setState(() => _loading = false);
+    }
     _sendDataViaWebSocket();
+    if (!_entranceController.isCompleted) _entranceController.forward();
   }
 
   Future<void> _initializeWebSocket() async {
@@ -413,7 +436,6 @@ class _ChildScreenState extends State<ChildScreen> {
       _screenTime = screenTime;
       _screenTimeSeconds = totalSeconds;
       _nativeAppUsageSeconds = perAppSeconds;
-      _loading = false;
     });
     // After updating screen time, check if the global daily limit is exceeded
     _checkAndApplyDailyLimitEnforcement();
@@ -686,11 +708,6 @@ class _ChildScreenState extends State<ChildScreen> {
         await UsageStats.grantUsagePermission();
         isPermissionGranted = await UsageStats.checkUsagePermission();
         if (isPermissionGranted == null || !isPermissionGranted) {
-          if (mounted) {
-            setState(() {
-              _loading = false;
-            });
-          }
           return;
         }
       }
@@ -727,16 +744,10 @@ class _ChildScreenState extends State<ChildScreen> {
         setState(() {
           _usageStats = usageStats;
           _apps = appMap;
-          _loading = false;
         });
       }
     } catch (e) {
       debugPrint('Error fetching usage stats: $e');
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
     }
   }
 
@@ -1154,13 +1165,9 @@ class _ChildScreenState extends State<ChildScreen> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: locationService.isTracking ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
+                          PulsingDot(
+                            color: locationService.isTracking ? Colors.green : Colors.grey,
+                            size: 8,
                           ),
                         ],
                       ),
@@ -1201,97 +1208,7 @@ class _ChildScreenState extends State<ChildScreen> {
           ),
         ),
       ),
-      drawer: Drawer(
-        backgroundColor: const Color(0xFF050608),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF101722), Color(0xFF050608)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.12),
-                    child: const Icon(Icons.person, color: Colors.white, size: 26),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "$childName's Dashboard",
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.task_outlined, color: Colors.white70),
-              title: const Text('My Tasks', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MyTasksScreen()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh, color: Colors.white70),
-              title: const Text('Refresh Data', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _refreshData();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.white70),
-              title: const Text('Logout', style: TextStyle(color: Colors.white)),
-              onTap: () async {
-                Navigator.pop(context);
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: const Color(0xFF1A1A1A),
-                    title: const Text('Logout', style: TextStyle(color: Colors.white)),
-                    content: const Text('Are you sure you want to logout?', style: TextStyle(color: Colors.white70)),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF317AF7),
-                        ),
-                        child: const Text('Logout', style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed == true && mounted) {
-                  final prefsManager = context.read<PreferencesManager>();
-                  await prefsManager.clearAll();
-                  if (mounted) {
-                    Navigator.pushReplacementNamed(context, '/login');
-                  }
-                }
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: _buildChildDrawer(context, childName),
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -1300,9 +1217,10 @@ class _ChildScreenState extends State<ChildScreen> {
           ),
         ),
         child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF317AF7)))
-            : RefreshIndicator(
+            ? _buildLoadingState()
+            : FadeTransition(
+                opacity: _entranceFade,
+                child: RefreshIndicator(
                 color: const Color(0xFF317AF7),
                 onRefresh: _refreshData,
                 child: SingleChildScrollView(
@@ -2216,6 +2134,7 @@ class _ChildScreenState extends State<ChildScreen> {
               ),
             ),
           ),
+        ),
     );
   }
   
@@ -2535,6 +2454,402 @@ class _ChildScreenState extends State<ChildScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ───────────────── Skeleton / loading state ─────────────────
+
+  Widget _buildLoadingState() {
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+          16, MediaQuery.of(context).padding.top + 110, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Screen time card placeholder
+          _buildSkeletonCard(
+            height: 200,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 160, height: 14),
+                const SizedBox(height: 20),
+                _buildSkeletonLine(width: 120, height: 40),
+                const SizedBox(height: 16),
+                _buildSkeletonLine(width: double.infinity, height: 8),
+                const SizedBox(height: 10),
+                _buildSkeletonLine(width: 220, height: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Pending tasks placeholder
+          _buildSkeletonCard(
+            height: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 140, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 200, height: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // App usage placeholder
+          _buildSkeletonCard(
+            height: 160,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 120, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 180, height: 10),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Browser / activity card placeholder
+          _buildSkeletonCard(
+            height: 140,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSkeletonLine(width: 140, height: 12),
+                const SizedBox(height: 14),
+                _buildSkeletonLine(width: double.infinity, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 240, height: 10),
+                const SizedBox(height: 8),
+                _buildSkeletonLine(width: 200, height: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonCard({required double height, required Widget child}) {
+    return AnimatedBuilder(
+      animation: _loadingPulseController,
+      builder: (context, _) {
+        final t = _loadingPulseController.value;
+        return Container(
+          height: height,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + t * 2, 0),
+              end: Alignment(1.0 + t * 2, 0),
+              colors: const [
+                Color(0xFF0F1624),
+                Color(0xFF1B263B),
+                Color(0xFF0F1624),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF1B2433)),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _buildSkeletonLine({required double width, required double height}) {
+    return ShimmerBox(
+      width: width == double.infinity
+          ? MediaQuery.of(context).size.width - 80
+          : width,
+      height: height,
+      borderRadius: 8,
+    );
+  }
+
+  // ───────────────── Drawer helpers ─────────────────
+
+  Widget _buildChildDrawer(BuildContext context, String childName) {
+    return Drawer(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0D1B3E), Color(0xFF0A0A0F)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // ── Header ──
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF1A3C8B), Color(0xFF0D1B3E)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 66,
+                      height: 66,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF317AF7), Color(0xFF5B4A9F)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF317AF7).withOpacity(0.5),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.person_rounded, color: Colors.white, size: 34),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      childName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        PulsingDot(color: Colors.greenAccent, size: 7),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Active session',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Menu ──
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    _drawerSectionLabel('ACTIVITIES'),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 80),
+                      child: _buildChildDrawerItem(
+                        context,
+                        icon: Icons.task_alt_outlined,
+                        label: 'My Tasks',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MyTasksScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 150),
+                      child: _buildChildDrawerItem(
+                        context,
+                        icon: Icons.sync_rounded,
+                        label: 'Refresh Data',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _refreshData();
+                        },
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      child: Divider(color: Colors.white10, height: 1),
+                    ),
+                    _drawerSectionLabel('ACCOUNT'),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 220),
+                      child: _buildChildDrawerItem(
+                        context,
+                        icon: Icons.logout_rounded,
+                        label: 'Logout',
+                        isDestructive: true,
+                        onTap: () async {
+                          Navigator.pop(context);
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor: const Color(0xFF1A1A1A),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18)),
+                              title: const Text('Logout',
+                                  style: TextStyle(color: Colors.white)),
+                              content: const Text(
+                                  'Are you sure you want to logout?',
+                                  style: TextStyle(color: Colors.white70)),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel',
+                                      style: TextStyle(color: Colors.white70)),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF317AF7),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: const Text('Logout',
+                                      style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true && mounted) {
+                            final prefsManager = context.read<PreferencesManager>();
+                            await LocationBackgroundService.stop(); // stop tracking on logout
+                            await prefsManager.clearAll();
+                            if (mounted) {
+                              Navigator.pushReplacementNamed(context, '/login');
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Footer ──
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A3C8B).withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.shield_rounded,
+                          color: Color(0xFF317AF7), size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Guardian AI',
+                            style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                        Text('v1.0  •  Child Mode',
+                            style:
+                                TextStyle(color: Colors.white30, fontSize: 10)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 10, 22, 4),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white30,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.6,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChildDrawerItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    bool isDestructive = false,
+    VoidCallback? onTap,
+  }) {
+    final color = isDestructive ? const Color(0xFFF97373) : Colors.white;
+    final iconBg = isDestructive
+        ? const Color(0xFF3A1A1A)
+        : const Color(0xFF1C2A50);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: TapBounce(
+        onTap: onTap ?? () {},
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (!isDestructive)
+                const Icon(Icons.chevron_right_rounded,
+                    color: Colors.white24, size: 18),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

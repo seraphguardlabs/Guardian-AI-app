@@ -6,6 +6,7 @@ import '../models/child.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 
 class AssignTaskScreen extends StatefulWidget {
   final Child child;
@@ -310,7 +311,11 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                         padding: const EdgeInsets.all(20),
                         itemCount: _tasks.length,
                         itemBuilder: (context, index) {
-                          return _buildTaskCard(_tasks[index]);
+                          return FadeSlideIn(
+                            delay: Duration(milliseconds: 60 * index),
+                            duration: const Duration(milliseconds: 400),
+                            child: _buildTaskCard(_tasks[index]),
+                          );
                         },
                       ),
           ),
