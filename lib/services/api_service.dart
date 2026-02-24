@@ -1519,11 +1519,12 @@ class ApiService {
   // ===========================================================================
 
   /// Upload the child's public key (Child App)
+  /// POST /api/mobile/child/<child_hash>/public-key/
   Future<Map<String, dynamic>> uploadChildPublicKey({
     required String childHash,
     required String publicKey,
   }) async {
-    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/upload/');
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/public-key/');
     
     try {
       debugPrint('═══════════════════════════════════════════════════════');
@@ -1535,25 +1536,25 @@ class ApiService {
         url,
         headers: {
           'Content-Type': 'application/json',
-          'X-Child-Hash': childHash, // Auth via hash
+          'X-Child-Hash': childHash,
         },
         body: jsonEncode({
           'public_key': publicKey,
-          'device_name': 'Child Device', // Optional metadata
         }),
       );
 
       debugPrint('📥 Key upload response status: ${response.statusCode}');
+      debugPrint('📥 Key upload response body: ${response.body}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint('✅ Public key uploaded successfully');
+        debugPrint('✅ Child public key uploaded successfully');
         return {'success': true};
       } else {
-        debugPrint('❌ Failed to upload key: ${response.body}');
+        debugPrint('❌ Failed to upload child key: ${response.body}');
         return {'success': false, 'error': 'Failed to upload key'};
       }
     } catch (e) {
-      debugPrint('❌ Key upload error: $e');
+      debugPrint('❌ Child key upload error: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
@@ -1588,7 +1589,9 @@ class ApiService {
   }
 
   /// Get all guardians' public keys for a child (Child App)
-  Future<List<String>> getGuardianPublicKeys({
+  /// GET /api/mobile/child/<child_hash>/guardians/public-keys/
+  /// Returns list of {guardian_id, guardian_name, public_key}
+  Future<List<Map<String, dynamic>>> getGuardianPublicKeys({
     required String childHash,
   }) async {
     final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/guardians/public-keys/');
@@ -1603,11 +1606,18 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final keys = (data['public_keys'] as List?)?.map((k) => k.toString()).toList() ?? [];
-        debugPrint('✅ Found ${keys.length} guardian keys');
-        return keys;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final guardians = (data['guardians'] as List?) ?? [];
+        final result = guardians
+            .map((g) => Map<String, dynamic>.from(g as Map))
+            .toList();
+        debugPrint('✅ Found ${result.length} guardian keys');
+        for (final g in result) {
+          debugPrint('   Guardian #${g['guardian_id']}: ${g['guardian_name']}');
+        }
+        return result;
       }
+      debugPrint('❌ Guardian keys fetch failed: ${response.statusCode}');
       return [];
     } catch (e) {
       debugPrint('❌ Error fetching guardian keys: $e');

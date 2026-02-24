@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
@@ -32,7 +33,7 @@ class ChildScreen extends StatefulWidget {
 }
 
 class _ChildScreenState extends State<ChildScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
   static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
   String _screenTime = 'Unknown';
@@ -57,10 +58,14 @@ class _ChildScreenState extends State<ChildScreen>
   late final AnimationController _loadingPulseController;
 
   // ── Permission gate ──────────────────────────────────────────────────────
-  bool _awaitingPermissions = true;
-  bool _locationGranted      = false;
-  bool _usageStatsGranted    = false;
-  bool _checkingPermissions  = false;
+  bool _awaitingPermissions    = true;
+  bool _locationGranted        = false;
+  bool _usageStatsGranted      = false;
+  bool _accessibilityGranted   = false;
+  // Per-row loading spinners — one per permission
+  bool _locationLoading        = false;
+  bool _usageLoading           = false;
+  bool _accessibilityLoading   = false;
 
   @override
   void initState() {
@@ -77,15 +82,30 @@ class _ChildScreenState extends State<ChildScreen>
 
     // ⚠️  Do NOT start any service or load any data until permissions pass.
     // Everything is gated through _initPermissionGate().
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initPermissionGate());
   }
 
   // ── Permission gate ──────────────────────────────────────────────────────
 
+  /// Re-check permissions whenever the app returns to foreground
+  /// (e.g. user comes back from System Settings).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _awaitingPermissions) {
+      _checkAllPermissions().then((_) {
+        if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
+          if (mounted) setState(() => _awaitingPermissions = false);
+          _startServicesAndLoad();
+        }
+      });
+    }
+  }
+
   Future<void> _initPermissionGate() async {
     if (!mounted) return;
     await _checkAllPermissions();
-    if (_locationGranted && _usageStatsGranted) {
+    if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
       _startServicesAndLoad();
     }
   }
@@ -99,52 +119,66 @@ class _ChildScreenState extends State<ChildScreen>
     // Usage stats (PACKAGE_USAGE_STATS) — checked via UsageStats
     bool? usageGranted = await UsageStats.checkUsagePermission();
 
+    // Accessibility service (WebsiteMonitoringService)
+    bool accessGranted = false;
+    try {
+      final result = await platform.invokeMethod<bool>('isAccessibilityServiceEnabled');
+      accessGranted = result == true;
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
-        _locationGranted   = locGranted;
-        _usageStatsGranted = usageGranted == true;
-        _awaitingPermissions =
-            !(_locationGranted && _usageStatsGranted);
+        _locationGranted      = locGranted;
+        _usageStatsGranted    = usageGranted == true;
+        _accessibilityGranted = accessGranted;
+        _awaitingPermissions  =
+            !(_locationGranted && _usageStatsGranted && _accessibilityGranted);
       });
     }
   }
 
-  /// Called by the "Grant Permissions" button on the permission screen.
-  Future<void> _requestPermissions() async {
-    if (_checkingPermissions) return;
-    if (mounted) setState(() => _checkingPermissions = true);
+  // ── Individual permission handlers (each row calls its own) ────────────
 
-    // 1. Location
-    if (!_locationGranted) {
-      final status = await Permission.locationWhenInUse.request();
-      if (mounted) setState(() => _locationGranted = status.isGranted || status.isLimited);
-    }
+  Future<void> _requestLocation() async {
+    if (_locationGranted || _locationLoading) return;
+    setState(() => _locationLoading = true);
 
-    // 2. Background location (best-effort — Android shows its own dialog after fine)
-    if (_locationGranted) {
+    // Show the system dialog directly — no Settings redirect needed for fine location
+    final status = await Permission.locationWhenInUse.request();
+    final granted = status.isGranted || status.isLimited;
+
+    // Best-effort background location request right after
+    if (granted) {
       final bgStatus = await Permission.locationAlways.status;
-      if (!bgStatus.isGranted) {
-        await Permission.locationAlways.request();
-      }
+      if (!bgStatus.isGranted) await Permission.locationAlways.request();
     }
 
-    // 3. Usage stats — must go to system settings
-    if (!_usageStatsGranted) {
-      final granted = await UsageStats.checkUsagePermission();
-      if (granted != true) {
-        await UsageStats.grantUsagePermission(); // opens Settings; user comes back
-        await Future.delayed(const Duration(milliseconds: 500));
-        final recheckGranted = await UsageStats.checkUsagePermission();
-        if (mounted) setState(() => _usageStatsGranted = recheckGranted == true);
-      } else {
-        if (mounted) setState(() => _usageStatsGranted = true);
-      }
-    }
+    if (mounted) setState(() { _locationGranted = granted; _locationLoading = false; });
+    _checkIfAllGranted();
+  }
 
-    if (mounted) setState(() => _checkingPermissions = false);
+  Future<void> _requestUsageAccess() async {
+    if (_usageStatsGranted || _usageLoading) return;
+    setState(() => _usageLoading = true);
 
-    // If all granted now → start everything
-    if (_locationGranted && _usageStatsGranted) {
+    // Opens the Usage Access system settings page directly
+    await UsageStats.grantUsagePermission();
+    // Re-check happens in didChangeAppLifecycleState on return
+    if (mounted) setState(() => _usageLoading = false);
+  }
+
+  Future<void> _requestAccessibility() async {
+    if (_accessibilityGranted || _accessibilityLoading) return;
+    setState(() => _accessibilityLoading = true);
+
+    // Opens Accessibility Settings directly
+    try { await platform.invokeMethod('openAccessibilitySettings'); } catch (_) {}
+    // Re-check happens in didChangeAppLifecycleState on return
+    if (mounted) setState(() => _accessibilityLoading = false);
+  }
+
+  void _checkIfAllGranted() {
+    if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
       if (mounted) setState(() => _awaitingPermissions = false);
       _startServicesAndLoad();
     }
@@ -213,6 +247,7 @@ class _ChildScreenState extends State<ChildScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _entranceController.dispose();
     _loadingPulseController.dispose();
     _refreshTimer?.cancel();
@@ -1429,8 +1464,8 @@ class _ChildScreenState extends State<ChildScreen>
                     ),
                     const SizedBox(height: 24),
                     
-                    // Debug: Task Loading Status
-                    if (_loadingTasks) ...[
+                    // Task Loading Status (only on initial load, not background refreshes)
+                    if (_loadingTasks && _pendingTasks.isEmpty) ...[
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -1789,28 +1824,12 @@ class _ChildScreenState extends State<ChildScreen>
                                       ),
                                       const SizedBox(height: 8),
                                       const Text(
-                                        'Enable Accessibility Service to track visited websites',
+                                        'Browser history will appear here once available',
                                         style: TextStyle(
                                           color: Colors.white60,
                                           fontSize: 12,
                                         ),
                                         textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      ElevatedButton.icon(
-                                        onPressed: () async {
-                                          try {
-                                            await platform.invokeMethod('openAccessibilitySettings');
-                                          } catch (e) {
-                                            debugPrint('Error opening settings: $e');
-                                          }
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF317AF7),
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        icon: const Icon(Icons.settings, size: 18),
-                                        label: const Text('Enable Accessibility Service'),
                                       ),
                                     ],
                                   ),
@@ -1884,25 +1903,6 @@ class _ChildScreenState extends State<ChildScreen>
                                                 color: Colors.white60,
                                                 fontSize: 11,
                                               ),
-                                            ),
-                                          ] else ...[
-                                            const SizedBox(height: 8),
-                                            ElevatedButton.icon(
-                                              onPressed: () async {
-                                                try {
-                                                  await platform.invokeMethod('openAccessibilitySettings');
-                                                } catch (e) {
-                                                  debugPrint('Error opening settings: $e');
-                                                }
-                                              },
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: const Color(0xFF317AF7),
-                                                foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                                minimumSize: const Size(0, 32),
-                                              ),
-                                              icon: const Icon(Icons.settings, size: 16),
-                                              label: const Text('Enable Accessibility Service'),
                                             ),
                                           ],
                                         ],
@@ -2220,9 +2220,17 @@ class _ChildScreenState extends State<ChildScreen>
   }
   
   void _showRequestTimeDialog(BuildContext context, {String? packageName, String? appName}) {
+    final TextEditingController appDomainController =
+        TextEditingController(text: (packageName ?? appName ?? '').trim());
     final TextEditingController hoursController = TextEditingController();
     final TextEditingController reasonController = TextEditingController();
     final timeExtService = context.read<TimeExtensionService>();
+    final prefsManager = context.read<PreferencesManager>();
+    final childHash = prefsManager.getChildHash() ?? '';
+
+    if (childHash.isNotEmpty) {
+      unawaited(timeExtService.preloadGuardianKey(childHash: childHash));
+    }
     
     showDialog(
       context: context,
@@ -2290,6 +2298,27 @@ class _ChildScreenState extends State<ChildScreen>
                 style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
               const SizedBox(height: 12),
+              const Text(
+                'App Domain (or package name):',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: appDomainController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'e.g., com.instagram.android',
+                  hintStyle: const TextStyle(color: Colors.white30),
+                  filled: true,
+                  fillColor: const Color(0xFF2A2A2A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.apps, color: Colors.white54),
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: hoursController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -2332,8 +2361,18 @@ class _ChildScreenState extends State<ChildScreen>
               const SizedBox(height: 16),
               Consumer<TimeExtensionService>(
                 builder: (context, service, child) {
-                  final statusText = service.childWsStatusMessage ?? 'Not connected';
+                  final statusText = service.childWsStatusMessage ??
+                      (service.childWsConnected ? 'Connected' : 'Not connected');
+                  final wsUrl = childHash.isEmpty
+                      ? 'Unavailable (no child profile)' 
+                      : service.childWsUrl(childHash);
+                  final guardianKey = service.lastGuardianPublicKey;
+                  final guardianId = service.lastGuardianId;
                   final responseText = service.lastChildWsResponse ?? 'No response yet';
+
+                  final payloadDraftListenable =
+                      Listenable.merge([appDomainController, hoursController, reasonController]);
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2345,7 +2384,9 @@ class _ChildScreenState extends State<ChildScreen>
                             decoration: BoxDecoration(
                               color: service.childWsConnected
                                   ? Colors.greenAccent
-                                  : Colors.redAccent,
+                                  : service.childState == WsConnectionState.connecting
+                                      ? Colors.orangeAccent
+                                      : Colors.redAccent,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -2353,15 +2394,311 @@ class _ChildScreenState extends State<ChildScreen>
                           Expanded(
                             child: Text(
                               'Time Extension WS: $statusText',
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Server response: $responseText',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        'WebSocket: $wsUrl',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: childHash.isEmpty
+                                  ? null
+                                  : () async {
+                                      try {
+                                        if (service.childWsConnected ||
+                                            service.childState ==
+                                                WsConnectionState.connecting) {
+                                          await service.disconnectChild();
+                                        } else {
+                                          await service.connectChildSocket(
+                                              childHash: childHash);
+                                          unawaited(service.preloadGuardianKey(
+                                              childHash: childHash));
+                                        }
+                                      } catch (e) {
+                                        // Keep the dialog alive and surface the error instead of
+                                        // leaving an empty/black modal barrier.
+                                        await service.disconnectChild();
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  'WebSocket connect failed: $e'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: service.childWsConnected
+                                    ? const Color(0xFF444444)
+                                    : const Color(0xFF317AF7),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: Icon(
+                                service.childWsConnected
+                                    ? Icons.link_off
+                                    : Icons.link,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                              label: Text(
+                                service.childWsConnected
+                                    ? 'Disconnect'
+                                    : service.childState ==
+                                            WsConnectionState.connecting
+                                        ? 'Connecting…'
+                                        : 'Connect',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Guardian Public Key:',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(maxHeight: 90),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A2A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            guardianKey == null || guardianKey.isEmpty
+                                ? 'Not loaded yet'
+                                : guardianKey,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 11,
+                              height: 1.3,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      AnimatedBuilder(
+                        animation: payloadDraftListenable,
+                        builder: (context, _) {
+                          final requested =
+                              double.tryParse(hoursController.text.trim());
+                            final appDomain = appDomainController.text.trim();
+                          final draftPayload = {
+                            'type': 'time_extension_request',
+                            'data': {
+                              'app_domain': appDomain.isEmpty
+                                ? (packageName ?? appName ?? '<app_domain>')
+                                : appDomain,
+                              'requested_hours':
+                                  requested ?? '<requested_hours>',
+                              'message_encrypted':
+                                  '<encrypted_on_send>',
+                              'guardian_id':
+                                  guardianId ?? '<guardian_id>',
+                            },
+                          };
+
+                          final pretty =
+                              const JsonEncoder.withIndent('  ').convert(
+                                  draftPayload);
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Payload Preview (updates as you type):',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2A2A2A),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: SelectableText(
+                                  pretty,
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 11,
+                                    height: 1.35,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      if (service.lastChildWsPayloadPretty != null) ...[
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Last Payload Sent:',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: double.infinity,
+                          constraints: const BoxConstraints(maxHeight: 140),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              service.lastChildWsPayloadPretty!,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                                height: 1.35,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Text(
+                        'Latest response: $responseText',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'WebSocket Messages:',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        height: 160,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A2A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: service.childWsLog.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No messages yet.',
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: service.childWsLog.length,
+                                itemBuilder: (context, i) {
+                                  final entry = service.childWsLog[i];
+                                  final label = switch (entry.type) {
+                                    ChildWsLogType.sent => 'SENT',
+                                    ChildWsLogType.received => 'RECV',
+                                    ChildWsLogType.system => 'SYS',
+                                  };
+                                  final labelColor = switch (entry.type) {
+                                    ChildWsLogType.sent => Colors.lightBlueAccent,
+                                    ChildWsLogType.received => Colors.greenAccent,
+                                    ChildWsLogType.system => Colors.white54,
+                                  };
+
+                                  final ts =
+                                      '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}:${entry.timestamp.second.toString().padLeft(2, '0')}';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              label,
+                                              style: TextStyle(
+                                                color: labelColor,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                letterSpacing: 0.8,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              ts,
+                                              style: const TextStyle(
+                                                color: Colors.white38,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        SelectableText(
+                                          entry.content,
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 11,
+                                            height: 1.3,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   );
@@ -2378,12 +2715,13 @@ class _ChildScreenState extends State<ChildScreen>
           ElevatedButton(
             onPressed: () async {
               debugPrint('\n🎯 CHILD SCREEN: Send Request button clicked');
+              final appDomainOverride = appDomainController.text.trim();
               final hoursText = hoursController.text.trim();
               final reason = reasonController.text.trim();
               
               debugPrint('🎯 Hours input: $hoursText');
               debugPrint('🎯 Reason input: $reason');
-              debugPrint('🎯 Package: $packageName');
+              debugPrint('🎯 Package/App domain: ${appDomainOverride.isEmpty ? packageName : appDomainOverride}');
               debugPrint('🎯 App: $appName');
               
               if (hoursText.isEmpty) {
@@ -2416,11 +2754,8 @@ class _ChildScreenState extends State<ChildScreen>
                 );
                 return;
               }
-              
-              Navigator.pop(context);
-              
+
               // Get child hash from preferences
-              final prefsManager = context.read<PreferencesManager>();
               final childHash = prefsManager.getChildHash();
               
               if (childHash == null || childHash.isEmpty) {
@@ -2464,7 +2799,7 @@ class _ChildScreenState extends State<ChildScreen>
                 childHash: childHash,
                 requestedHours: hours,
                 reason: reason,
-                packageName: packageName,
+                packageName: appDomainOverride.isEmpty ? packageName : appDomainOverride,
                 appName: appName,
               );
               
@@ -2508,7 +2843,11 @@ class _ChildScreenState extends State<ChildScreen>
         ],
       ),
     ),
-  );
+    ).then((_) {
+    appDomainController.dispose();
+    hoursController.dispose();
+    reasonController.dispose();
+    });
   }
 
 
@@ -2541,6 +2880,7 @@ class _ChildScreenState extends State<ChildScreen>
   // ───────────────── Permission setup screen ─────────────────
 
   Widget _buildPermissionSetup() {
+    final allGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -2591,78 +2931,70 @@ class _ChildScreenState extends State<ChildScreen>
                   letterSpacing: 0.3,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               const Text(
-                'Guardian AI needs access to a few system features to keep you safe and track your activity.',
+                'Tap each item below to grant the required permissions.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
               ),
-              const SizedBox(height: 36),
-              // Permission rows
+              const SizedBox(height: 32),
+              // ── Individual tappable permission rows ──
               _buildPermRow(
                 icon: Icons.location_on_rounded,
                 title: 'Location',
-                subtitle: 'For safety monitoring & geofencing',
+                subtitle: 'Tap to grant • Used for safety & geofencing',
                 granted: _locationGranted,
+                loading: _locationLoading,
+                onTap: _requestLocation,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               _buildPermRow(
                 icon: Icons.bar_chart_rounded,
                 title: 'Usage Access',
-                subtitle: 'For screen time & app usage tracking',
+                subtitle: 'Tap to open Settings • Screen time tracking',
                 granted: _usageStatsGranted,
+                loading: _usageLoading,
+                onTap: _requestUsageAccess,
               ),
-              const SizedBox(height: 40),
-              // Grant button
+              const SizedBox(height: 14),
+              _buildPermRow(
+                icon: Icons.accessibility_new_rounded,
+                title: 'Accessibility Service',
+                subtitle: 'Tap to open Settings • Browser monitoring',
+                granted: _accessibilityGranted,
+                loading: _accessibilityLoading,
+                onTap: _requestAccessibility,
+              ),
+              const SizedBox(height: 32),
+              // Continue / Re-check button
               SizedBox(
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: _checkingPermissions ? null : _requestPermissions,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF317AF7),
-                    disabledBackgroundColor: const Color(0xFF317AF7).withOpacity(0.4),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _checkingPermissions
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Text(
-                          (_locationGranted && _usageStatsGranted)
-                              ? 'Continue'
-                              : 'Grant Permissions',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Skip / already granted path — re-check without dialogs
-              TextButton(
-                onPressed: _checkingPermissions
-                    ? null
-                    : () async {
-                        await _checkAllPermissions();
-                        if (!mounted) return;
-                        if (_locationGranted && _usageStatsGranted) {
+                  onPressed: allGranted
+                      ? () {
                           setState(() => _awaitingPermissions = false);
                           _startServicesAndLoad();
                         }
-                      },
-                child: const Text(
-                  'Already granted? Tap here',
-                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                      : () async {
+                          await _checkAllPermissions();
+                          _checkIfAllGranted();
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: allGranted
+                        ? Colors.greenAccent.shade700
+                        : const Color(0xFF317AF7),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    allGranted ? 'Continue →' : 'Re-check Permissions',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const Spacer(),
@@ -2678,62 +3010,95 @@ class _ChildScreenState extends State<ChildScreen>
     required String title,
     required String subtitle,
     required bool granted,
+    required bool loading,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1624),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: granted ? null : onTap,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: granted
-              ? Colors.greenAccent.withOpacity(0.45)
-              : const Color(0xFF1B2433),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
+        splashColor: const Color(0xFF317AF7).withOpacity(0.12),
+        highlightColor: const Color(0xFF317AF7).withOpacity(0.06),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: granted
+                ? Colors.greenAccent.withOpacity(0.06)
+                : const Color(0xFF0F1624),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
               color: granted
-                  ? Colors.greenAccent.withOpacity(0.12)
-                  : const Color(0xFF317AF7).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              color: granted ? Colors.greenAccent : const Color(0xFF317AF7),
-              size: 22,
+                  ? Colors.greenAccent.withOpacity(0.5)
+                  : loading
+                      ? const Color(0xFF317AF7).withOpacity(0.6)
+                      : const Color(0xFF1B2433),
+              width: granted || loading ? 1.5 : 1.0,
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: granted
+                      ? Colors.greenAccent.withOpacity(0.14)
+                      : const Color(0xFF317AF7).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                child: Icon(
+                  icon,
+                  color: granted ? Colors.greenAccent : const Color(0xFF317AF7),
+                  size: 22,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: granted ? Colors.white : Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      granted ? '✓ Granted' : subtitle,
+                      style: TextStyle(
+                        color: granted ? Colors.greenAccent.withOpacity(0.8) : Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              loading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF317AF7)),
+                      ),
+                    )
+                  : Icon(
+                      granted
+                          ? Icons.check_circle_rounded
+                          : Icons.arrow_forward_ios_rounded,
+                      color: granted ? Colors.greenAccent : Colors.white30,
+                      size: granted ? 22 : 16,
+                    ),
+            ],
           ),
-          Icon(
-            granted ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-            color: granted ? Colors.greenAccent : Colors.white24,
-            size: 22,
-          ),
-        ],
+        ),
       ),
     );
   }

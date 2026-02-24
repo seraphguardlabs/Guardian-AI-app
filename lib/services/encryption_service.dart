@@ -233,6 +233,21 @@ class EncryptionService {
         debugPrint('   Email: $email');
         debugPrint('   Response: ${response.body}');
         debugPrint('══════════════════════════════════════════════════════');
+
+        // Extract and store guardian_id from response
+        // Response: {"status":"ok","guardian_id":1,"guardian_name":"...","public_key":"..."}
+        try {
+          final respData = json.decode(response.body) as Map<String, dynamic>;
+          final guardianId = respData['guardian_id'] ?? respData['id'];
+          if (guardianId != null) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('guardian_id', guardianId is int ? guardianId : int.parse(guardianId.toString()));
+            debugPrint('✅ Guardian ID stored: $guardianId');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Could not parse guardian_id from upload response: $e');
+        }
+
         return true;
       } else {
         debugPrint('══════════════════════════════════════════════════════');

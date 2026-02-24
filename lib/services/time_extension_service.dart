@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
@@ -12,6 +13,20 @@ import 'encryption_service.dart';
 // Connection state — mirrors the four states in the WebSocket guide
 // ─────────────────────────────────────────────────────────────────────────────
 enum WsConnectionState { disconnected, connecting, connected, error }
+
+enum ChildWsLogType { sent, received, system }
+
+class ChildWsLogEntry {
+  final ChildWsLogType type;
+  final String content;
+  final DateTime timestamp;
+
+  const ChildWsLogEntry({
+    required this.type,
+    required this.content,
+    required this.timestamp,
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TimeExtensionService
@@ -50,15 +65,26 @@ class TimeExtensionService extends ChangeNotifier {
   StreamSubscription<dynamic>? _childSub;
   WsConnectionState _childState = WsConnectionState.disconnected;
   Completer<bool>? _childRequestCompleter;
+  Completer<void>? _childConnectCompleter;
 
   // ── Shared data ────────────────────────────────────────────────────────────
   List<TimeExtensionRequest> _pendingRequests = [];
   final StreamController<TimeExtensionRequest> _newRequestStreamCtrl =
       StreamController<TimeExtensionRequest>.broadcast();
 
+  bool _notifyScheduled = false;
+
   // Status / last-response text reported to the child UI
   String? _childWsStatusMessage;
   String? _lastChildWsResponse;
+
+  // Child debug/visibility fields for UI
+  String? _childHashForWs;
+  String? _childWsUrlForUi;
+  String? _lastGuardianPublicKey;
+  int? _lastGuardianId;
+  String? _lastChildWsPayloadPretty;
+  final List<ChildWsLogEntry> _childWsLog = [];
 
   bool _disposed = false;
 
@@ -81,6 +107,24 @@ class TimeExtensionService extends ChangeNotifier {
   String? get childWsStatusMessage        => _childWsStatusMessage;
   String? get lastChildWsResponse         => _lastChildWsResponse;
 
+  String childWsUrl(String childHash) => _childWsUrl(childHash);
+
+  String? get childHashForWs              => _childHashForWs;
+  String? get childWsUrlForUi             => _childWsUrlForUi;
+  String? get lastGuardianPublicKey       => _lastGuardianPublicKey;
+  int? get lastGuardianId                 => _lastGuardianId;
+  String? get lastChildWsPayloadPretty    => _lastChildWsPayloadPretty;
+  List<ChildWsLogEntry> get childWsLog    => List.unmodifiable(_childWsLog);
+
+  void clearChildWsLog() {
+    _childWsLog.clear();
+    _notify();
+  }
+
+  Future<void> preloadGuardianKey({required String childHash}) async {
+    await _fetchParentPublicKeyAndId(childHash);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // GUARDIAN CHANNEL — parent side
   // ═══════════════════════════════════════════════════════════════════════════
@@ -89,7 +133,9 @@ class TimeExtensionService extends ChangeNotifier {
   /// Safe to call multiple times — no-ops if already connecting / connected.
   Future<void> connect() async {
     if (_guardianState == WsConnectionState.connecting ||
-        _guardianState == WsConnectionState.connected) return;
+        _guardianState == WsConnectionState.connected) {
+      return;
+    }
 
     _setGuardianState(WsConnectionState.connecting);
 
@@ -100,7 +146,10 @@ class TimeExtensionService extends ChangeNotifier {
       // Guide rule 1: await handshake before attaching listener
       await channel.ready;
 
-      if (_disposed) { _safeCloseGuardian(); return; }
+      if (_disposed) {
+        _safeCloseGuardian();
+        return;
+      }
 
       _guardianSub = channel.stream.listen(
         _onGuardianMessage,
@@ -149,8 +198,14 @@ class TimeExtensionService extends ChangeNotifier {
 
         case 'auth_success':
           _guardianAuthenticated = true;
+          final wsGuardianId = _extractGuardianId(data);
+          if (wsGuardianId != null) {
+            _lastGuardianId = wsGuardianId;
+            PreferencesManager.init().then((prefs) =>
+                prefs.setGuardianId(wsGuardianId));
+          }
           debugPrint('✅ TimeExt Guardian: Authenticated '
-              '(guardian_id=${data['guardian_id']})');
+              '(guardian_id=$wsGuardianId)');
           _notify();
           _guardianSend({'type': 'get_pending_requests'});
 
@@ -230,12 +285,16 @@ class TimeExtensionService extends ChangeNotifier {
 
   void _guardianSend(Map<String, dynamic> payload) {
     if (_guardianChannel == null ||
-        _guardianState != WsConnectionState.connected) return;
+        _guardianState != WsConnectionState.connected) {
+      return;
+    }
     _guardianChannel!.sink.add(json.encode(payload));
   }
 
   void _scheduleGuardianReconnect() {
-    if (_disposed) return;
+    if (_disposed) {
+      return;
+    }
     _guardianReconnectTimer?.cancel();
     _guardianReconnectAttempts++;
     final delay =
@@ -367,11 +426,20 @@ class TimeExtensionService extends ChangeNotifier {
 
   /// Opens the child time-extension WebSocket.
   Future<void> connectChildSocket({String? childHash}) async {
-    if (_childState == WsConnectionState.connecting ||
-        _childState == WsConnectionState.connected) return;
+    // If a connect is already in-flight, await it instead of starting another.
+    if (_childConnectCompleter != null) {
+      await _childConnectCompleter!.future;
+      return;
+    }
+    if (_childState == WsConnectionState.connected) return;
+
+    _childConnectCompleter = Completer<void>();
 
     final prefs = await PreferencesManager.init();
     final hash  = childHash ?? prefs.getChildHash() ?? '';
+
+    _childHashForWs = hash;
+    _childWsUrlForUi = hash.isEmpty ? null : _childWsUrl(hash);
 
     if (hash.isEmpty) {
       debugPrint('⚠️ TimeExt Child: No child_hash – cannot connect');
@@ -379,17 +447,27 @@ class TimeExtensionService extends ChangeNotifier {
       return;
     }
 
+    // Clean up any previous channel/subscription before reconnecting.
+    if (_childSub != null || _childChannel != null) {
+      await disconnectChild();
+    }
+
     _setChildState(WsConnectionState.connecting);
     _setChildStatus('Connecting…');
+    _addChildLog(ChildWsLogType.system, 'Connecting to ${_childWsUrl(hash)}');
 
     try {
       final channel =
           WebSocketChannel.connect(Uri.parse(_childWsUrl(hash)));
       _childChannel = channel;
 
-      await channel.ready;
+      // Prevent indefinite hangs on handshake.
+      await channel.ready.timeout(const Duration(seconds: 8));
 
-      if (_disposed) { _safeCloseChild(); return; }
+      if (_disposed) {
+        _safeCloseChild();
+        return;
+      }
 
       _childSub = channel.stream.listen(
         _onChildMessage,
@@ -401,11 +479,29 @@ class TimeExtensionService extends ChangeNotifier {
       _setChildState(WsConnectionState.connected);
       _setChildStatus('Connected');
       debugPrint('✅ TimeExt Child: Connected ($hash)');
+      _addChildLog(ChildWsLogType.system, 'Connected');
 
+      _childConnectCompleter?.complete();
+      _childConnectCompleter = null;
+
+    } on TimeoutException {
+      debugPrint('⏱️ TimeExt Child: Handshake timeout');
+      _safeCloseChild();
+      _setChildState(WsConnectionState.error);
+      _setChildStatus('Connection timeout');
+      _addChildLog(ChildWsLogType.system, 'Handshake timeout');
+
+      _childConnectCompleter?.complete();
+      _childConnectCompleter = null;
     } catch (e) {
       debugPrint('❌ TimeExt Child: Connection failed – $e');
+      _safeCloseChild();
       _setChildState(WsConnectionState.error);
-      _setChildStatus('Connection failed – will retry');
+      _setChildStatus('Connection failed');
+      _addChildLog(ChildWsLogType.system, 'Connection failed: $e');
+
+      _childConnectCompleter?.complete();
+      _childConnectCompleter = null;
     }
   }
 
@@ -417,8 +513,11 @@ class TimeExtensionService extends ChangeNotifier {
       await _childChannel?.sink.close(ws_status.normalClosure);
     } catch (_) {}
     _childChannel = null;
+    _childConnectCompleter?.complete();
+    _childConnectCompleter = null;
     _setChildState(WsConnectionState.disconnected);
     _setChildStatus(null);
+    _addChildLog(ChildWsLogType.system, 'Disconnected');
   }
 
   // ── Child message router ───────────────────────────────────────────────────
@@ -428,6 +527,11 @@ class TimeExtensionService extends ChangeNotifier {
     try {
       final data = json.decode(raw as String) as Map<String, dynamic>;
       debugPrint('📨 TimeExt Child ← ${data['type']}');
+
+      _addChildLog(
+        ChildWsLogType.received,
+        const JsonEncoder.withIndent('  ').convert(data),
+      );
 
       switch (data['type']) {
         case 'connection_established':
@@ -467,14 +571,18 @@ class TimeExtensionService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('❌ TimeExt Child: Parse error – $e');
+      _addChildLog(ChildWsLogType.system, 'Parse error: $e');
     }
   }
 
   void _onChildError(dynamic error) {
     if (_disposed) return;
     debugPrint('❌ TimeExt Child stream error: $error');
+    _safeCloseChild();
+    _childSub = null;
     _setChildState(WsConnectionState.error);
     _setChildStatus('Connection error');
+    _addChildLog(ChildWsLogType.system, 'Stream error: $error');
     if (_childRequestCompleter != null &&
         !_childRequestCompleter!.isCompleted) {
       _childRequestCompleter!.complete(false);
@@ -484,7 +592,10 @@ class TimeExtensionService extends ChangeNotifier {
   void _onChildDone() {
     if (_disposed) return;
     debugPrint('🔌 TimeExt Child: Stream closed');
+    _safeCloseChild();
+    _childSub = null;
     _setChildState(WsConnectionState.disconnected);
+    _addChildLog(ChildWsLogType.system, 'Connection closed');
     if (_childRequestCompleter != null &&
         !_childRequestCompleter!.isCompleted) {
       _childRequestCompleter!.complete(false);
@@ -519,16 +630,19 @@ class TimeExtensionService extends ChangeNotifier {
       encrypted  = messageEncrypted;
       final prefs = await PreferencesManager.init();
       guardianId  = prefs.getGuardianId();
+      _lastGuardianId = guardianId;
     } else {
       try {
         final parentData = await _fetchParentPublicKeyAndId(childHash);
         final publicKey  = parentData['public_key'] as String?;
-        guardianId       = parentData['guardian_id'] as int?;
+        guardianId       = _extractGuardianId(parentData);
+
+        _lastGuardianPublicKey = publicKey;
+        _lastGuardianId = guardianId;
 
         if (publicKey != null && publicKey.isNotEmpty) {
-          encrypted = EncryptionService.instance
-                  .encryptWithPublicKey(reason, publicKey) ??
-              base64.encode(utf8.encode(reason));
+            encrypted =
+              EncryptionService.instance.encryptWithPublicKey(reason, publicKey);
         } else {
           encrypted = base64.encode(utf8.encode(reason));
         }
@@ -537,6 +651,11 @@ class TimeExtensionService extends ChangeNotifier {
         encrypted = base64.encode(utf8.encode(reason));
       }
     }
+
+    // Best-effort fallback: if guardianId wasn't parsed from HTTP response,
+    // pull it from local prefs (e.g. previously cached).
+    guardianId ??= (await PreferencesManager.init()).getGuardianId();
+    _lastGuardianId = guardianId;
 
     // ── 2. Connect child WS if needed ───────────────────────────────────────
     if (_childState != WsConnectionState.connected) {
@@ -547,7 +666,7 @@ class TimeExtensionService extends ChangeNotifier {
     if (_childState == WsConnectionState.connected && _childChannel != null) {
       _childRequestCompleter = Completer<bool>();
 
-      _childChannel!.sink.add(json.encode({
+      final payload = {
         'type': 'time_extension_request',
         'data': {
           'app_domain': packageName ?? appName ?? '',
@@ -555,7 +674,12 @@ class TimeExtensionService extends ChangeNotifier {
           'message_encrypted': encrypted,
           if (guardianId != null) 'guardian_id': guardianId,
         },
-      }));
+      };
+
+      _lastChildWsPayloadPretty =
+          const JsonEncoder.withIndent('  ').convert(payload);
+      _addChildLog(ChildWsLogType.sent, _lastChildWsPayloadPretty!);
+      _childChannel!.sink.add(json.encode(payload));
 
       _setChildStatus('Request sent – waiting for confirmation…');
       debugPrint('📡 TimeExt Child: Payload sent – awaiting ack…');
@@ -575,6 +699,7 @@ class TimeExtensionService extends ChangeNotifier {
       } catch (e) {
         _childRequestCompleter = null;
         debugPrint('❌ TimeExt Child: WS ack error – $e');
+        _addChildLog(ChildWsLogType.system, 'Ack error: $e');
       }
     }
 
@@ -607,7 +732,6 @@ class TimeExtensionService extends ChangeNotifier {
           'X-Child-Hash': childHash,
         },
         body: json.encode({
-          'child_hash': childHash,
           'app_domain': packageName,
           'app_name': appName,
           'requested_hours': requestedHours,
@@ -658,9 +782,10 @@ class TimeExtensionService extends ChangeNotifier {
   Future<Map<String, dynamic>> _fetchParentPublicKeyAndId(
       String childHash) async {
     try {
+      // Use the documented endpoint: GET /api/mobile/child/<child_hash>/guardians/public-keys/
       final response = await http.get(
         Uri.parse(
-            '$_baseUrl/api/mobile/child/$childHash/guardian-public-key/'),
+            '$_baseUrl/api/mobile/child/$childHash/guardians/public-keys/'),
         headers: {
           'Content-Type': 'application/json',
           'X-Child-Hash': childHash,
@@ -669,13 +794,28 @@ class TimeExtensionService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
-        final guardianId = data['guardian_id'] as int?;
-        if (guardianId != null) {
-          final prefs = await PreferencesManager.init();
-          await prefs.setGuardianId(guardianId);
+
+        // Response format: { "guardians": [{"guardian_id": 1, "guardian_name": "...", "public_key": "..."}] }
+        final guardians = (data['guardians'] as List?) ?? [];
+        if (guardians.isNotEmpty) {
+          final first = Map<String, dynamic>.from(guardians.first as Map);
+          final guardianId = _extractGuardianId(first);
+          final publicKey = first['public_key'] as String?;
+
+          _lastGuardianId = guardianId;
+          _lastGuardianPublicKey = publicKey;
+          if (guardianId != null) {
+            final prefs = await PreferencesManager.init();
+            await prefs.setGuardianId(guardianId);
+          }
+          debugPrint('✅ TimeExt: Guardian key fetched (id=$guardianId)');
+          _notify();
+          return first;
+        } else {
+          debugPrint('⚠️ TimeExt: No guardians found in response');
         }
-        debugPrint('✅ TimeExt: Guardian key fetched (id=$guardianId)');
-        return data;
+      } else {
+        debugPrint('❌ TimeExt: Guardian keys HTTP ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('❌ TimeExt: Failed to fetch guardian key – $e');
@@ -683,8 +823,48 @@ class TimeExtensionService extends ChangeNotifier {
     return {};
   }
 
+  int? _extractGuardianId(Map<String, dynamic> data) {
+    final raw = data['guardian_id'] ?? data['id'];
+    if (raw is int) return raw;
+    if (raw is String) return int.tryParse(raw);
+    return null;
+  }
+
+  void _addChildLog(ChildWsLogType type, String content) {
+    _childWsLog.add(
+      ChildWsLogEntry(type: type, content: content, timestamp: DateTime.now()),
+    );
+    if (_childWsLog.length > 200) {
+      _childWsLog.removeRange(0, _childWsLog.length - 200);
+    }
+    _notify();
+  }
+
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+
+    // If a notification happens while Flutter is in the middle of a frame
+    // (build/layout/paint) or a route transition, it can try to rebuild an
+    // Element that has been deactivated but not fully disposed yet, causing:
+    //   'element._lifecycleState == _ElementLifecycle.active' assertion.
+    // Deferring/coalescing notifications to the next frame avoids that.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    final shouldDefer =
+        phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks;
+
+    if (shouldDefer) {
+      if (_notifyScheduled) return;
+      _notifyScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _notifyScheduled = false;
+        if (_disposed) return;
+        notifyListeners();
+      });
+      return;
+    }
+
+    notifyListeners();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
