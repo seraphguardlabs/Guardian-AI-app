@@ -334,8 +334,47 @@ class ScreenCaptureService : Service() {
     }
     
     private fun getForegroundApp(): String? {
-        // This would use UsageStatsManager similar to MainActivity
-        // For now, return null as placeholder
+        try {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val currentTime = System.currentTimeMillis()
+            
+            // First try to get the most recent foreground event (look back 1 hour)
+            val events = usageStatsManager.queryEvents(currentTime - 3600000, currentTime)
+            var foregroundApp: String? = null
+            val event = android.app.usage.UsageEvents.Event()
+            
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                if (event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED || 
+                    event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    foregroundApp = event.packageName
+                } else if (event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED || 
+                           event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED || 
+                           event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    if (foregroundApp == event.packageName) {
+                        foregroundApp = null
+                    }
+                }
+            }
+            
+            if (foregroundApp != null) {
+                return foregroundApp
+            }
+            
+            // Fallback to queryUsageStats (look back 1 minute)
+            val stats = usageStatsManager.queryUsageStats(
+                android.app.usage.UsageStatsManager.INTERVAL_BEST,
+                currentTime - 60000,
+                currentTime
+            )
+            
+            if (stats != null && stats.isNotEmpty()) {
+                val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
+                return sortedStats.firstOrNull()?.packageName
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting foreground app", e)
+        }
         return null
     }
     

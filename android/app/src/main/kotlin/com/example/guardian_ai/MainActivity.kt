@@ -192,11 +192,36 @@ class MainActivity: FlutterActivity() {
         
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val currentTime = System.currentTimeMillis()
-        val fiveSecondsAgo = currentTime - 5000
+        
+        // First try to get the most recent foreground event (look back 1 hour)
+        val events = usageStatsManager.queryEvents(currentTime - 3600000, currentTime)
+        var foregroundApp: String? = null
+        val event = UsageEvents.Event()
+        
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED || 
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                foregroundApp = event.packageName
+            } else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED || 
+                       event.eventType == UsageEvents.Event.ACTIVITY_STOPPED || 
+                       event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                if (foregroundApp == event.packageName) {
+                    foregroundApp = null
+                }
+            }
+        }
+        
+        if (foregroundApp != null) {
+            return foregroundApp
+        }
+        
+        // Fallback to queryUsageStats (look back 1 minute)
+        val oneMinuteAgo = currentTime - 60000
         
         val stats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_BEST,
-            fiveSecondsAgo,
+            oneMinuteAgo,
             currentTime
         )
         
