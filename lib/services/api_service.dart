@@ -1226,6 +1226,8 @@ class ApiService {
   }
 
   /// Mark a task as complete (Child only)
+  /// When the task is linked to a time extension request, the server
+  /// auto-approves the extension and returns `time_extension_approved` data.
   Future<Map<String, dynamic>> completeTask({
     required String childHash,
     required int taskId,
@@ -1248,10 +1250,21 @@ class ApiService {
         if (data['task'] != null && data['task'] is Map<String, dynamic>) {
           completedTask = Task.fromJson(data['task'] as Map<String, dynamic>);
         }
+
+        // Check if the time extension was auto-approved
+        Map<String, dynamic>? timeExtensionApproved;
+        if (data['time_extension_approved'] != null &&
+            data['time_extension_approved'] is Map) {
+          timeExtensionApproved =
+              Map<String, dynamic>.from(data['time_extension_approved'] as Map);
+          debugPrint('🎉 Time extension auto-approved: $timeExtensionApproved');
+        }
+
         return {
           'success': true,
           'message': data['message'] ?? 'Task marked as completed',
           'task': completedTask,
+          'time_extension_approved': timeExtensionApproved,
         };
       } else {
         final errorData = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1302,6 +1315,58 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('❌ Incomplete task error: $e');
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
+
+  /// Directly approve a time extension request (Guardian only).
+  /// POST /api/mobile/time-extension-requests/<request_id>/approve/
+  Future<Map<String, dynamic>> approveTimeExtension({
+    required String email,
+    required String password,
+    required int requestId,
+    double? grantedHours,
+    String? responseEncrypted,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/time-extension-requests/$requestId/approve/');
+
+    try {
+      debugPrint('✅ Approving time extension request $requestId');
+
+      final body = <String, dynamic>{};
+      if (grantedHours != null) body['granted_hours'] = grantedHours;
+      if (responseEncrypted != null) body['response_encrypted'] = responseEncrypted;
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: jsonEncode(body),
+      );
+
+      debugPrint('📥 Approve response: ${response.statusCode} ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'success': false,
+          'error': errorData['message'] ?? 'Failed to approve request',
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Approve time extension error: $e');
       return {
         'success': false,
         'error': 'Network error: $e',
@@ -1624,5 +1689,42 @@ class ApiService {
       return [];
     }
   }
-}
 
+  /// Fetch the child's own time extension requests.
+  /// Returns requests that are pending or have a task assigned.
+  /// Handles the nested `assigned_task` object from the API.
+  Future<Map<String, dynamic>> fetchChildTimeRequests({
+    required String childHash,
+    String status = 'all',
+  }) async {
+    final url = Uri.parse('$baseUrl/api/mobile/child/$childHash/time-extension-requests/?status=$status');
+    try {
+      debugPrint('⏰ Fetching child time requests for $childHash (status=$status)');
+      final response = await http.get(
+        url,
+        headers: {'X-Child-Hash': childHash},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final list = (data['requests'] as List? ?? []).map((r) {
+          final m = Map<String, dynamic>.from(r as Map);
+          // Flatten assigned_task into top-level keys for backward compat
+          if (m['assigned_task'] != null && m['assigned_task'] is Map) {
+            final task = Map<String, dynamic>.from(m['assigned_task'] as Map);
+            m['task_id'] ??= task['id'];
+            m['task_title'] ??= task['title'];
+            m['task_description'] ??= task['description'];
+            m['is_task_completed'] ??= task['is_completed'] ?? false;
+          }
+          return m;
+        }).toList();
+        return {'success': true, 'requests': list};
+      }
+      final err = jsonDecode(response.body) as Map<String, dynamic>;
+      return {'success': false, 'error': err['message'] ?? 'Failed'};
+    } catch (e) {
+      debugPrint('❌ fetchChildTimeRequests error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+}

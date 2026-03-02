@@ -1,3 +1,40 @@
+/// Represents the assigned_task sub-object from the API.
+class AssignedTask {
+  final int id;
+  final String title;
+  final String description;
+  final bool isCompleted;
+  final DateTime? completedAt;
+
+  AssignedTask({
+    required this.id,
+    required this.title,
+    required this.description,
+    this.isCompleted = false,
+    this.completedAt,
+  });
+
+  factory AssignedTask.fromJson(Map<String, dynamic> json) {
+    return AssignedTask(
+      id: json['id'] is int ? json['id'] : int.tryParse('${json['id']}') ?? 0,
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      isCompleted: json['is_completed'] ?? false,
+      completedAt: json['completed_at'] != null
+          ? DateTime.tryParse(json['completed_at'])
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'is_completed': isCompleted,
+    'completed_at': completedAt?.toIso8601String(),
+  };
+}
+
 class TimeExtensionRequest {
   final int requestId;
   final String childHash;
@@ -5,13 +42,22 @@ class TimeExtensionRequest {
   final String appDomain;
   final double requestedHours;
   final String? messageEncrypted;
-  final String status; // 'pending', 'approved', 'denied', 'responded'
+  final String status; // 'pending', 'task_assigned', 'approved', 'denied', 'responded'
   final double? grantedHours;
   final DateTime created;
   final DateTime? respondedAt;
   final int? guardianId;
   final String? guardianName;
   final String? responseEncrypted;
+  
+  // Gamified properties – populated from the nested `assigned_task` object
+  final AssignedTask? assignedTask;
+  
+  // Legacy flat fields for backward-compat (derived from assignedTask or raw JSON)
+  final String? taskId;
+  final String? taskTitle;
+  final String? taskDescription;
+  final bool isTaskCompleted;
 
   TimeExtensionRequest({
     required this.requestId,
@@ -27,9 +73,27 @@ class TimeExtensionRequest {
     this.guardianId,
     this.guardianName,
     this.responseEncrypted,
+    this.assignedTask,
+    this.taskId,
+    this.taskTitle,
+    this.taskDescription,
+    this.isTaskCompleted = false,
   });
 
   factory TimeExtensionRequest.fromJson(Map<String, dynamic> json) {
+    // Parse the nested assigned_task object when present
+    AssignedTask? assignedTask;
+    if (json['assigned_task'] != null && json['assigned_task'] is Map) {
+      assignedTask = AssignedTask.fromJson(
+          Map<String, dynamic>.from(json['assigned_task'] as Map));
+    }
+
+    // Derive flat task fields from nested object or legacy flat fields
+    final taskId = assignedTask?.id.toString() ?? json['task_id']?.toString();
+    final taskTitle = assignedTask?.title ?? json['task_title'] as String?;
+    final taskDescription = assignedTask?.description ?? json['task_description'] as String?;
+    final isTaskCompleted = assignedTask?.isCompleted ?? json['is_task_completed'] ?? false;
+
     return TimeExtensionRequest(
       requestId: json['request_id'] ?? 0,
       childHash: json['child_hash'] ?? '',
@@ -48,6 +112,11 @@ class TimeExtensionRequest {
       guardianId: json['guardian_id'],
       guardianName: json['guardian_name'],
       responseEncrypted: json['response_encrypted'],
+      assignedTask: assignedTask,
+      taskId: taskId,
+      taskTitle: taskTitle,
+      taskDescription: taskDescription,
+      isTaskCompleted: isTaskCompleted,
     );
   }
 
@@ -66,6 +135,7 @@ class TimeExtensionRequest {
       'guardian_id': guardianId,
       'guardian_name': guardianName,
       'response_encrypted': responseEncrypted,
+      if (assignedTask != null) 'assigned_task': assignedTask!.toJson(),
     };
   }
 

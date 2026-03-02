@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/time_extension_service.dart';
 import '../services/encryption_service.dart';
 import '../utils/preferences_manager.dart';
 
@@ -16,6 +18,7 @@ class MyTasksScreen extends StatefulWidget {
 
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
+  StreamSubscription? _wsSubscription;
   
   bool _loading = true;
   bool _updating = false;
@@ -25,10 +28,122 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   int _pendingTasks = 0;
   int _completedTasks = 0;
 
+  // Screen-time reward requests (time extension requests with an assigned task)
+  List<Map<String, dynamic>> _rewardRequests = [];
+  bool _loadingRewards = false;
+  Timer? _rewardRefreshTimer;
+
   @override
   void initState() {
     super.initState();
     _loadTasks();
+    _loadRewardRequests();
+
+    // Auto-refresh reward requests every 30 seconds so newly-assigned tasks appear promptly
+    _rewardRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _loadRewardRequests();
+    });
+    
+    // Listen for task assignments related to time requests
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final timeService = context.read<TimeExtensionService>();
+      _wsSubscription = timeService.childResponseStream.listen((data) {
+        if (data['type'] == 'time_extension_response' || data['type'] == 'task_assigned') {
+          debugPrint('🔄 MyTasksScreen: Received WS update, refreshing...');
+          _loadTasks();
+          _loadRewardRequests();
+        }
+      });
+    });
+  }
+
+  Future<void> _loadRewardRequests() async {
+    setState(() => _loadingRewards = true);
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefs.getChildHash() ?? '';
+    if (childHash.isEmpty) { setState(() => _loadingRewards = false); return; }
+
+    final result = await _apiService.fetchChildTimeRequests(
+      childHash: childHash,
+      status: 'all',
+    );
+    if (!mounted) return;
+    if (result['success'] == true) {
+      final List<Map<String, dynamic>> all =
+          List<Map<String, dynamic>>.from(result['requests'] as List);
+      debugPrint('⏰ Child time requests: ${all.length} total');
+      for (final r in all) {
+        debugPrint('   req#${r['request_id']}: status=${r['status']} taskId=${r['task_id']}');
+      }
+      // Show requests where status indicates a task has been assigned,
+      // OR where the backend returns task_id/task_title explicitly.
+      setState(() {
+        _rewardRequests = all.where((r) {
+          final status = (r['status'] as String? ?? '').toLowerCase();
+          final hasTaskStatus = status == 'task_assigned' || status == 'task_completed';
+          final hasTaskField = r['task_id'] != null || r['task_title'] != null;
+          final isResolved = status == 'approved' || status == 'denied';
+          return (hasTaskStatus || hasTaskField) && !isResolved;
+        }).toList();
+        _loadingRewards = false;
+      });
+      debugPrint('⏰ Reward requests shown: ${_rewardRequests.length}');
+    } else {
+      setState(() => _loadingRewards = false);
+    }
+  }
+
+  Future<void> _completeRewardTask(Map<String, dynamic> request) async {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    // task_id can be int or String depending on server version
+    final rawId = request['task_id'];
+    final int? taskId = rawId is int
+        ? rawId
+        : rawId is String
+            ? int.tryParse(rawId)
+            : null;
+    if (taskId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot complete: task ID not found'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // ── Save locally only — do NOT call the backend completeTask() endpoint
+    // because the server auto-approves the time extension upon task completion.
+    // Instead, mark it locally as "done" so the UI reflects the child's intent,
+    // and let the parent decide when to approve the time extension. ──
+    await prefs.markRewardTaskLocallyDone(taskId);
+
+    setState(() {
+      // Update the in-memory map so the card rebuilds immediately
+      request['is_task_completed_locally'] = true;
+    });
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('Marked as done! Your parent will review and approve your time.'),
+            ),
+          ],
+        ),
+        backgroundColor: Color(0xFF7C3AED),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSubscription?.cancel();
+    _rewardRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadTasks() async {
@@ -206,7 +321,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
         ],
       ),
-      body: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([_loadTasks(), _loadRewardRequests()]);
+        },
+        color: const Color(0xFF7C3AED),
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: Column(
         children: [
           // Stats banner
           Container(
@@ -234,6 +355,9 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ),
 
+          // Screen-time reward tasks (earn time by completing assigned tasks)
+          if (_rewardRequests.isNotEmpty) _buildRewardSection(),
+
           // Filter tabs
           Container(
             color: Colors.transparent,
@@ -248,7 +372,6 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               ],
             ),
           ),
-          // Task list
           Expanded(
             child: _loading
                 ? const Center(
@@ -298,7 +421,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                       ),
           ),
         ],
-      ),
+        ),      // Column
+      ),        // RefreshIndicator
     );
   }
 
@@ -480,6 +604,384 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRewardSection() {
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final locallyDone = prefs.getLocallyDoneRewardTasks();
+    final completedCount = _rewardRequests.where((r) {
+      final rawId = r['task_id'];
+      final int? tid = rawId is int ? rawId : rawId is String ? int.tryParse(rawId) : null;
+      return r['is_task_completed'] == true ||
+             r['is_task_completed_locally'] == true ||
+             (tid != null && locallyDone.contains(tid));
+    }).length;
+    final pendingCount = _rewardRequests.length - completedCount;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E1065),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.videogame_asset, color: Color(0xFFC4B5FD), size: 16),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Earn Screen Time',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (completedCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF78350F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    '$completedCount awaiting approval',
+                    style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              if (pendingCount > 0) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2E1065),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$pendingCount to do',
+                    style: const TextStyle(color: Color(0xFFC4B5FD), fontSize: 11),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          ..._rewardRequests.map((req) => _buildRewardCard(req)),
+          const Divider(color: Colors.white12, height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardCard(Map<String, dynamic> req) {
+    // Check both backend flag AND local "done" flag
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final rawIdForLocal = req['task_id'];
+    final int? tidLocal = rawIdForLocal is int ? rawIdForLocal
+        : rawIdForLocal is String ? int.tryParse(rawIdForLocal) : null;
+    final isCompleted = req['is_task_completed'] == true ||
+        req['is_task_completed_locally'] == true ||
+        (tidLocal != null && prefs.isRewardTaskLocallyDone(tidLocal));
+    final taskTitle = req['task_title'] as String? ?? 'Complete assigned task';
+    final taskDesc = req['task_description'] as String? ?? '';
+    final appDomain = req['app_domain'] as String? ?? 'App';
+    final requestedHours = (req['requested_hours'] as num? ?? 0).toDouble();
+    final requestedMins = (requestedHours * 60).round();
+    // task_id can be int or String
+    final rawId = req['task_id'];
+    final int? taskId = rawId is int
+        ? rawId
+        : rawId is String
+            ? int.tryParse(rawId)
+            : null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        gradient: isCompleted
+            ? const LinearGradient(
+                colors: [Color(0xFF78350F), Color(0xFF451A03)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Color(0xFF1E0A4A), Color(0xFF2E1065)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isCompleted
+              ? const Color(0xFFFBBF24).withOpacity(0.7)
+              : const Color(0xFF8B5CF6).withOpacity(0.5),
+          width: isCompleted ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isCompleted
+                ? const Color(0xFFFBBF24).withOpacity(0.12)
+                : const Color(0xFF7C3AED).withOpacity(0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: isCompleted ? const Color(0xFF92400E) : const Color(0xFF3B0764),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    isCompleted ? Icons.hourglass_bottom : Icons.lock_clock,
+                    color: isCompleted ? const Color(0xFFFBBF24) : const Color(0xFFC4B5FD),
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        appDomain,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Unlock +$requestedMins mins of screen time',
+                        style: TextStyle(
+                          color: isCompleted
+                              ? const Color(0xFFFBBF24)
+                              : const Color(0xFFC4B5FD),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status chip
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isCompleted
+                        ? const Color(0xFF92400E)
+                        : const Color(0xFF3B0764),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isCompleted
+                          ? const Color(0xFFFBBF24).withOpacity(0.5)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Text(
+                    isCompleted ? '⏳ Awaiting' : '🔒 Locked',
+                    style: TextStyle(
+                      color: isCompleted
+                          ? const Color(0xFFFBBF24)
+                          : const Color(0xFFC4B5FD),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Progress bar ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isCompleted ? 'Task completed!' : 'Task in progress',
+                      style: TextStyle(
+                        color: isCompleted
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFC4B5FD),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      isCompleted ? '100%' : '0%',
+                      style: TextStyle(
+                        color: isCompleted
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFC4B5FD),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: isCompleted ? 1.0 : 0.0,
+                    backgroundColor: Colors.white12,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isCompleted
+                          ? const Color(0xFFFBBF24)
+                          : const Color(0xFF8B5CF6),
+                    ),
+                    minHeight: 6,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Task detail box ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isCompleted
+                      ? const Color(0xFFFBBF24).withOpacity(0.3)
+                      : const Color(0xFF8B5CF6).withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isCompleted ? Icons.check_box : Icons.assignment_outlined,
+                    color: isCompleted
+                        ? const Color(0xFFFBBF24)
+                        : const Color(0xFFC4B5FD),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          taskTitle,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            decoration: isCompleted ? TextDecoration.lineThrough : null,
+                            decorationColor: Colors.white54,
+                          ),
+                        ),
+                        if (taskDesc.isNotEmpty)
+                          Text(
+                            taskDesc,
+                            style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Action section ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: isCompleted
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF92400E).withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: const Color(0xFFFBBF24).withOpacity(0.5)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.hourglass_empty,
+                            color: Color(0xFFFBBF24), size: 16),
+                        SizedBox(width: 8),
+                        Text(
+                          'Waiting for parent to approve your time 🎉',
+                          style: TextStyle(
+                            color: Color(0xFFFBBF24),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : taskId != null
+                    ? SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _updating ? null : () => _completeRewardTask(req),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            elevation: 4,
+                          ),
+                          icon: _updating
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.check_circle_outline, size: 18),
+                          label: const Text(
+                              "I'm Done — Mark Complete",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 13)),
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 8, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white10,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          '⚙️ Your parent is setting up the task…',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }

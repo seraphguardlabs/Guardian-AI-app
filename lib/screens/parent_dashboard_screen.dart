@@ -5,6 +5,8 @@ import 'dart:async';
 import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/time_extension_service.dart';
+import '../services/gamified_permission_service.dart';
+import 'assign_task_dialog.dart';
 import '../services/encryption_service.dart';
 import '../models/time_extension_request.dart';
 import '../models/child.dart';
@@ -56,6 +58,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   List<String> _examModeApps = [];
   bool _loadingExamMode = false;
   StreamSubscription<TimeExtensionRequest>? _newRequestSubscription;
+  Timer? _taskPollTimer;
   final RealtimeAlertService _alertService = RealtimeAlertService();
   StreamSubscription<Alert>? _alertSubscription;
   List<Alert> _activeAlerts = [];
@@ -89,8 +92,26 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       prefs.setLastRoute('/parent_dashboard');
       
       final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
+      
+      // Connect to time extension socket to receive requests
+      timeExtService.connect();
+      
+      // Also fetch via REST to ensure we have initial data quickly
+      timeExtService.fetchPendingRequests();
+      
       _newRequestSubscription = timeExtService.newRequestStream.listen((request) {
         _showNewRequestNotification(request);
+      });
+
+      // Poll every 20 s so parent is notified promptly when a child completes a task
+      _taskPollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+        if (!mounted) return;
+        final svc = Provider.of<TimeExtensionService>(context, listen: false);
+        // Only re-fetch if there are active task-assigned requests waiting
+        final hasTaskRequests = svc.pendingRequests.any(
+          (r) => r.status == 'task_assigned' || r.status == 'task_completed',
+        );
+        if (hasTaskRequests) svc.fetchPendingRequests();
       });
       
       _loadActiveAlerts();
@@ -102,6 +123,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     _metricsPageController.dispose();
     _loadingPulseController.dispose();
     _newRequestSubscription?.cancel();
+    _taskPollTimer?.cancel();
     _alertSubscription?.cancel();
     super.dispose();
   }
@@ -228,6 +250,26 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _showAssignTaskDialog(BuildContext context, TimeExtensionRequest request) async {
+    // showDialog creates a new route and loses the provider tree.
+    // Grab the service first, then re-inject it inside the dialog route.
+    final gamifiedService = Provider.of<GamifiedPermissionService>(context, listen: false);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => ChangeNotifierProvider<GamifiedPermissionService>.value(
+        value: gamifiedService,
+        child: AssignTaskDialog(request: request),
+      ),
+    );
+
+    if (result == true && mounted) {
+      final svc = context.read<TimeExtensionService>();
+      svc.refreshPendingRequests();   // WS
+      svc.fetchPendingRequests();     // REST – ensures task_assigned shows immediately
     }
   }
 
@@ -1601,81 +1643,401 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   }
 
   Widget _buildPendingRequestsSection(TimeExtensionService service) {
-    // Filter requests to current child and pending status
-    final filteredRequests = _selectedChild != null
+    final allForChild = _selectedChild != null
         ? service.pendingRequests
-            .where((req) =>
-                req.childHash == _selectedChild!.childHash &&
-                (req.status == 'pending' || req.status.isEmpty))
+            .where((req) => req.childHash == _selectedChild!.childHash)
             .toList()
-        : service.pendingRequests
-            .where((req) => req.status == 'pending' || req.status.isEmpty)
-            .toList();
+        : service.pendingRequests;
+
+    // Pure pending — no task assigned yet
+    final pendingRequests = allForChild
+        .where((req) =>
+            (req.status == 'pending' || req.status.isEmpty) &&
+            req.taskId == null)
+        .toList();
+
+    // Task has been assigned OR child completed it — waiting for parent action
+    final taskAssignedRequests = allForChild
+        .where((req) =>
+            req.status == 'task_assigned' ||
+            req.status == 'task_completed' ||
+            (req.taskId != null &&
+                req.status != 'pending' &&
+                req.status != 'approved' &&
+                req.status != 'denied'))
+        .toList();
+
+    if (pendingRequests.isEmpty && taskAssignedRequests.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF151515),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: Colors.white54, size: 22),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'No pending time extension requests',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // --- Awaiting response ---
+          if (pendingRequests.isNotEmpty) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Pending Requests',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Text(
+                    '${pendingRequests.length} pending',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...pendingRequests.take(3).map((req) => _buildRequestCard(req, service)),
+          ],
+
+          // --- Task assigned / completed, waiting for parent action ---
+          if (taskAssignedRequests.isNotEmpty) ...[
+            if (pendingRequests.isNotEmpty) const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Task Requests',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Row(
+                  children: [
+                    // Show how many tasks the child has already completed
+                    Builder(builder: (_) {
+                      final doneCount = taskAssignedRequests.where((r) => r.isTaskCompleted || r.status == 'task_completed').length;
+                      if (doneCount > 0) {
+                        return Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF064E3B),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF34D399).withOpacity(0.5)),
+                          ),
+                          child: Text(
+                            '$doneCount ready to approve',
+                            style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E1065),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
+                      ),
+                      child: Text(
+                        '${taskAssignedRequests.length} total',
+                        style: const TextStyle(color: Color(0xFFC4B5FD), fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...taskAssignedRequests.take(3).map((req) => _buildTaskWaitingCard(req, service)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskWaitingCard(TimeExtensionRequest request, TimeExtensionService service) {
+    final taskDone = request.isTaskCompleted || request.status == 'task_completed';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: taskDone
+            ? const LinearGradient(
+                colors: [Color(0xFF064E3B), Color(0xFF0D2B1E)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Color(0xFF1A1035), Color(0xFF0F0726)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: taskDone
+              ? const Color(0xFF34D399).withOpacity(0.7)
+              : const Color(0xFF8B5CF6).withOpacity(0.4),
+          width: taskDone ? 1.5 : 1.0,
+        ),
+        boxShadow: taskDone
+            ? [BoxShadow(color: const Color(0xFF34D399).withOpacity(0.12), blurRadius: 12, offset: const Offset(0, 4))]
+            : [],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Pending Requests',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: taskDone ? const Color(0xFF065F46) : const Color(0xFF2E1065),
+                ),
+                child: Icon(
+                  taskDone ? Icons.check_circle : Icons.task_alt,
+                  color: taskDone ? Colors.greenAccent : const Color(0xFFC4B5FD),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${request.childName} — ${request.getAppName()}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                    Text(
+                      'Requested: ${(request.requestedHours * 60).round()} mins',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
+                  color: taskDone ? const Color(0xFF064E3B) : const Color(0xFF2E1065),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(
+                    color: taskDone ? const Color(0xFF34D399).withOpacity(0.6) : Colors.transparent,
+                  ),
                 ),
                 child: Text(
-                  '${filteredRequests.length} pending',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  taskDone ? '✓ Task Done' : 'Pending',
+                  style: TextStyle(
+                    color: taskDone ? Colors.greenAccent : const Color(0xFFC4B5FD),
                     fontSize: 11,
+                    fontWeight: taskDone ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  taskDone ? Icons.check : Icons.assignment,
+                  color: taskDone ? Colors.greenAccent : const Color(0xFFC4B5FD),
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.taskTitle ?? 'Task assigned',
+                        style: TextStyle(
+                          color: taskDone ? Colors.white : Colors.white70,
+                          fontSize: 13,
+                          fontWeight: taskDone ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      if (taskDone)
+                        const Text(
+                          'Child completed this task — approval required',
+                          style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 11),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
-          if (filteredRequests.isEmpty)
-            Container(
+          // Step progress indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                _buildStepDot(label: '1', text: 'Task\nAssigned', done: true, active: false),
+                _buildStepLine(done: taskDone),
+                _buildStepDot(label: '2', text: 'Child\nDone', done: taskDone, active: !taskDone),
+                _buildStepLine(done: taskDone),
+                _buildStepDot(label: '3', text: 'You\nApprove', done: false, active: taskDone),
+              ],
+            ),
+          ),
+          if (taskDone) ...[
+            const SizedBox(height: 12),
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: const Color(0xFF151515),
-                borderRadius: BorderRadius.circular(18),
+              child: ElevatedButton.icon(
+                onPressed: () => _showGrantTimeDialog(context, request, service),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shadowColor: const Color(0xFF34D399).withOpacity(0.4),
+                  elevation: 6,
+                ),
+                icon: const Icon(Icons.check_circle, size: 20),
+                label: const Text(
+                  'Approve Time Extension',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
               ),
-              child: Row(
-                children: const [
-                  Icon(Icons.check_circle_outline, color: Colors.white54, size: 22),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'No pending time extension requests',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () async {
+                  await service.respondToRequest(
+                    requestId: request.requestId,
+                    action: 'deny',
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Request denied'), backgroundColor: Colors.red),
+                    );
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFBE123C),
+                  side: const BorderSide(color: Color(0xFFBE123C), width: 1),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Deny', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ] else ...[
+            // Task not yet marked done by child — still show Approve/Deny
+            // so the parent always controls the approval
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.hourglass_top, color: Color(0xFF8B5CF6), size: 14),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Waiting for child to complete the task…',
+                    style: TextStyle(color: Color(0xFFC4B5FD), fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showGrantTimeDialog(context, request, service),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.check_circle, size: 16),
+                    label: const Text(
+                      'Approve',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                     ),
                   ),
-                ],
-              ),
-            )
-          else
-            ...filteredRequests
-                .take(3)
-                .map((req) => _buildRequestCard(req, service))
-                .toList(),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await service.respondToRequest(
+                        requestId: request.requestId,
+                        action: 'deny',
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Request denied'), backgroundColor: Colors.red),
+                        );
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFBE123C),
+                      side: const BorderSide(color: Color(0xFFBE123C), width: 1),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Deny', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
+
 
   Widget _buildMetricsSection() {
     final cards = <Widget>[_buildMetricsCard()];
@@ -3451,8 +3813,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                 ),
                 IconButton(
                   icon: const Icon(Icons.refresh, color: Colors.white70),
+                  tooltip: 'Refresh requests',
                   onPressed: () {
+                    // WS refresh for real-time + REST fetch to catch task_completed status
                     timeExtService.requestPendingUpdates();
+                    timeExtService.fetchPendingRequests();
                   },
                 ),
                 IconButton(
@@ -3636,9 +4001,115 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               ),
             ),
           ],
+          if (request.taskId != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: request.isTaskCompleted 
+                    ? const Color(0xFF064E3B) 
+                    : const Color(0xFF2E1065),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: request.isTaskCompleted
+                      ? const Color(0xFF34D399)
+                      : const Color(0xFF8B5CF6),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                   Icon(
+                     request.isTaskCompleted ? Icons.check_circle : Icons.pending,
+                     color: request.isTaskCompleted ? Colors.greenAccent : Colors.deepPurpleAccent,
+                     size: 20,
+                   ),
+                   const SizedBox(width: 8),
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text(
+                           request.taskTitle ?? 'Task Assigned',
+                           style: const TextStyle(
+                             color: Colors.white,
+                             fontWeight: FontWeight.bold,
+                             fontSize: 13,
+                           ),
+                         ),
+                         Text(
+                           request.isTaskCompleted
+                               ? 'Task completed by child'
+                               : 'Waiting for child to complete',
+                           style: TextStyle(
+                             color: request.isTaskCompleted ? Colors.greenAccent.withOpacity(0.8) : Colors.white60,
+                             fontSize: 11,
+                           ),
+                         ),
+                       ],
+                     ),
+                   ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
-          // Action buttons
+          // Primary CTA: Assign a task (gamified route)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final scaffoldMsg = ScaffoldMessenger.of(context);
+                final gamifiedService =
+                    Provider.of<GamifiedPermissionService>(context, listen: false);
+                final result = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) {
+                    return ChangeNotifierProvider<GamifiedPermissionService>.value(
+                      value: gamifiedService,
+                      child: AssignTaskDialog(request: request),
+                    );
+                  },
+                );
+                if (result == true && mounted) {
+                  scaffoldMsg.showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                          const SizedBox(width: 10),
+                          Text('Task assigned to ${request.childName}! ✅'),
+                        ],
+                      ),
+                      backgroundColor: const Color(0xFF5B4A9F),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                  // Refresh the pending requests list
+                  service.refreshPendingRequests();
+                  service.fetchPendingRequests();
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5B4A9F),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+              ),
+              icon: const Icon(Icons.videogame_asset, size: 18),
+              label: const Text(
+                'Assign a Task to Unlock Time',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Secondary row: Approve directly or Decline
           Row(
             children: [
               Expanded(
@@ -3649,20 +4120,19 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF16A34A),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
                   child: const Text(
-                    'Approve',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    'Approve Directly',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                flex: 1,
                 child: OutlinedButton(
                   onPressed: () async {
                     final success = await service.respondToRequest(
@@ -3682,14 +4152,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     backgroundColor: const Color(0xFFFFE4E6),
                     foregroundColor: const Color(0xFFBE123C),
                     side: BorderSide.none,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
                   child: const Text(
                     'Decline',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                   ),
                 ),
               ),
@@ -4067,9 +4537,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               
               Navigator.pop(context);
               
-              final success = await service.respondToRequest(
+              // Use the dedicated approve endpoint
+              final success = await service.approveRequest(
                 requestId: request.requestId,
-                action: 'approve',
                 grantedHours: hours,
               );
               
@@ -4449,6 +4919,77 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         ),
       );
     }
+  }
+
+  /// Builds a numbered step dot for the gamified task progress indicator.
+  Widget _buildStepDot({
+    required String label,
+    required String text,
+    required bool done,
+    required bool active,
+  }) {
+    Color dotColor;
+    Color textColor;
+    if (done) {
+      dotColor = const Color(0xFF34D399);
+      textColor = const Color(0xFF34D399);
+    } else if (active) {
+      dotColor = const Color(0xFF8B5CF6);
+      textColor = const Color(0xFFC4B5FD);
+    } else {
+      dotColor = Colors.white24;
+      textColor = Colors.white38;
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: done
+                ? const Color(0xFF065F46)
+                : active
+                    ? const Color(0xFF2E1065)
+                    : Colors.white12,
+            border: Border.all(color: dotColor, width: 1.5),
+          ),
+          child: Center(
+            child: done
+                ? const Icon(Icons.check, size: 13, color: Color(0xFF34D399))
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: dotColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: textColor, fontSize: 9, height: 1.2),
+        ),
+      ],
+    );
+  }
+
+  /// Builds the connecting line between step dots.
+  Widget _buildStepLine({required bool done}) {
+    return Expanded(
+      child: Container(
+        height: 2,
+        margin: const EdgeInsets.only(bottom: 18),
+        decoration: BoxDecoration(
+          color: done ? const Color(0xFF34D399) : Colors.white12,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
   }
 
   void _showNewRequestNotification(TimeExtensionRequest request) {

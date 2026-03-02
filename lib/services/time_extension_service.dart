@@ -69,6 +69,8 @@ class TimeExtensionService extends ChangeNotifier {
   List<TimeExtensionRequest> _pendingRequests = [];
   final StreamController<TimeExtensionRequest> _newRequestStreamCtrl =
       StreamController<TimeExtensionRequest>.broadcast();
+  final StreamController<Map<String, dynamic>> _childResponseStreamCtrl =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _notifyScheduled = false;
 
@@ -99,6 +101,12 @@ class TimeExtensionService extends ChangeNotifier {
       List.unmodifiable(_pendingRequests);
   Stream<TimeExtensionRequest> get newRequestStream =>
       _newRequestStreamCtrl.stream;
+  Stream<Map<String, dynamic>> get childResponseStream =>
+      _childResponseStreamCtrl.stream;
+
+  void refreshPendingRequests() {
+    _guardianSend({'type': 'get_pending_requests'});
+  }
 
   // --- Child side ---
   WsConnectionState get childState        => _childState;
@@ -387,16 +395,61 @@ class TimeExtensionService extends ChangeNotifier {
   void requestPendingUpdates() =>
       _guardianSend({'type': 'get_pending_requests'});
 
+  /// Directly approve a pending time extension request without assigning a task.
+  /// Uses the dedicated `/approve/` endpoint (REST).
+  Future<bool> approveRequest({
+    required int requestId,
+    double? grantedHours,
+    String? responseEncrypted,
+  }) async {
+    debugPrint('📤 TimeExt Guardian: Approving request #$requestId directly');
+    try {
+      final prefs    = await PreferencesManager.init();
+      final email    = prefs.getParentEmail() ?? '';
+      final password = prefs.getParentPassword() ?? '';
+
+      final body = <String, dynamic>{};
+      if (grantedHours != null) body['granted_hours'] = grantedHours;
+      if (responseEncrypted != null && responseEncrypted.isNotEmpty) {
+        body['response_encrypted'] = responseEncrypted;
+      }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/api/mobile/time-extension-requests/$requestId/approve/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _pendingRequests.removeWhere((r) => r.requestId == requestId);
+        _notify();
+        debugPrint('✅ TimeExt Guardian: Request #$requestId approved via REST');
+        return true;
+      }
+      debugPrint('❌ TimeExt Guardian: Approve HTTP ${response.statusCode}');
+      return false;
+    } catch (e) {
+      debugPrint('❌ TimeExt Guardian: Approve error – $e');
+      return false;
+    }
+  }
+
   /// Loads pending requests via REST (initial boot / offline fallback).
+  /// Fetches ALL active requests (pending + task_assigned) so the
+  /// parent UI can segment them.
   Future<void> fetchPendingRequests() async {
     try {
       final prefs    = await PreferencesManager.init();
       final email    = prefs.getParentEmail() ?? '';
       final password = prefs.getParentPassword() ?? '';
 
+      // Fetch all statuses, then keep only active ones
       final response = await http.get(
-        Uri.parse(
-            '$_baseUrl/api/mobile/time-extension-requests/?status=pending'),
+        Uri.parse('$_baseUrl/api/mobile/time-extension-requests/?status=all'),
         headers: {
           'Content-Type': 'application/json',
           'X-Email': email,
@@ -407,12 +460,13 @@ class TimeExtensionService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final list = (data['requests'] as List? ?? []);
+        // Include task_completed so parent sees tasks done by child and can approve
+        const activeStatuses = {'pending', 'task_assigned', 'task_completed', ''};
         _pendingRequests = list
-            .map((r) =>
-                TimeExtensionRequest.fromJson(r as Map<String, dynamic>))
+            .map((r) => TimeExtensionRequest.fromJson(r as Map<String, dynamic>))
+            .where((r) => activeStatuses.contains(r.status))
             .toList();
-        debugPrint(
-            '📋 TimeExt HTTP: ${_pendingRequests.length} pending requests');
+        debugPrint('📋 TimeExt HTTP: ${_pendingRequests.length} active requests');
         _notify();
       }
     } catch (e) {
@@ -556,6 +610,9 @@ class TimeExtensionService extends ChangeNotifier {
         const JsonEncoder.withIndent('  ').convert(data),
       );
 
+      // Speak to listeners
+      _childResponseStreamCtrl.add(data);
+
       switch (data['type']) {
         case 'connection_established':
           _setChildStatus('Ready');
@@ -577,6 +634,23 @@ class TimeExtensionService extends ChangeNotifier {
           final status = d['status'] as String? ?? '';
           _lastChildWsResponse =
               'Request ${status == 'approved' ? 'approved' : 'denied'}';
+          _notify();
+
+        case 'task_assigned':
+          // Guardian assigned a task to the child for this request
+          final d = data['data'] as Map<String, dynamic>? ?? data;
+          debugPrint('📋 TimeExt Child: Task assigned – ${d['task_title'] ?? d['title'] ?? 'unknown'}');
+          _lastChildWsResponse = 'Task assigned — complete it to earn time!';
+          _childResponseStreamCtrl.add(data);
+          _notify();
+
+        case 'task_auto_approved':
+          // Task was completed and time extension was auto-approved
+          final d = data['data'] as Map<String, dynamic>? ?? data;
+          debugPrint('🎉 TimeExt Child: Auto-approved after task completion');
+          _lastChildWsResponse =
+              'Time extension approved! ${d['granted_hours'] ?? ''} hours granted';
+          _childResponseStreamCtrl.add(data);
           _notify();
 
         case 'error':

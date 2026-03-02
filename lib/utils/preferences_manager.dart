@@ -33,6 +33,7 @@ class PreferencesManager {
   static const String _keyViewMode = 'view_mode'; // 'parent' or 'child'
   static const String _keyLastRoute = 'last_route';
   static const String _keyTaskMetadata = 'task_metadata'; // Stores unencrypted task titles/descriptions
+  static const String _keyLocallyDoneRewardTasks = 'locally_done_reward_tasks'; // Child-side: reward task IDs child considers done
 
   final SharedPreferences _prefs;
 
@@ -209,5 +210,42 @@ class PreferencesManager {
     final metadata = getTaskMetadata();
     metadata.remove(taskId.toString());
     await _prefs.setString(_keyTaskMetadata, jsonEncode(metadata));
+  }
+
+  // ── Locally-done reward tasks (child side) ──────────────────────────────
+  // When the child clicks "I'm Done" on a reward task we do NOT call the
+  // backend complete endpoint (which would auto-approve the time extension).
+  // Instead we store the task ID locally so the UI can reflect "done – waiting
+  // for parent" while leaving the actual approval to the parent.
+
+  /// Mark a reward task as locally done (child side only).
+  Future<void> markRewardTaskLocallyDone(int taskId) async {
+    final ids = getLocallyDoneRewardTasks();
+    ids.add(taskId);
+    await _prefs.setStringList(
+      _keyLocallyDoneRewardTasks,
+      ids.map((e) => e.toString()).toList(),
+    );
+  }
+
+  /// Check whether a reward task has been locally marked as done.
+  bool isRewardTaskLocallyDone(int taskId) {
+    return getLocallyDoneRewardTasks().contains(taskId);
+  }
+
+  /// Get all locally-done reward task IDs.
+  Set<int> getLocallyDoneRewardTasks() {
+    final raw = _prefs.getStringList(_keyLocallyDoneRewardTasks) ?? [];
+    return raw.map((s) => int.tryParse(s)).whereType<int>().toSet();
+  }
+
+  /// Remove a reward task from the local "done" set (e.g. parent denied it).
+  Future<void> clearRewardTaskLocallyDone(int taskId) async {
+    final ids = getLocallyDoneRewardTasks();
+    ids.remove(taskId);
+    await _prefs.setStringList(
+      _keyLocallyDoneRewardTasks,
+      ids.map((e) => e.toString()).toList(),
+    );
   }
 }
