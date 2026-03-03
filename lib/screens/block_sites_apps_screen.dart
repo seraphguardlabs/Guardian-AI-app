@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/child.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 
 class BlockSitesAppsScreen extends StatefulWidget {
   final Child child;
@@ -76,7 +77,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -152,7 +153,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
               ),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
       await _loadRestrictions();
@@ -161,7 +162,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -204,7 +205,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
               ),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
       await _loadRestrictions();
@@ -213,7 +214,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -230,7 +231,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No app usage data available yet from the child device'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
         return;
@@ -244,7 +245,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: AppTheme.surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Add App Limit',
@@ -256,7 +257,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
             children: [
               DropdownButtonFormField<String>(
                 value: selectedPackage,
-                dropdownColor: const Color(0xFF1A1A1A),
+                dropdownColor: AppTheme.surface,
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
                   labelText: 'Select App',
@@ -345,7 +346,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Please select an app and enter a time limit'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppTheme.error,
                     ),
                   );
                   return;
@@ -356,7 +357,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Please enter a valid number of hours'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppTheme.error,
                     ),
                   );
                   return;
@@ -387,7 +388,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           name.isNotEmpty ? name : package,
@@ -439,7 +440,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Please enter a valid number of hours'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.error,
                   ),
                 );
                 return;
@@ -586,9 +587,9 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -610,7 +611,7 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.orange,
+                  color: AppTheme.warning,
                 ),
               ),
             ),
@@ -618,13 +619,13 @@ class _BlockSitesAppsScreenState extends State<BlockSitesAppsScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddRestrictionDialog(),
-        backgroundColor: Colors.orange,
+        backgroundColor: AppTheme.warning,
         icon: const Icon(Icons.add),
         label: const Text('Add App Limit'),
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: Colors.orange),
+              child: CircularProgressIndicator(color: AppTheme.warning),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),

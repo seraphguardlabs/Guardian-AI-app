@@ -25,10 +25,10 @@ class AppBottomNav extends StatelessWidget {
     return Container(
       height: 70,
       decoration: BoxDecoration(
-        color: const Color(0xFF0F0F0F),
+        color: AppTheme.surfaceDark,
         border: Border(
           top: BorderSide(
-            color: Colors.white.withOpacity(0.08),
+            color: AppTheme.border.withOpacity(0.5),
             width: 1,
           ),
         ),

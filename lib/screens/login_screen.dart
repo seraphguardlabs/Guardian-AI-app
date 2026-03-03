@@ -236,7 +236,7 @@ class _LoginScreenState extends State<LoginScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Account created successfully! You can now login.'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
             duration: const Duration(seconds: 3),
           ),
         );

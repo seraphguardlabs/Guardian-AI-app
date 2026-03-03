@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/child.dart';
+import '../utils/app_theme.dart';
 import '../widgets/weekly_activity_chart.dart';
 
 /// Weekly Activity Screen
@@ -16,23 +17,8 @@ class WeeklyActivityScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F0F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Weekly Activity',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppTheme.standardAppBar(title: 'Weekly Activity', context: context),
       body: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),

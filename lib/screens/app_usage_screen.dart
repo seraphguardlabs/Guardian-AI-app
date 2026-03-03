@@ -3,6 +3,7 @@ import 'package:usage_stats/usage_stats.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
+import '../utils/app_theme.dart';
 
 class AppUsageScreen extends StatefulWidget {
   const AppUsageScreen({super.key});
@@ -110,13 +111,10 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('App Usage'),
-        backgroundColor: colorScheme.surface,
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppTheme.standardAppBar(title: 'App Usage', context: context),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _usageStats.isEmpty
@@ -124,23 +122,26 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.hourglass_empty_rounded,
                         size: 64,
-                        color: colorScheme.onSurfaceVariant,
+                        color: AppTheme.textMuted,
                       ),
                       const SizedBox(height: 16),
-                      Text(
+                      const Text(
                         'No usage data available',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
+                      const Text(
                         'Grant usage access permission to see app statistics',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 13,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -154,15 +155,8 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                       margin: const EdgeInsets.all(16),
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primaryContainer,
-                            colorScheme.secondaryContainer,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
+                        gradient: AppTheme.cardGrad,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusL),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -176,7 +170,7 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                           Container(
                             width: 1,
                             height: 40,
-                            color: colorScheme.outline.withOpacity(0.3),
+                            color: Colors.white.withOpacity(0.15),
                           ),
                           _buildStatItem(
                             context,
@@ -197,13 +191,15 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                             'Today\'s Activity',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                           const Spacer(),
                           Text(
                             DateFormat('MMM d, y').format(DateTime.now()),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
+                            style: const TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 12,
                             ),
                           ),
                         ],
@@ -233,11 +229,11 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                                 width: 48,
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  color: colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                                  color: AppTheme.surface,
                                 ),
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
                                   child: app.icon != null
                                       ? Image.memory(
                                           app.icon!,
@@ -245,22 +241,25 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                                           height: 48,
                                           fit: BoxFit.cover,
                                         )
-                                      : Icon(
+                                      : const Icon(
                                           Icons.android,
-                                          color: colorScheme.primary,
+                                          color: AppTheme.primary,
                                         ),
                                 ),
                               ),
                               title: Text(
                                 app.name,
-                                style: theme.textTheme.titleSmall?.copyWith(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: AppTheme.textPrimary,
                                 ),
                               ),
                               subtitle: Text(
                                 usage.packageName ?? '',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                                style: const TextStyle(
+                                  color: AppTheme.textMuted,
+                                  fontSize: 12,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -271,14 +270,15 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: AppTheme.primary.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusS),
                                 ),
                                 child: Text(
                                   _formatDuration(usage.totalTimeInForeground),
-                                  style: theme.textTheme.labelLarge?.copyWith(
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: colorScheme.onPrimaryContainer,
+                                    fontSize: 13,
+                                    color: AppTheme.accentBlue,
                                   ),
                                 ),
                               ),
@@ -293,25 +293,24 @@ class _AppUsageScreenState extends State<AppUsageScreen> {
   }
   
   Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
     return Column(
       children: [
-        Icon(icon, color: colorScheme.primary, size: 28),
+        Icon(icon, color: AppTheme.accentBlue, size: 28),
         const SizedBox(height: 8),
         Text(
           value,
-          style: theme.textTheme.headlineSmall?.copyWith(
+          style: const TextStyle(
             fontWeight: FontWeight.bold,
-            color: colorScheme.onPrimaryContainer,
+            fontSize: 22,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onPrimaryContainer,
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 12,
           ),
         ),
       ],

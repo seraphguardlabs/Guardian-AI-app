@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/child.dart';
 import '../services/api_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 import 'assign_task_screen.dart';
 import 'block_sites_apps_screen.dart';
 
@@ -60,7 +61,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['error'] ?? 'Failed to load exam mode'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -149,14 +150,14 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
               Text(_examMode ? 'Exam mode enabled' : 'Exam mode disabled'),
             ],
           ),
-          backgroundColor: _examMode ? Colors.orange : Colors.green,
+          backgroundColor: _examMode ? AppTheme.warning : Colors.green,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to toggle exam mode: ${result['error']}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -206,7 +207,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
               Text('App removed from exam mode'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
     }
@@ -227,7 +228,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Select App to Block',
@@ -240,7 +241,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
             children: commonApps.entries.map((entry) {
               final isAlreadyAdded = _examModeApps.contains(entry.key);
               return ListTile(
-                leading: const Icon(Icons.android, color: Color(0xFF9C27B0)),
+                leading: const Icon(Icons.android, color: AppTheme.accent),
                 title: Text(entry.value, style: const TextStyle(color: Colors.white)),
                 trailing: isAlreadyAdded
                     ? const Icon(Icons.check_circle, color: Colors.green)
@@ -296,7 +297,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
               Text('${_getAppNameFromPackage(packageName)} added to exam mode'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
     }
@@ -329,7 +330,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: AppTheme.surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Set Daily Screen Time Limit',
@@ -361,11 +362,11 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                    borderSide: const BorderSide(color: AppTheme.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF5B4A9F), width: 2),
+                    borderSide: const BorderSide(color: AppTheme.accent, width: 2),
                   ),
                 ),
               ),
@@ -391,7 +392,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Please enter a valid number of hours'),
-                        backgroundColor: Colors.red,
+                        backgroundColor: AppTheme.error,
                       ),
                     );
                     return;
@@ -423,19 +424,19 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
                             ? 'Daily limit removed'
                             : 'Daily limit set to ${hours == hours.roundToDouble() ? hours.toStringAsFixed(0) : hours.toStringAsFixed(1)} hr',
                       ),
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppTheme.success,
                     ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(result['error'] ?? 'Failed to update daily limit'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppTheme.error,
                     ),
                   );
                 }
               },
-              child: const Text('Save', style: TextStyle(color: Color(0xFF9C27B0))),
+              child: const Text('Save', style: TextStyle(color: AppTheme.accent)),
             ),
           ],
         );
@@ -446,9 +447,9 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -464,7 +465,7 @@ class _ExamModeScreenState extends State<ExamModeScreen> {
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: Colors.orange),
+              child: CircularProgressIndicator(color: AppTheme.warning),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),

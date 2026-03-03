@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../models/child.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 
 class GeofenceManagementScreen extends StatefulWidget {
   final Child child;
@@ -80,7 +81,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to load geofences: ${result['error']}'),
-                backgroundColor: Colors.red[900],
+                backgroundColor: AppTheme.error,
               ),
             );
           }
@@ -117,10 +118,10 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
           child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF101010),
+              color: AppTheme.surfaceDark,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const CircularProgressIndicator(color: Color(0xFF317AF7)),
+            child: const CircularProgressIndicator(color: AppTheme.accentBlue),
           ),
         ),
       );
@@ -143,7 +144,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Geofence created successfully'),
-                backgroundColor: Color(0xFF1B4332), // Dark green
+                backgroundColor: AppTheme.success, // Dark green
               ),
             );
           }
@@ -152,7 +153,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to create geofence: ${result['error']}'),
-                backgroundColor: Colors.red[900],
+                backgroundColor: AppTheme.error,
               ),
             );
           }
@@ -163,7 +164,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error: $e'),
-              backgroundColor: Colors.red[900],
+              backgroundColor: AppTheme.error,
             ),
           );
         }
@@ -174,13 +175,13 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050C16),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(
           'Geofences (${widget.child.firstName})',
           style: const TextStyle(color: Colors.white, fontSize: 18),
         ),
-        backgroundColor: const Color(0xFF050C16),
+        backgroundColor: AppTheme.background,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -218,8 +219,8 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                           ),
                           radius: (g['radius'] as num? ?? 100).toDouble(),
                           useRadiusInMeter: true,
-                          color: const Color(0xFF317AF7).withOpacity(0.2),
-                          borderColor: const Color(0xFF317AF7),
+                          color: AppTheme.accentBlue.withOpacity(0.2),
+                          borderColor: AppTheme.accentBlue,
                           borderStrokeWidth: 2,
                         ),
                       // Draft Geofence
@@ -247,7 +248,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                           height: 40,
                           child: const Icon(
                             Icons.location_on, 
-                            color: Color(0xFF317AF7), 
+                            color: AppTheme.accentBlue, 
                             size: 40,
                           ),
                         ),
@@ -262,7 +263,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
-              color: Color(0xFF050C16),
+              color: AppTheme.background,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,13 +283,13 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF317AF7).withOpacity(0.2),
+                          color: AppTheme.accentBlue.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '${_geofences.length} Active',
                           style: const TextStyle(
-                            color: Color(0xFF317AF7),
+                            color: AppTheme.accentBlue,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
@@ -301,7 +302,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                   const Center(
                     child: Padding(
                       padding: EdgeInsets.all(20.0),
-                      child: CircularProgressIndicator(color: Color(0xFF317AF7)),
+                      child: CircularProgressIndicator(color: AppTheme.accentBlue),
                     ),
                   )
                 else
@@ -327,7 +328,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
     
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF101010),
+      backgroundColor: AppTheme.surfaceDark,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -365,7 +366,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                         labelText: 'Label (e.g. Home, School)',
                         labelStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
                         filled: true,
-                        fillColor: const Color(0xFF1B1B1B),
+                        fillColor: AppTheme.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -376,7 +377,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF317AF7), width: 1.5),
+                          borderSide: const BorderSide(color: AppTheme.accentBlue, width: 1.5),
                         ),
                       ),
                     ),
@@ -393,7 +394,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                         Text(
                           '${_newGeofenceRadius.round()}m',
                           style: const TextStyle(
-                            color: Color(0xFF317AF7),
+                            color: AppTheme.accentBlue,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -401,10 +402,10 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                     ),
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: const Color(0xFF317AF7),
-                        inactiveTrackColor: const Color(0xFF1B1B1B),
+                        activeTrackColor: AppTheme.accentBlue,
+                        inactiveTrackColor: AppTheme.surface,
                         thumbColor: Colors.white,
-                        overlayColor: const Color(0xFF317AF7).withOpacity(0.2),
+                        overlayColor: AppTheme.accentBlue.withOpacity(0.2),
                       ),
                       child: Slider(
                         value: _newGeofenceRadius,
@@ -451,7 +452,7 @@ class _GeofenceManagementScreenState extends State<GeofenceManagementScreen> {
                               }
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF317AF7),
+                              backgroundColor: AppTheme.accentBlue,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               elevation: 0,
                               shape: RoundedRectangleBorder(

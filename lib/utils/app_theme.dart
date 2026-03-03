@@ -3,17 +3,34 @@ import 'package:flutter/material.dart';
 /// Centralized app theme, colors, gradients, and reusable animated widgets.
 class AppTheme {
   // ── Brand Palette ───────────────────────────────────────────────────────────
-  static const Color primary     = Color(0xFF1A3C8B);
-  static const Color primaryDark = Color(0xFF0F2A6B);
-  static const Color accent      = Color(0xFF5B4A9F);
-  static const Color accentDark  = Color(0xFF4A3280);
-  static const Color surface     = Color(0xFF1A1A1A);
-  static const Color surfaceDark = Color(0xFF0F0F0F);
-  static const Color border      = Color(0xFF2A2A2A);
-  static const Color danger      = Color(0xFFFF4F92);
-  static const Color warning     = Color(0xFFFF9500);
-  static const Color success     = Color(0xFF30D158);
-  static const Color background  = Color(0xFF0A0A0F);
+  static const Color primary       = Color(0xFF1A3C8B);
+  static const Color primaryDark   = Color(0xFF0F2A6B);
+  static const Color primaryDeep   = Color(0xFF0D1F4A);
+  static const Color accent        = Color(0xFF5B4A9F);
+  static const Color accentDark    = Color(0xFF4A3280);
+  static const Color accentBlue    = Color(0xFF317AF7);
+  static const Color accentPurple  = Color(0xFF7C3AED);
+  static const Color surface       = Color(0xFF1A1A1A);
+  static const Color surfaceDark   = Color(0xFF0F0F0F);
+  static const Color card          = Color(0xFF151515);
+  static const Color border        = Color(0xFF2A2A2A);
+  static const Color danger        = Color(0xFFFF4F92);
+  static const Color error         = Color(0xFFDC2626);
+  static const Color warning       = Color(0xFFFF9500);
+  static const Color success       = Color(0xFF30D158);
+  static const Color background    = Color(0xFF0A0A0F);
+
+  // ── Text Colors ─────────────────────────────────────────────────────────────
+  static const Color textPrimary   = Colors.white;
+  static const Color textSecondary = Colors.white70;
+  static const Color textMuted     = Colors.white54;
+  static const Color textHint      = Colors.white30;
+
+  // ── Standard Radius ─────────────────────────────────────────────────────────
+  static const double radiusS  = 8;
+  static const double radiusM  = 12;
+  static const double radiusL  = 16;
+  static const double radiusXL = 20;
 
   // ── Gradients ───────────────────────────────────────────────────────────────
   static const Gradient primaryGrad = LinearGradient(
@@ -28,10 +45,28 @@ class AppTheme {
     end: Alignment.bottomRight,
   );
 
+  static const Gradient accentBlueGrad = LinearGradient(
+    colors: [Color(0xFF317AF7), Color(0xFF1A3C8B)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
   static const Gradient darkBgGrad = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Color(0xFF0A0A0F), Color(0xFF101722), Color(0xFF0A0A0F)],
+  );
+
+  static const Gradient cardGrad = LinearGradient(
+    colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const Gradient surfaceGrad = LinearGradient(
+    colors: [Color(0xFF1E1E2A), Color(0xFF151515)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
   );
 
   // ── TextStyles ──────────────────────────────────────────────────────────────
@@ -62,15 +97,15 @@ class AppTheme {
       filled: true,
       fillColor: surfaceDark,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(radiusM),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(radiusM),
         borderSide: const BorderSide(color: border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(radiusM),
         borderSide: const BorderSide(color: primary, width: 2),
       ),
     );
@@ -80,9 +115,75 @@ class AppTheme {
   static ButtonStyle primaryButtonStyle({Color? bg}) => ElevatedButton.styleFrom(
     backgroundColor: bg ?? primary,
     padding: const EdgeInsets.symmetric(vertical: 16),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusM)),
     elevation: 0,
   );
+
+  // ── Card Decoration ─────────────────────────────────────────────────────────
+  static BoxDecoration cardDecoration({
+    Color? color,
+    Gradient? gradient,
+    double radius = radiusL,
+    Color? borderColor,
+  }) {
+    return BoxDecoration(
+      color: gradient == null ? (color ?? card) : null,
+      gradient: gradient,
+      borderRadius: BorderRadius.circular(radius),
+      border: borderColor != null ? Border.all(color: borderColor) : null,
+    );
+  }
+
+  // ── SnackBar Helpers ────────────────────────────────────────────────────────
+  static SnackBar successSnackBar(String message) => SnackBar(
+    content: Row(children: [
+      const Icon(Icons.check_circle, color: Colors.white, size: 20),
+      const SizedBox(width: 10),
+      Expanded(child: Text(message)),
+    ]),
+    backgroundColor: success,
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusM)),
+    duration: const Duration(seconds: 3),
+  );
+
+  static SnackBar errorSnackBar(String message) => SnackBar(
+    content: Row(children: [
+      const Icon(Icons.error_outline, color: Colors.white, size: 20),
+      const SizedBox(width: 10),
+      Expanded(child: Text(message)),
+    ]),
+    backgroundColor: error,
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusM)),
+    duration: const Duration(seconds: 3),
+  );
+
+  // ── Standard AppBar ─────────────────────────────────────────────────────────
+  static AppBar standardAppBar({
+    required String title,
+    List<Widget>? actions,
+    Widget? leading,
+    required BuildContext context,
+  }) {
+    return AppBar(
+      backgroundColor: surface,
+      elevation: 0,
+      leading: leading ?? IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.white),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+      ),
+      actions: actions,
+    );
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

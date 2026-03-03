@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_theme.dart';
 
 class ComingSoonScreen extends StatelessWidget {
   final String title;
@@ -8,23 +9,8 @@ class ComingSoonScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F0F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppTheme.standardAppBar(title: title, context: context),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -35,34 +21,34 @@ class ComingSoonScreen extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF5B4A9F).withOpacity(0.3),
-                    const Color(0xFF4A3280).withOpacity(0.3),
+                    AppTheme.accent.withOpacity(0.3),
+                    AppTheme.accentDark.withOpacity(0.3),
                   ],
                 ),
               ),
               child: const Icon(
                 Icons.rocket_launch_outlined,
                 size: 80,
-                color: Color(0xFF5B4A9F),
+                color: AppTheme.accent,
               ),
             ),
             const SizedBox(height: 32),
             const Text(
               'Coming Soon',
               style: TextStyle(
-                color: Colors.white,
+                color: AppTheme.textPrimary,
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
               child: Text(
                 'We\'re working hard to bring you this feature. Stay tuned!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
+                  color: AppTheme.textSecondary,
                   fontSize: 16,
                 ),
               ),

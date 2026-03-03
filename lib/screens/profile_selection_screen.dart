@@ -586,7 +586,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(result['message'] ?? 'Child added successfully!'),
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: AppTheme.success,
                                 ),
                               );
                               
@@ -602,7 +602,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(result['error'] ?? 'Failed to add child'),
-                                  backgroundColor: Colors.red,
+                                  backgroundColor: AppTheme.error,
                                 ),
                               );
                             }

@@ -78,7 +78,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['error'] ?? 'Failed to load tasks'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -91,7 +91,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: AppTheme.surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Assign New Task',
@@ -138,7 +138,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Please enter a task title'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppTheme.error,
                     ),
                   );
                   return;
@@ -148,7 +148,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Please enter a description'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppTheme.error,
                     ),
                   );
                   return;
@@ -199,7 +199,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
               Text('Task assigned to ${widget.child.firstName}'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
       _loadTasks();
@@ -207,7 +207,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['error'] ?? 'Failed to create task'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -216,9 +216,9 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),

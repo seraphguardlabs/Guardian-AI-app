@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../utils/app_theme.dart';
 
 /// Redesigned full-screen location view with:
 /// - Interactive map visualization (OpenStreetMap)
@@ -91,12 +92,12 @@ class _LocationMapScreenState extends State<LocationMapScreen>
     final initialCenter = points.isNotEmpty ? points.first : const LatLng(0, 0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: AppTheme.background,
       body: CustomScrollView(
         slivers: [
           // Custom App Bar
           SliverAppBar(
-            backgroundColor: const Color(0xFF0A0A0F),
+            backgroundColor: AppTheme.background,
             elevation: 0,
             pinned: true,
             expandedHeight: 60,
@@ -148,7 +149,7 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                 child: Container(
                   height: _showTimeline ? 320 : 500,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1B263B),
+                    color: AppTheme.card,
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
                       color: Colors.white.withOpacity(0.1),
@@ -308,7 +309,7 @@ class _LocationMapScreenState extends State<LocationMapScreen>
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF101722),
+          color: AppTheme.surfaceDark,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -387,7 +388,7 @@ class _LocationMapScreenState extends State<LocationMapScreen>
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
-        color: const Color(0xFF101722),
+        color: AppTheme.surfaceDark,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white12),
       ),
@@ -507,8 +508,8 @@ class _LocationMapScreenState extends State<LocationMapScreen>
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? const Color(0xFF1B263B)
-                      : const Color(0xFF101722),
+                      ? AppTheme.card
+                      : AppTheme.surfaceDark,
                   borderRadius: BorderRadius.circular(14),
                   border: isSelected
                       ? Border.all(color: const Color(0xFF4ECDC4), width: 1)

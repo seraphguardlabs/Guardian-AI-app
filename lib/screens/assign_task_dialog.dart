@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/time_extension_request.dart';
 import '../services/gamified_permission_service.dart';
+import '../utils/app_theme.dart';
 
 class AssignTaskDialog extends StatefulWidget {
   final TimeExtensionRequest request;
@@ -163,7 +164,7 @@ class _AssignTaskDialogState extends State<AssignTaskDialog> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Task assigned successfully'),
-                            backgroundColor: Colors.green,
+                            backgroundColor: AppTheme.success,
                           ),
                         );
                       }

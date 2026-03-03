@@ -23,10 +23,6 @@ import '../services/realtime_alert_service.dart';
 import '../models/alert.dart';
 import 'alert_detail_screen.dart';
 import 'risk_alerts_screen.dart';
-import '../services/realtime_alert_service.dart';
-import '../models/alert.dart';
-import 'alert_detail_screen.dart';
-import 'risk_alerts_screen.dart';
 import 'geofence_management_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
@@ -247,7 +243,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to toggle exam mode: ${result['error']}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -385,7 +381,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     labelStyle: const TextStyle(color: Colors.white54),
                     prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
                     filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
+                    fillColor: AppTheme.surfaceDark,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -416,7 +412,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     labelStyle: const TextStyle(color: Colors.white54),
                     prefixIcon: const Icon(Icons.person, color: Colors.white54),
                     filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
+                    fillColor: AppTheme.surfaceDark,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -448,7 +444,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     labelStyle: const TextStyle(color: Colors.white54),
                     prefixIcon: const Icon(Icons.calendar_today, color: Colors.white54),
                     filled: true,
-                    fillColor: const Color(0xFF0F0F0F),
+                    fillColor: AppTheme.surfaceDark,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -557,7 +553,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(result['message'] ?? 'Child added successfully!'),
-                            backgroundColor: Colors.green,
+                            backgroundColor: AppTheme.success,
                           ),
                         );
                         // Only reload the children list, not all dashboard data
@@ -585,7 +581,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(result['error'] ?? 'Failed to add child'),
-                            backgroundColor: Colors.red,
+                            backgroundColor: AppTheme.error,
                           ),
                         );
                       }
@@ -637,7 +633,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppTheme.surfaceDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1674,7 +1670,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
           width: double.infinity,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: const Color(0xFF151515),
+            color: AppTheme.card,
             borderRadius: BorderRadius.circular(18),
           ),
           child: const Row(
@@ -3324,7 +3320,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Please enter a time limit'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.error,
                   ),
                 );
                 return;
@@ -3335,7 +3331,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Please enter a valid number'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.error,
                   ),
                 );
                 return;
@@ -3406,14 +3402,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               ),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed: ${result['error'] ?? 'Unknown error'}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -3892,7 +3888,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF151515),
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -4143,7 +4139,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Request denied'),
-                          backgroundColor: Colors.red,
+                          backgroundColor: AppTheme.error,
                         ),
                       );
                     }
@@ -4377,7 +4373,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                         hintText: 'Type a message...',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: const Color(0xFF0F0F0F),
+                        fillColor: AppTheme.surfaceDark,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
@@ -4414,7 +4410,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('⚠️ Failed to send message. No encryption key found for child.'),
-                                backgroundColor: Colors.red,
+                                backgroundColor: AppTheme.error,
                                 duration: Duration(seconds: 4),
                               ),
                             );
@@ -4463,7 +4459,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F0F0F),
+                color: AppTheme.surfaceDark,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -4493,7 +4489,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                 hintText: 'Enter hours (e.g., 1.5)',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
-                fillColor: const Color(0xFF0F0F0F),
+                fillColor: AppTheme.surfaceDark,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -4529,7 +4525,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Please enter a valid number of hours'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.error,
                   ),
                 );
                 return;
@@ -4553,14 +4549,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                         Text('Granted ${hours}h to ${request.childName}'),
                       ],
                     ),
-                    backgroundColor: Colors.green,
+                    backgroundColor: AppTheme.success,
                   ),
                 );
               } else if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Failed to grant time. Please try again.'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.error,
                   ),
                 );
               }
@@ -4827,7 +4823,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               Text('App removed from exam mode'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
     }
@@ -4915,7 +4911,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               Text('${_getAppNameFromPackage(packageName)} added to exam mode'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
         ),
       );
     }

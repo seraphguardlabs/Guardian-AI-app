@@ -288,18 +288,20 @@ class GuardianAIApp extends StatelessWidget {
           primary: AppTheme.primary,
           secondary: AppTheme.accent,
           surface: AppTheme.surface,
+          error: AppTheme.error,
           onPrimary: Colors.white,
           onSecondary: Colors.white,
           onSurface: Colors.white,
+          onError: Colors.white,
         ),
         useMaterial3: true,
         fontFamily: 'Roboto',
         scaffoldBackgroundColor: AppTheme.background,
         cardTheme: CardThemeData(
-          elevation: 4,
-          color: AppTheme.surface,
+          elevation: 0,
+          color: AppTheme.card,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppTheme.radiusL),
           ),
         ),
         appBarTheme: const AppBarTheme(
@@ -308,47 +310,78 @@ class GuardianAIApp extends StatelessWidget {
           backgroundColor: AppTheme.surface,
           titleTextStyle: TextStyle(
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
         dialogTheme: DialogThemeData(
           backgroundColor: AppTheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusXL)),
         ),
-        snackBarTheme: const SnackBarThemeData(
+        snackBarTheme: SnackBarThemeData(
           backgroundColor: AppTheme.surface,
-          contentTextStyle: TextStyle(color: Colors.white),
+          contentTextStyle: const TextStyle(color: Colors.white),
+          behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+            borderRadius: BorderRadius.circular(AppTheme.radiusM),
           ),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusM)),
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
             elevation: 0,
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white70,
+            side: BorderSide(color: AppTheme.border),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusM)),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.accentBlue,
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: AppTheme.surfaceDark,
           labelStyle: const TextStyle(color: Colors.white60),
+          hintStyle: const TextStyle(color: AppTheme.textHint),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusM),
             borderSide: const BorderSide(color: AppTheme.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusM),
             borderSide: const BorderSide(color: AppTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusM),
             borderSide: const BorderSide(color: AppTheme.primary, width: 2),
           ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: AppTheme.border,
+          thickness: 1,
+          space: 1,
+        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: AppTheme.primary,
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? AppTheme.success : Colors.grey),
+          trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+              ? AppTheme.success.withOpacity(0.4)
+              : Colors.grey.withOpacity(0.3)),
         ),
       ),
       themeMode: ThemeMode.dark,

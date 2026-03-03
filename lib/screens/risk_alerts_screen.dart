@@ -121,11 +121,11 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
   Color _severityColor(AlertSeverity severity) {
     switch (severity) {
       case AlertSeverity.HIGH:
-        return const Color(0xFFFF4F92);
+      return const Color(0xFFFF4F92);
       case AlertSeverity.MEDIUM:
-        return Colors.orange;
+        return AppTheme.warning;
       case AlertSeverity.LOW:
-        return Colors.blue;
+        return AppTheme.accentBlue;
     }
   }
 
@@ -143,9 +143,9 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A0A0F),
+        backgroundColor: AppTheme.background,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -156,20 +156,12 @@ class _RiskAlertsScreenState extends State<RiskAlertsScreen> {
       ),
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0A0A0F),
-              Color(0xFF101722),
-              Color(0xFF0A0A0F),
-            ],
-          ),
+          gradient: AppTheme.darkBgGrad,
         ),
         child: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(
-                  color: Color(0xFFFF4F92),
+                  color: AppTheme.danger,
                 ),
               )
             : _alerts.isEmpty

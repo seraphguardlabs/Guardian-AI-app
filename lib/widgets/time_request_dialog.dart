@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/time_extension_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 
 class TimeRequestDialog extends StatefulWidget {
   final String? packageName;
@@ -108,7 +109,7 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
                 ),
               ],
             ),
-            backgroundColor: success ? Colors.green : Colors.red,
+            backgroundColor: success ? AppTheme.success : AppTheme.error,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -130,7 +131,7 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: AppTheme.error,
       ),
     );
   }
@@ -140,17 +141,15 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
     final timeExtService = context.watch<TimeExtensionService>();
 
     return AlertDialog(
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusXL)),
       title: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF317AF7), Color(0xFF15335C)],
-              ),
-              borderRadius: BorderRadius.circular(8),
+              gradient: AppTheme.accentBlueGrad,
+              borderRadius: BorderRadius.circular(AppTheme.radiusS),
             ),
             child: const Icon(Icons.access_time, color: Colors.white, size: 20),
           ),
@@ -179,12 +178,12 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.border,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.apps, color: Color(0xFF317AF7), size: 20),
+                      const Icon(Icons.apps, color: AppTheme.accentBlue, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -211,16 +210,16 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'e.g., 1.5',
-                  hintStyle: const TextStyle(color: Colors.white30),
+                  hintStyle: const TextStyle(color: AppTheme.textHint),
                   filled: true,
-                  fillColor: const Color(0xFF2A2A2A),
+                  fillColor: AppTheme.border,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
                     borderSide: BorderSide.none,
                   ),
-                  prefixIcon: const Icon(Icons.timer, color: Colors.white54),
+                  prefixIcon: const Icon(Icons.timer, color: AppTheme.textMuted),
                   suffixText: 'hours',
-                  suffixStyle: const TextStyle(color: Colors.white54),
+                  suffixStyle: const TextStyle(color: AppTheme.textMuted),
                 ),
               ),
               const SizedBox(height: 16),
@@ -235,11 +234,11 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'Tell your parent why you need extra time...',
-                  hintStyle: const TextStyle(color: Colors.white30),
+                  hintStyle: const TextStyle(color: AppTheme.textHint),
                   filled: true,
-                  fillColor: const Color(0xFF2A2A2A),
+                  fillColor: AppTheme.border,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
                     borderSide: BorderSide.none,
                   ),
                 ),
@@ -289,10 +288,10 @@ class _TimeRequestDialogState extends State<TimeRequestDialog> {
         ElevatedButton(
           onPressed: _isSubmitting ? null : _submitRequest,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF317AF7),
+            backgroundColor: AppTheme.accentBlue,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
             ),
           ),
           child: _isSubmitting

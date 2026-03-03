@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/time_extension_service.dart';
 import '../services/encryption_service.dart';
 import '../utils/preferences_manager.dart';
+import '../utils/app_theme.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({super.key});
@@ -133,7 +134,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ],
         ),
-        backgroundColor: Color(0xFF7C3AED),
+        backgroundColor: AppTheme.accentPurple,
         duration: Duration(seconds: 3),
       ),
     );
@@ -230,7 +231,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['error'] ?? 'Failed to load tasks'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
     }
@@ -274,7 +275,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               ),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -282,7 +283,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Task status updated.'),
-          backgroundColor: Colors.green,
+          backgroundColor: AppTheme.success,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -294,9 +295,9 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppTheme.surface,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -315,7 +316,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Color(0xFF1A3C8B),
+                  color: AppTheme.primary,
                 ),
               ),
             ),
@@ -325,8 +326,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         onRefresh: () async {
           await Future.wait([_loadTasks(), _loadRewardRequests()]);
         },
-        color: const Color(0xFF7C3AED),
-        backgroundColor: const Color(0xFF1A1A1A),
+        color: AppTheme.accentPurple,
+        backgroundColor: AppTheme.surface,
         child: Column(
         children: [
           // Stats banner
@@ -335,7 +336,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+                colors: [AppTheme.primary, AppTheme.primaryDeep],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -375,7 +376,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           Expanded(
             child: _loading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF1A3C8B)),
+                    child: CircularProgressIndicator(color: AppTheme.primary),
                   )
                 : _tasks.isEmpty
                     ? Center(
@@ -471,10 +472,10 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF1A3C8B) : Colors.transparent,
+          color: isSelected ? AppTheme.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? const Color(0xFF1A3C8B) : Colors.white24,
+            color: isSelected ? AppTheme.primary : Colors.white24,
             width: 1.5,
           ),
         ),
@@ -499,7 +500,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         decoration: BoxDecoration(
           gradient: task.isCompleted
               ? const LinearGradient(
-                  colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
+                  colors: [AppTheme.primary, AppTheme.primaryDeep],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 )
@@ -728,7 +729,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           BoxShadow(
             color: isCompleted
                 ? const Color(0xFFFBBF24).withOpacity(0.12)
-                : const Color(0xFF7C3AED).withOpacity(0.15),
+                : AppTheme.accentPurple.withOpacity(0.15),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -947,7 +948,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _updating ? null : () => _completeRewardTask(req),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C3AED),
+                            backgroundColor: AppTheme.accentPurple,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
