@@ -142,6 +142,11 @@ class MainActivity: FlutterActivity() {
                         result.error("INVALID_ARGS", "Restrictions required", null)
                     }
                 }
+                "updateDailyLimitExceeded" -> {
+                    val exceeded = call.argument<Boolean>("exceeded") ?: false
+                    MonitoringService.updateDailyLimitExceeded(this, exceeded)
+                    result.success(true)
+                }
                 else -> {
                     result.notImplemented()
                 }

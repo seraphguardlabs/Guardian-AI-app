@@ -96,6 +96,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   Future<void> _completeRewardTask(Map<String, dynamic> request) async {
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefs.getChildHash() ?? '';
     // task_id can be int or String depending on server version
     final rawId = request['task_id'];
     final int? taskId = rawId is int
@@ -110,34 +111,64 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       return;
     }
 
-    // ── Save locally only — do NOT call the backend completeTask() endpoint
-    // because the server auto-approves the time extension upon task completion.
-    // Instead, mark it locally as "done" so the UI reflects the child's intent,
-    // and let the parent decide when to approve the time extension. ──
-    await prefs.markRewardTaskLocallyDone(taskId);
+    if (childHash.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: child profile not found'), backgroundColor: Colors.red),
+      );
+      return;
+    }
 
-    setState(() {
-      // Update the in-memory map so the card rebuilds immediately
-      request['is_task_completed_locally'] = true;
-    });
+    setState(() => _updating = true);
+
+    // Call the backend API so the server marks the task as complete and
+    // notifies the guardian via WebSocket. The guardian then decides
+    // whether to approve the time extension.
+    final result = await _apiService.completeTask(
+      childHash: childHash,
+      taskId: taskId,
+    );
 
     if (!mounted) return;
+    setState(() => _updating = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 20),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text('Marked as done! Your parent will review and approve your time.'),
-            ),
-          ],
+    if (result['success'] == true) {
+      // Also save locally so the UI updates immediately
+      await prefs.markRewardTaskLocallyDone(taskId);
+      setState(() {
+        request['is_task_completed'] = true;
+        request['is_task_completed_locally'] = true;
+      });
+
+      // Check if the time extension was auto-approved by the server
+      final autoApproved = result['time_extension_approved'];
+      final message = autoApproved != null
+          ? 'Task done — time extension approved! 🎉'
+          : 'Task done! Your parent has been notified to approve your time.';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(message)),
+            ],
+          ),
+          backgroundColor: autoApproved != null ? AppTheme.success : AppTheme.accentPurple,
+          duration: const Duration(seconds: 3),
         ),
-        backgroundColor: AppTheme.accentPurple,
-        duration: Duration(seconds: 3),
-      ),
-    );
+      );
+
+      // Refresh reward requests to reflect the new status
+      _loadRewardRequests();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error'] ?? 'Failed to complete task'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 
   @override

@@ -41,4 +41,20 @@ class BackgroundMonitoringService {
       return false;
     }
   }
+
+  /// Update the daily-limit-exceeded flag in the background service.
+  /// When true, the native monitoring service blocks ALL non-essential apps
+  /// regardless of per-app limits.
+  static Future<bool> updateDailyLimitExceeded(bool exceeded) async {
+    try {
+      final result = await platform.invokeMethod('updateDailyLimitExceeded', {
+        'exceeded': exceeded,
+      });
+      debugPrint('⏰ Updated daily limit exceeded flag in background service: $exceeded');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ Failed to update daily limit exceeded flag: $e');
+      return false;
+    }
+  }
 }

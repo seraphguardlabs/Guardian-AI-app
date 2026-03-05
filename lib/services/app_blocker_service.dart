@@ -10,12 +10,33 @@ class AppBlockerService extends ChangeNotifier {
   Map<String, double> _restrictedApps = {}; // packageName -> allowed hours
   Map<String, int> _appUsage = {}; // packageName -> seconds used today
   bool _isMonitoring = false;
+  bool _dailyLimitExceeded = false;
+  
+  /// Packages that should never be blocked (essentials)
+  static const Set<String> whitelistedPackages = {
+    'com.example.guardian_ai',
+  };
+
+  /// Keywords that identify essential system apps (phone, messages, camera)
+  static const List<String> _essentialKeywords = [
+    'dialer', 'phone', 'telecom',
+    'mms', 'sms', 'messag',
+    'camera',
+  ];
   
   Map<String, double> get restrictedApps => Map.unmodifiable(_restrictedApps);
   Map<String, int> get appUsage => Map.unmodifiable(_appUsage);
   bool get isMonitoring => _isMonitoring;
+  bool get dailyLimitExceeded => _dailyLimitExceeded;
   
-  /// Update restricted apps from server
+  /// Check if a package is an essential app that should never be blocked
+  static bool isEssentialPackage(String packageName) {
+    if (whitelistedPackages.contains(packageName)) return true;
+    final lower = packageName.toLowerCase();
+    return _essentialKeywords.any((kw) => lower.contains(kw));
+  }
+
+  /// Update restricted apps from server (per-app limits only)
   void updateRestrictions(Map<String, dynamic> restrictedApps) {
     _restrictedApps.clear();
     
@@ -36,6 +57,15 @@ class AppBlockerService extends ChangeNotifier {
     // Start monitoring if we have restrictions
     if (_restrictedApps.isNotEmpty && !_isMonitoring) {
       startMonitoring();
+    }
+  }
+
+  /// Set daily limit exceeded flag (separate from per-app restrictions)
+  void setDailyLimitExceeded(bool exceeded) {
+    if (_dailyLimitExceeded != exceeded) {
+      _dailyLimitExceeded = exceeded;
+      debugPrint('⏰ Daily limit exceeded flag: $exceeded');
+      notifyListeners();
     }
   }
   
@@ -120,21 +150,34 @@ class AppBlockerService extends ChangeNotifier {
         return;
       }
       
-      // Check if app is restricted
-      if (!_restrictedApps.containsKey(foregroundApp)) {
-        return; // Not restricted
+      // Never block essential apps (Guardian AI, phone, messages, camera)
+      if (isEssentialPackage(foregroundApp)) {
+        return;
       }
-      
-      final allowedHours = _restrictedApps[foregroundApp]!;
-      final usedSeconds = _appUsage[foregroundApp] ?? 0;
-      final usedHours = usedSeconds / 3600.0;
-      
-      debugPrint('📱 Checking: $foregroundApp | Allowed: ${allowedHours}h | Used: ${usedHours.toStringAsFixed(2)}h');
-      
-      // Check if time limit exceeded
-      if (usedHours >= allowedHours) {
-        debugPrint('⛔ BLOCKING: $foregroundApp exceeded time limit!');
+
+      // ── Per-app limit check ──
+      // Only block this specific app if IT has exceeded ITS own limit.
+      if (_restrictedApps.containsKey(foregroundApp)) {
+        final allowedHours = _restrictedApps[foregroundApp]!;
+        final usedSeconds = _appUsage[foregroundApp] ?? 0;
+        final usedHours = usedSeconds / 3600.0;
+        
+        debugPrint('📱 Checking: $foregroundApp | Allowed: ${allowedHours}h | Used: ${usedHours.toStringAsFixed(2)}h');
+        
+        if (usedHours >= allowedHours) {
+          debugPrint('⛔ BLOCKING: $foregroundApp exceeded its per-app time limit!');
+          await _blockApp(foregroundApp);
+          return;
+        }
+      }
+
+      // ── Daily limit check ──
+      // If the global daily limit flag is set, block any non-essential
+      // foreground app regardless of its per-app limit.
+      if (_dailyLimitExceeded) {
+        debugPrint('⛔ BLOCKING: $foregroundApp — daily screen-time limit exceeded!');
         await _blockApp(foregroundApp);
+        return;
       }
       
     } catch (e) {

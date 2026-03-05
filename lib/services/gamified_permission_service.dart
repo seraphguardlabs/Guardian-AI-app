@@ -45,10 +45,21 @@ class GamifiedPermissionService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final prefs = await PreferencesManager.init();
+      final email = prefs.getParentEmail() ?? '';
+      final password = prefs.getParentPassword() ?? '';
+
       final url = Uri.parse('${Config.baseUrl}/api/mobile/time-extension-requests/suggested-tasks/');
       debugPrint('🎲 Fetching suggested tasks from $url');
 
-      final response = await http.get(url);
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email': email,
+          'X-Password': password,
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

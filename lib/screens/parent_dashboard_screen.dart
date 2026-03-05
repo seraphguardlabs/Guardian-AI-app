@@ -3942,12 +3942,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF4B6E),
+                  color: request.status == 'task_completed'
+                      ? const Color(0xFF16A34A)
+                      : request.status == 'task_assigned'
+                          ? const Color(0xFF5B4A9F)
+                          : const Color(0xFFFF4B6E),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Pending',
-                  style: TextStyle(
+                child: Text(
+                  request.status == 'task_completed'
+                      ? 'Task Done'
+                      : request.status == 'task_assigned'
+                          ? 'Task Assigned'
+                          : 'Pending',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -3997,170 +4005,235 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               ),
             ),
           ],
-          if (request.taskId != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: request.isTaskCompleted 
-                    ? const Color(0xFF064E3B) 
-                    : const Color(0xFF2E1065),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: request.isTaskCompleted
-                      ? const Color(0xFF34D399)
-                      : const Color(0xFF8B5CF6),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                   Icon(
-                     request.isTaskCompleted ? Icons.check_circle : Icons.pending,
-                     color: request.isTaskCompleted ? Colors.greenAccent : Colors.deepPurpleAccent,
-                     size: 20,
-                   ),
-                   const SizedBox(width: 8),
-                   Expanded(
-                     child: Column(
-                       crossAxisAlignment: CrossAxisAlignment.start,
-                       children: [
-                         Text(
-                           request.taskTitle ?? 'Task Assigned',
-                           style: const TextStyle(
-                             color: Colors.white,
-                             fontWeight: FontWeight.bold,
-                             fontSize: 13,
-                           ),
-                         ),
-                         Text(
-                           request.isTaskCompleted
-                               ? 'Task completed by child'
-                               : 'Waiting for child to complete',
-                           style: TextStyle(
-                             color: request.isTaskCompleted ? Colors.greenAccent.withOpacity(0.8) : Colors.white60,
-                             fontSize: 11,
-                           ),
-                         ),
-                       ],
-                     ),
-                   ),
-                ],
-              ),
-            ),
-          ],
           const SizedBox(height: 16),
 
-          // Primary CTA: Assign a task (gamified route)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                final scaffoldMsg = ScaffoldMessenger.of(context);
-                final gamifiedService =
-                    Provider.of<GamifiedPermissionService>(context, listen: false);
-                final result = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) {
-                    return ChangeNotifierProvider<GamifiedPermissionService>.value(
-                      value: gamifiedService,
-                      child: AssignTaskDialog(request: request),
-                    );
-                  },
-                );
-                if (result == true && mounted) {
-                  scaffoldMsg.showSnackBar(
-                    SnackBar(
-                      content: Row(
+          // Show different CTAs depending on whether a task is already assigned
+          if (request.status == 'task_assigned' || request.status == 'task_completed') ...[            // Task is already assigned — show task info and approve/deny
+            if (request.taskId != null) ...[              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: request.isTaskCompleted || request.status == 'task_completed'
+                      ? const Color(0xFF064E3B)
+                      : const Color(0xFF2E1065),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: request.isTaskCompleted || request.status == 'task_completed'
+                        ? const Color(0xFF34D399)
+                        : const Color(0xFF8B5CF6),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      request.isTaskCompleted || request.status == 'task_completed'
+                          ? Icons.check_circle
+                          : Icons.pending,
+                      color: request.isTaskCompleted || request.status == 'task_completed'
+                          ? Colors.greenAccent
+                          : Colors.deepPurpleAccent,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.check_circle, color: Colors.white, size: 18),
-                          const SizedBox(width: 10),
-                          Text('Task assigned to ${request.childName}! ✅'),
+                          Text(
+                            request.taskTitle ?? 'Task Assigned',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            request.isTaskCompleted || request.status == 'task_completed'
+                                ? 'Task completed by child — ready to approve'
+                                : 'Waiting for child to complete',
+                            style: TextStyle(
+                              color: request.isTaskCompleted || request.status == 'task_completed'
+                                  ? Colors.greenAccent.withOpacity(0.8)
+                                  : Colors.white60,
+                              fontSize: 11,
+                            ),
+                          ),
                         ],
                       ),
-                      backgroundColor: const Color(0xFF5B4A9F),
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 3),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                  );
-                  // Refresh the pending requests list
-                  service.refreshPendingRequests();
-                  service.fetchPendingRequests();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5B4A9F),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 4,
+                  ],
+                ),
               ),
-              icon: const Icon(Icons.videogame_asset, size: 18),
-              label: const Text(
-                'Assign a Task to Unlock Time',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              const SizedBox(height: 12),
+            ],
+            // Approve / Deny buttons
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await _showGrantTimeDialog(context, request, service);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    icon: const Icon(Icons.check_circle, size: 16),
+                    label: const Text(
+                      'Approve',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      final success = await service.respondToRequest(
+                        requestId: request.requestId,
+                        action: 'deny',
+                      );
+                      if (success && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Request denied'),
+                            backgroundColor: AppTheme.error,
+                          ),
+                        );
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFE4E6),
+                      foregroundColor: const Color(0xFFBE123C),
+                      side: BorderSide.none,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'Decline',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[            // No task assigned yet — show assign task CTA
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final scaffoldMsg = ScaffoldMessenger.of(context);
+                  final gamifiedService =
+                      Provider.of<GamifiedPermissionService>(context, listen: false);
+                  final result = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) {
+                      return ChangeNotifierProvider<GamifiedPermissionService>.value(
+                        value: gamifiedService,
+                        child: AssignTaskDialog(request: request),
+                      );
+                    },
+                  );
+                  if (result == true && mounted) {
+                    scaffoldMsg.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                            const SizedBox(width: 10),
+                            Text('Task assigned to ${request.childName}! ✅'),
+                          ],
+                        ),
+                        backgroundColor: const Color(0xFF5B4A9F),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 3),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                    // Refresh the pending requests list
+                    service.refreshPendingRequests();
+                    service.fetchPendingRequests();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5B4A9F),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 4,
+                ),
+                icon: const Icon(Icons.videogame_asset, size: 18),
+                label: const Text(
+                  'Assign a Task to Unlock Time',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          // Secondary row: Approve directly or Decline
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await _showGrantTimeDialog(context, request, service);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF16A34A),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+            // Secondary row: Approve directly or Decline
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await _showGrantTimeDialog(context, request, service);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'Approve Directly',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                     ),
                   ),
-                  child: const Text(
-                    'Approve Directly',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () async {
-                    final success = await service.respondToRequest(
-                      requestId: request.requestId,
-                      action: 'deny',
-                    );
-                    if (success && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Request denied'),
-                          backgroundColor: AppTheme.error,
-                        ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      final success = await service.respondToRequest(
+                        requestId: request.requestId,
+                        action: 'deny',
                       );
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFE4E6),
-                    foregroundColor: const Color(0xFFBE123C),
-                    side: BorderSide.none,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                      if (success && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Request denied'),
+                            backgroundColor: AppTheme.error,
+                          ),
+                        );
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFE4E6),
+                      foregroundColor: const Color(0xFFBE123C),
+                      side: BorderSide.none,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'Decline',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                     ),
                   ),
-                  child: const Text(
-                    'Decline',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -4533,10 +4606,32 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               
               Navigator.pop(context);
               
-              // Use the dedicated approve endpoint
-              final success = await service.approveRequest(
+              // Encrypt an approval response for the child
+              String? responseEncrypted;
+              try {
+                final prefs = await PreferencesManager.init();
+                final email = prefs.getParentEmail() ?? '';
+                final password = prefs.getParentPassword() ?? '';
+                final apiService = Provider.of<ApiService>(context, listen: false);
+                final childPublicKey = await apiService.getChildPublicKey(
+                  parentEmail: email,
+                  parentPassword: password,
+                  childHash: request.childHash,
+                );
+                if (childPublicKey != null && childPublicKey.isNotEmpty) {
+                  responseEncrypted = EncryptionService.instance.encryptWithPublicKey(
+                    'Approved ${hours}h for ${request.getAppName()}',
+                    childPublicKey,
+                  );
+                }
+              } catch (_) {}
+
+              // Use the respond endpoint with action approve
+              final success = await service.respondToRequest(
                 requestId: request.requestId,
+                action: 'approve',
                 grantedHours: hours,
+                responseEncrypted: responseEncrypted,
               );
               
               if (success && mounted) {

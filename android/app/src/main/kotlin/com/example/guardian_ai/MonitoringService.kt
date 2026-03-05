@@ -21,7 +21,11 @@ class MonitoringService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val PREFS_NAME = "guardian_ai_prefs"
         private const val KEY_RESTRICTIONS = "restrictions"
+        private const val KEY_DAILY_LIMIT_EXCEEDED = "daily_limit_exceeded"
         private const val CHECK_INTERVAL = 3000L // Check every 3 seconds
+
+        // Essential packages that must never be blocked (phone, messages, camera, guardian)
+        private val ESSENTIAL_KEYWORDS = listOf("dialer", "phone", "telecom", "mms", "sms", "messag", "camera")
         
         fun start(context: Context) {
             val intent = Intent(context, MonitoringService::class.java)
@@ -40,6 +44,17 @@ class MonitoringService : Service() {
         fun updateRestrictions(context: Context, restrictionsJson: String) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit().putString(KEY_RESTRICTIONS, restrictionsJson).apply()
+        }
+
+        fun updateDailyLimitExceeded(context: Context, exceeded: Boolean) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_DAILY_LIMIT_EXCEEDED, exceeded).apply()
+        }
+
+        private fun isEssentialPackage(packageName: String): Boolean {
+            if (packageName == "com.example.guardian_ai") return true
+            val lower = packageName.lowercase()
+            return ESSENTIAL_KEYWORDS.any { lower.contains(it) }
         }
     }
     
@@ -90,24 +105,39 @@ class MonitoringService : Service() {
                 foregroundApp.contains("launcher")) {
                 return
             }
-            
-            // Get restrictions from SharedPreferences
-            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val restrictionsJson = prefs.getString(KEY_RESTRICTIONS, null) ?: return
-            
-            val restrictions = JSONObject(restrictionsJson)
-            if (!restrictions.has(foregroundApp)) {
-                return // Not restricted
+
+            // Never block essential apps (phone, messages, camera)
+            if (isEssentialPackage(foregroundApp)) {
+                return
             }
             
-            val allowedHours = restrictions.getDouble(foregroundApp)
-            val usedSeconds = getAppUsageToday(foregroundApp)
-            val usedHours = usedSeconds / 3600.0
-            
-            android.util.Log.d("MonitoringService", "Checking $foregroundApp: ${usedHours}h / ${allowedHours}h")
-            
-            if (usedHours >= allowedHours) {
-                android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - limit exceeded!")
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+            // ── Per-app limit check ──
+            // Only block this specific app if IT has exceeded ITS own limit.
+            val restrictionsJson = prefs.getString(KEY_RESTRICTIONS, null)
+            if (restrictionsJson != null) {
+                val restrictions = JSONObject(restrictionsJson)
+                if (restrictions.has(foregroundApp)) {
+                    val allowedHours = restrictions.getDouble(foregroundApp)
+                    val usedSeconds = getAppUsageToday(foregroundApp)
+                    val usedHours = usedSeconds / 3600.0
+                    
+                    android.util.Log.d("MonitoringService", "Checking $foregroundApp: ${usedHours}h / ${allowedHours}h")
+                    
+                    if (usedHours >= allowedHours) {
+                        android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - per-app limit exceeded!")
+                        blockApp(foregroundApp)
+                        return
+                    }
+                }
+            }
+
+            // ── Daily limit check ──
+            // If global daily limit is exceeded, block any non-essential app.
+            val dailyLimitExceeded = prefs.getBoolean(KEY_DAILY_LIMIT_EXCEEDED, false)
+            if (dailyLimitExceeded) {
+                android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - daily screen-time limit exceeded!")
                 blockApp(foregroundApp)
             }
         } catch (e: Exception) {

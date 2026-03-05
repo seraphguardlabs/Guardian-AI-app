@@ -244,6 +244,55 @@ class TimeExtensionService extends ChangeNotifier {
             _notify();
           }
 
+        case 'task_completed':
+          // Child completed the assigned task — update the matching request
+          // so the parent UI can show the "Approve" button.
+          final d = data['data'] as Map<String, dynamic>? ?? data;
+          final reqId = d['request_id'] as int?;
+          debugPrint('📋 TimeExt Guardian: Task completed for request #$reqId');
+          if (reqId != null) {
+            final idx = _pendingRequests.indexWhere((r) => r.requestId == reqId);
+            if (idx != -1) {
+              // Replace the request with an updated copy that reflects task completion
+              final old = _pendingRequests[idx];
+              _pendingRequests[idx] = TimeExtensionRequest(
+                requestId: old.requestId,
+                childHash: old.childHash,
+                childName: d['child_name'] as String? ?? old.childName,
+                appDomain: old.appDomain,
+                requestedHours: old.requestedHours,
+                messageEncrypted: old.messageEncrypted,
+                status: 'task_completed',
+                grantedHours: old.grantedHours,
+                created: old.created,
+                respondedAt: old.respondedAt,
+                guardianId: old.guardianId,
+                guardianName: old.guardianName,
+                responseEncrypted: old.responseEncrypted,
+                assignedTask: old.assignedTask != null
+                    ? AssignedTask(
+                        id: old.assignedTask!.id,
+                        title: old.assignedTask!.title,
+                        description: old.assignedTask!.description,
+                        isCompleted: true,
+                        completedAt: DateTime.now(),
+                      )
+                    : null,
+                taskId: old.taskId,
+                taskTitle: d['task_title'] as String? ?? old.taskTitle,
+                taskDescription: old.taskDescription,
+                isTaskCompleted: true,
+              );
+            } else {
+              // Request not in our list yet — re-fetch from server
+              fetchPendingRequests();
+            }
+          }
+          _newRequestStreamCtrl.add(
+            TimeExtensionRequest.fromJson(d),
+          );
+          _notify();
+
         case 'error':
           debugPrint(
               '❌ TimeExt Guardian server error: ${data['message']}');
@@ -461,7 +510,7 @@ class TimeExtensionService extends ChangeNotifier {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final list = (data['requests'] as List? ?? []);
         // Include task_completed so parent sees tasks done by child and can approve
-        const activeStatuses = {'pending', 'task_assigned', 'task_completed', ''};
+        const activeStatuses = {'pending', 'task_assigned', 'task_completed'};
         _pendingRequests = list
             .map((r) => TimeExtensionRequest.fromJson(r as Map<String, dynamic>))
             .where((r) => activeStatuses.contains(r.status))
@@ -632,8 +681,19 @@ class TimeExtensionService extends ChangeNotifier {
         case 'time_extension_response':
           final d = data['data'] as Map<String, dynamic>? ?? {};
           final status = d['status'] as String? ?? '';
-          _lastChildWsResponse =
-              'Request ${status == 'approved' ? 'approved' : 'denied'}';
+          final grantedHrs = d['granted_hours'];
+          final appDomain = d['app_domain'] as String? ?? '';
+          if (status == 'approved') {
+            _lastChildWsResponse =
+                'Request approved! ${grantedHrs ?? ''} hours granted'
+                '${appDomain.isNotEmpty ? ' for $appDomain' : ''}';
+            debugPrint('✅ TimeExt Child: Approved – $grantedHrs h for $appDomain');
+          } else {
+            _lastChildWsResponse = 'Request denied';
+            debugPrint('❌ TimeExt Child: Request denied');
+          }
+          // Emit on the stream so child_screen can re-fetch restrictions
+          _childResponseStreamCtrl.add(data);
           _notify();
 
         case 'task_assigned':
