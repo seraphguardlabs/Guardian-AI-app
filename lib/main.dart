@@ -1,22 +1,37 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
-import 'screens/login_screen.dart';
-import 'screens/dashboard_screen.dart';
-import 'screens/child_screen.dart';
-import 'screens/profile_selection_screen.dart';
-import 'screens/parent_dashboard_screen.dart';
-import 'services/api_service.dart';
-import 'services/location_service.dart';
-import 'services/websocket_service.dart';
-import 'services/app_blocker_service.dart';
-import 'services/chat_service.dart';
-import 'services/time_extension_service.dart';
-import 'services/encryption_service.dart';
-import 'utils/preferences_manager.dart';
-import 'utils/app_theme.dart';
-import 'services/geofence_service.dart';
-import 'services/gamified_permission_service.dart';
+import 'package:uuid/uuid.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import 'package:guardian_ai/screens/login_screen.dart';
+import 'package:guardian_ai/screens/dashboard_screen.dart';
+import 'package:guardian_ai/screens/child_screen.dart';
+import 'package:guardian_ai/screens/profile_selection_screen.dart';
+import 'package:guardian_ai/screens/parent_dashboard_screen.dart';
+
+import 'package:guardian_ai/services/api_service.dart';
+import 'package:guardian_ai/services/location_service.dart';
+import 'package:guardian_ai/services/websocket_service.dart';
+import 'package:guardian_ai/services/app_blocker_service.dart';
+import 'package:guardian_ai/services/chat_service.dart';
+import 'package:guardian_ai/services/time_extension_service.dart';
+import 'package:guardian_ai/services/encryption_service.dart';
+import 'package:guardian_ai/services/geofence_service.dart';
+import 'package:guardian_ai/services/gamified_permission_service.dart';
+import 'package:guardian_ai/services/gemma_content_analyzer.dart';
+import 'package:guardian_ai/services/gemma_manager.dart';
+
+import 'package:guardian_ai/utils/preferences_manager.dart';
+import 'package:guardian_ai/utils/app_theme.dart';
+import 'package:guardian_ai/models/content_analysis_result.dart';
 
 
 void main() async {
@@ -31,16 +46,18 @@ void main() async {
   final prefsManager = await PreferencesManager.init();
   print('✅ PreferencesManager initialized');
   
-  // Initialize Encryption Service (generate/load RSA keys)
-  print('🔐 Initializing Encryption Service...');
   try {
     await EncryptionService.instance.initialize();
     print('✅ Encryption Service initialized successfully');
   } catch (e, stackTrace) {
     print('❌ ENCRYPTION SERVICE INITIALIZATION FAILED!');
     print('Error: $e');
-    print('Stack trace: $stackTrace');
   }
+  
+  // Initialize Background Service
+  print('🔄 Initializing Background Service...');
+  await initializeBackgroundService();
+  print('✅ Background Service initialized');
   
   print('═══════════════════════════════════════════════════════');
 
@@ -106,14 +123,14 @@ class _InitializationScreenState extends State<InitializationScreen>
       final prefsManager = await PreferencesManager.init();
       
       setState(() => _status = 'Initializing encryption...');
-      await Future.delayed(const Duration(milliseconds: 100));
-      
       try {
         await EncryptionService.instance.initialize();
       } catch (e) {
         print('Encryption init failed: $e');
-        // Continue anyway
       }
+      
+      setState(() => _status = 'Initializing AI safety...');
+      await GemmaManager.instance.initialize();
       
       // Successfully initialized - navigate to main app
       if (mounted) {
@@ -392,10 +409,125 @@ class GuardianAIApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/child': (context) => const ChildScreen(),
         '/parent_dashboard': (context) => const ParentDashboardScreen(),
-        // '/ai_test': (context) => const AITestScreen(), // Removed
-        // '/assign_task': (context) => const AssignTaskScreen(), // Removed due to dependency on child object
-
       },
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Background Service Setup
+// ---------------------------------------------------------------------------
+
+Future<void> initializeBackgroundService() async {
+  final service = FlutterBackgroundService();
+
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'monitoring_foreground',
+    'Guardian AI Monitoring',
+    description: 'Running safety analysis in background',
+    importance: Importance.low,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: 'monitoring_foreground',
+      initialNotificationTitle: 'Guardian AI Active',
+      initialNotificationContent: 'Monitoring child activity',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async => true;
+
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((_) => service.setAsForegroundService());
+    service.on('setAsBackground').listen((_) => service.setAsBackgroundService());
+  }
+
+  service.on('stopService').listen((_) => service.stopSelf());
+
+  final notifications = FlutterLocalNotificationsPlugin();
+  
+  const platform = MethodChannel('com.example.guardian_ai/screen_capture');
+  InferenceModel? model;
+  GemmaContentAnalyzer? analyzer;
+
+  // Background monitoring interval (5 seconds)
+  Timer.periodic(const Duration(seconds: 5), (timer) async {
+    try {
+      if (analyzer == null) {
+        // Ensure Gemma is initialized in this isolate
+        await GemmaManager.instance.initialize();
+        if (await GemmaManager.instance.isModelInstalled() && FlutterGemma.hasActiveModel()) {
+          model = await FlutterGemma.getActiveModel(
+            maxTokens: 1024,
+            supportImage: true,
+          );
+          analyzer = GemmaContentAnalyzer(model!);
+          debugPrint('[BG] Gemma model initialized in isolate');
+        } else {
+          debugPrint('[BG] Model not ready yet, skipping capture');
+          return;
+        }
+      }
+
+      // Capture screen via native channel
+      final Map? captureResult = await platform.invokeMethod('captureScreen');
+      if (captureResult == null) return;
+
+      final String path = captureResult['path'];
+      final Uint8List imageBytes = await File(path).readAsBytes();
+      
+      // Zero-cache policy: delete immediately after reading
+      await File(path).delete();
+
+      if (analyzer != null) {
+        final result = await analyzer!.analyzeImage(imageBytes);
+        
+        if (result.riskScore >= 70) {
+          // Trigger Notification
+          await notifications.show(
+            999,
+            '🚨 Safety Alert: ${result.riskScore}% Risk',
+            'Detected ${result.categories.entries.where((e) => e.value > 0.5).map((e) => e.key).join(", ")} content.',
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'alerts_channel',
+                'Safety Alerts',
+                importance: Importance.high,
+                priority: Priority.high,
+                ticker: 'Safety Alert',
+              ),
+            ),
+          );
+
+          // Notify UI
+          service.invoke('alertGenerated', result.toJson());
+        }
+      }
+    } catch (e) {
+      debugPrint('[BG] Error in monitoring cycle: $e');
+    }
+  });
 }

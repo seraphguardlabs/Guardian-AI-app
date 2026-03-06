@@ -24,6 +24,7 @@ import '../models/restrictions_data.dart';
 import '../models/task.dart';
 import '../widgets/app_bottom_nav.dart';
 import 'my_tasks_screen.dart';
+import '../services/gemma_manager.dart';
 
 import '../widgets/time_request_dialog.dart';
 
@@ -69,6 +70,14 @@ class _ChildScreenState extends State<ChildScreen>
   bool _locationLoading        = false;
   bool _usageLoading           = false;
   bool _accessibilityLoading   = false;
+  
+  // AI Model status
+  bool _modelInstalled = false;
+  bool _isDownloadingModel = false;
+  double _downloadProgress = 0.0;
+  String _modelStatus = '';
+  StreamSubscription? _modelStatusSub;
+  StreamSubscription? _modelProgressSub;
 
   @override
   void initState() {
@@ -85,8 +94,31 @@ class _ChildScreenState extends State<ChildScreen>
 
     // ⚠️  Do NOT start any service or load any data until permissions pass.
     // Everything is gated through _initPermissionGate().
-    WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initPermissionGate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initPermissionGate();
+      _initModelStatus();
+    });
+  }
+  
+  void _initModelStatus() async {
+    final installed = await GemmaManager.instance.isModelInstalled();
+    setState(() {
+      _modelInstalled = installed;
+      _modelStatus = installed ? 'Installed' : 'Not installed';
+    });
+    
+    _modelStatusSub = GemmaManager.instance.statusStream.listen((status) {
+      if (mounted) setState(() => _modelStatus = status);
+    });
+    
+    _modelProgressSub = GemmaManager.instance.progressStream.listen((progress) {
+      if (mounted) {
+        setState(() {
+          _downloadProgress = progress;
+          _isDownloadingModel = progress > 0 && progress < 1.0;
+        });
+      }
+    });
   }
 
   // ── Permission gate ──────────────────────────────────────────────────────
@@ -95,12 +127,18 @@ class _ChildScreenState extends State<ChildScreen>
   /// (e.g. user comes back from System Settings).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _awaitingPermissions) {
-      _checkAllPermissions().then((_) {
-        if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
-          if (mounted) setState(() => _awaitingPermissions = false);
-          _startServicesAndLoad();
-        }
+    if (state == AppLifecycleState.resumed) {
+      if (_awaitingPermissions) {
+        _checkAllPermissions().then((_) {
+          if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
+            if (mounted) setState(() => _awaitingPermissions = false);
+            _startServicesAndLoad();
+          }
+        });
+      }
+      // Also re-check model status
+      GemmaManager.instance.isModelInstalled().then((installed) {
+        if (mounted) setState(() => _modelInstalled = installed);
       });
     }
   }
@@ -262,18 +300,23 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Future<void> _refreshData() async {
-    await Future.wait([
-      _getScreenTime(),
-      _initUsageStats(),
-      _getBrowserHistory(),
-      _loadPendingTasks(),
-      _fetchRestrictions(),
-    ]);
-    if (mounted) {
-      setState(() => _loading = false);
+    try {
+      await Future.wait([
+        _getScreenTime(),
+        _initUsageStats(),
+        _getBrowserHistory(),
+        _loadPendingTasks(),
+        _fetchRestrictions(),
+      ]).timeout(const Duration(seconds: 15));
+    } catch (e) {
+      debugPrint('⚠️ Error or timeout in _refreshData: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+      _sendDataViaWebSocket();
+      if (!_entranceController.isCompleted) _entranceController.forward();
     }
-    _sendDataViaWebSocket();
-    if (!_entranceController.isCompleted) _entranceController.forward();
   }
 
   Future<void> _initializeWebSocket() async {
@@ -2262,6 +2305,64 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   // ───────────────── Permission setup screen ─────────────────
+  
+  void _showRestrictedHelp() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2C),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Restricted Setting', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'On Android 13+, accessibility services are restricted for sideloaded apps. '
+          'To enable it:\n\n'
+          '1. Open device Settings > Apps > Guardian AI\n'
+          '2. Tap the 3 dots (top right) and "Allow restricted settings"\n'
+          '3. Return here and enable the service.',
+          style: TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got It', style: TextStyle(color: Color(0xFF317AF7))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startModelDownload() {
+    if (_isDownloadingModel || _modelInstalled) return;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2C),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Download AI Model', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Guardian AI requires the Gemma model (approx 2.9GB) to monitor screen activity for safety. '
+          'Please ensure you are on Wi-Fi.',
+          style: TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              GemmaManager.instance.initialize();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF317AF7)),
+            child: const Text('Start Download'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildPermissionSetup() {
     final allGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted;
@@ -2349,6 +2450,47 @@ class _ChildScreenState extends State<ChildScreen>
                 loading: _accessibilityLoading,
                 onTap: _requestAccessibility,
               ),
+              if (!_accessibilityGranted)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 18),
+                  child: GestureDetector(
+                    onTap: _showRestrictedHelp,
+                    child: const Text(
+                      'Help: "Restricted setting" error?',
+                      style: TextStyle(
+                        color: Color(0xFF317AF7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 14),
+              // -- Model Status Row --
+              _buildPermRow(
+                icon: Icons.psychology_rounded,
+                title: 'AI Safety Model',
+                subtitle: _isDownloadingModel 
+                    ? 'Downloading: ${(_downloadProgress * 100).toStringAsFixed(1)}%' 
+                    : (_modelInstalled ? 'Model Ready' : 'Tap to Download Model (2.9 GB)'),
+                granted: _modelInstalled,
+                loading: _isDownloadingModel,
+                onTap: _startModelDownload,
+              ),
+              if (_isDownloadingModel)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 18, right: 18),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _downloadProgress,
+                      backgroundColor: Colors.white10,
+                      color: const Color(0xFF317AF7),
+                      minHeight: 6,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 32),
               // Continue / Re-check button
               SizedBox(

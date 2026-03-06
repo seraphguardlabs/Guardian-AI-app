@@ -1,5 +1,9 @@
 # guardian_ai
 
+## Current Status (Integra Branch)
+- **fixes**: fixes ui stagnant error in child screen after permissions
+- **errors**: app force closing after the permissions page, model not downloading after clicking button, so unable to access and test child device with the model
+
 A new Flutter project.
 
 ## Getting Started
