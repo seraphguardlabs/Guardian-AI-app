@@ -85,6 +85,11 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection"
             android:stopWithTask="false" />
+            
+        <!-- Flutter Background Service Override to satisfy Android 14 service type constraints -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location" />
 
         <!-- Boot receiver: restarts location service after device reboot -->
         <receiver

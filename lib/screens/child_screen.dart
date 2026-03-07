@@ -108,14 +108,28 @@ class _ChildScreenState extends State<ChildScreen>
     });
     
     _modelStatusSub = GemmaManager.instance.statusStream.listen((status) {
-      if (mounted) setState(() => _modelStatus = status);
+      if (mounted) {
+        setState(() {
+          _modelStatus = status;
+          if (status.contains('Failed') || status.contains('Error')) {
+            _isDownloadingModel = false;
+            _downloadProgress = 0.0;
+          }
+        });
+      }
     });
     
     _modelProgressSub = GemmaManager.instance.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
-          _downloadProgress = progress;
-          _isDownloadingModel = progress < 1.0;
+           // Only update progress if we didn't just fail
+          if (!_modelStatus.contains('Failed') && !_modelStatus.contains('Error')) {
+            _downloadProgress = progress;
+            if (progress >= 1.0) {
+               _isDownloadingModel = false;
+               _modelInstalled = true;
+            }
+          }
         });
       }
     });
@@ -2486,7 +2500,11 @@ class _ChildScreenState extends State<ChildScreen>
                 title: 'AI Safety Model',
                 subtitle: _isDownloadingModel 
                     ? 'Downloading: ${(_downloadProgress * 100).toStringAsFixed(1)}%' 
-                    : (_modelInstalled ? 'Model Ready' : 'Tap to Download Model (2.9 GB)'),
+                    : (_modelInstalled 
+                        ? 'Model Ready' 
+                        : (_modelStatus.contains('Failed') || _modelStatus.contains('Error') 
+                            ? '$_modelStatus\nTap to Retry' 
+                            : 'Tap to Download Model (2.9 GB)')),
                 granted: _modelInstalled,
                 loading: _isDownloadingModel,
                 onTap: _startModelDownload,

@@ -58,14 +58,9 @@ class MainActivity: FlutterActivity() {
                     )
                 }
             } else if (call.method == "isAccessibilityServiceEnabled") {
-                val enabledServices = Settings.Secure.getString(
-                    contentResolver,
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                ) ?: ""
-                val target = "${packageName}/com.example.guardian_ai.WebsiteMonitoringService"
-                val isEnabled = enabledServices
-                    .split(":")
-                    .any { it.equals(target, ignoreCase = true) }
+                val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+                val enabledServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                val isEnabled = enabledServices.any { it.resolveInfo.serviceInfo.name.contains("WebsiteMonitoringService", ignoreCase = true) }
                 result.success(isEnabled)
             } else if (call.method == "openAccessibilitySettings") {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)

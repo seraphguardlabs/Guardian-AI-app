@@ -6,9 +6,9 @@ class GemmaManager {
   static final GemmaManager instance = GemmaManager._Internal();
   GemmaManager._Internal();
 
-  // Model ID for Gemma 2B IT (standard for this plugin version)
-  static const String modelId = 'gemma-2b-it-cpu-int4.bin';
-  static const String hfToken = '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';
+  // Model ID for Gemma 3n (Stable version from mobile-ai)
+  static const String modelId = 'gemma-3n-E2B-it-int4.task';
+  static const String hfToken = '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';
 
   final _statusController = StreamController<String>.broadcast();
   final _progressController = StreamController<double>.broadcast();
@@ -61,8 +61,8 @@ class GemmaManager {
       _statusController.add('Downloading Model...');
       debugPrint('🤖 GemmaManager: Starting download from HuggingFace...');
       
-      // The URL for the model on HuggingFace
-      final url = 'https://huggingface.co/google/gemma-2b-it-cpu-int4/resolve/main/$modelId';
+      // The URL for the gemma-3n model on HuggingFace
+      final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
       
       // Use the modern installation builder
       await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
