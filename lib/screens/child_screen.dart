@@ -115,7 +115,7 @@ class _ChildScreenState extends State<ChildScreen>
       if (mounted) {
         setState(() {
           _downloadProgress = progress;
-          _isDownloadingModel = progress > 0 && progress < 1.0;
+          _isDownloadingModel = progress < 1.0;
         });
       }
     });
@@ -2363,6 +2363,10 @@ class _ChildScreenState extends State<ChildScreen>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
+              setState(() {
+                _isDownloadingModel = true;
+                _downloadProgress = 0.0;
+              });
               GemmaManager.instance.downloadModel();
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF317AF7)),
