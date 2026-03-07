@@ -51,3 +51,4 @@ app.*.map.json
 assets/models/bert_predatory.onnx.data
 Guardian_AI_Mobile_Package.zip
 extracted_models/
+.env

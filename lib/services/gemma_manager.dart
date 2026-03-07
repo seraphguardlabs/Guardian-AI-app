@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class GemmaManager {
   static final GemmaManager instance = GemmaManager._Internal();
@@ -8,7 +9,9 @@ class GemmaManager {
 
   // Model ID for Gemma 3n (Stable version from mobile-ai)
   static const String modelId = 'gemma-3n-E2B-it-int4.task';
-  static const String hfToken = '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';
+  
+  // Read token from .env file
+  static String get hfToken => dotenv.env['hfToken'] ?? '';
 
   final _statusController = StreamController<String>.broadcast();
   final _progressController = StreamController<double>.broadcast();

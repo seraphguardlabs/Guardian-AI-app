@@ -59,6 +59,7 @@ dependencies:
   flutter_background_service_android: ^6.2.2
   flutter_local_notifications: ^17.2.1+2
   dio: ^5.9.1
+  flutter_dotenv: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -93,6 +94,7 @@ flutter:
   assets:
     - resources/robot.png
     - assets/images/
+    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

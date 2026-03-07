@@ -10,6 +10,7 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:guardian_ai/screens/login_screen.dart';
 import 'package:guardian_ai/screens/dashboard_screen.dart';
@@ -36,6 +37,7 @@ import 'package:guardian_ai/models/content_analysis_result.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   
   print('═══════════════════════════════════════════════════════');
   print('🚀 GUARDIAN AI APP STARTING...');
@@ -459,6 +461,7 @@ Future<bool> onIosBackground(ServiceInstance service) async => true;
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
 
   if (service is AndroidServiceInstance) {
     service.on('setAsForeground').listen((_) => service.setAsForegroundService());
