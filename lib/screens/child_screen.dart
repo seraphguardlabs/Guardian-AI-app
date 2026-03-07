@@ -227,15 +227,24 @@ class _ChildScreenState extends State<ChildScreen>
 
   /// Called only after all permissions are confirmed.  Mirrors what initState
   /// previously did immediately (and unsafely).
-  void _startServicesAndLoad() {
+  void _startServicesAndLoad() async {
     if (!mounted) return;
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     prefs.setViewMode('child');
     prefs.setLastRoute('/child');
 
     // Start native foreground services — safe now that permissions exist
-    BackgroundMonitoringService.start();
-    LocationBackgroundService.start();
+    try {
+      await BackgroundMonitoringService.start();
+    } catch (e) {
+      debugPrint('❌ Error starting BackgroundMonitoringService: $e');
+    }
+    
+    try {
+      await LocationBackgroundService.start();
+    } catch (e) {
+      debugPrint('❌ Error starting LocationBackgroundService: $e');
+    }
 
     // Start data loading
     _refreshData();
@@ -2354,7 +2363,7 @@ class _ChildScreenState extends State<ChildScreen>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              GemmaManager.instance.initialize();
+              GemmaManager.instance.downloadModel();
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF317AF7)),
             child: const Text('Start Download'),

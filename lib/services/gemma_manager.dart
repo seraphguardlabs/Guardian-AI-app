@@ -8,7 +8,7 @@ class GemmaManager {
 
   // Model ID for Gemma 2B IT (standard for this plugin version)
   static const String modelId = 'gemma-2b-it-cpu-int4.bin';
-  static const String hfToken = 'YOUR_HF_TOKEN_HERE';
+  static const String hfToken = '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';
 
   final _statusController = StreamController<String>.broadcast();
   final _progressController = StreamController<double>.broadcast();
