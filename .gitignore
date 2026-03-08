@@ -46,6 +46,9 @@ app.*.map.json
 
 # Local package overrides - now tracked for fixed forks
 
+# Environment files
+.env
+
 # Large ML model files or archives (exceed GitHub's 100MB limit)
 # These files must be handled via Git LFS or shared separately
 assets/models/bert_predatory.onnx.data

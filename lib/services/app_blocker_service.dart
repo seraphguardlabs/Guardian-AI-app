@@ -164,16 +164,27 @@ class AppBlockerService extends ChangeNotifier {
         
         debugPrint('📱 Checking: $foregroundApp | Allowed: ${allowedHours}h | Used: ${usedHours.toStringAsFixed(2)}h');
         
-        if (usedHours >= allowedHours) {
-          debugPrint('⛔ BLOCKING: $foregroundApp exceeded its per-app time limit!');
+        if (allowedHours == 0) {
+          // 0 hours = fully blocked (no usage allowed at all)
+          debugPrint('⛔ BLOCKING: $foregroundApp — fully blocked (0h allowed)');
           await _blockApp(foregroundApp);
           return;
         }
+        
+        if (usedHours >= allowedHours) {
+          debugPrint('⛔ BLOCKING: $foregroundApp exceeded its per-app time limit! (${usedHours.toStringAsFixed(2)}h >= ${allowedHours}h)');
+          await _blockApp(foregroundApp);
+          return;
+        }
+        
+        // App is in restriction list but has NOT exceeded its limit — allow it
+        debugPrint('✅ ALLOWING: $foregroundApp — within per-app limit (${usedHours.toStringAsFixed(2)}h / ${allowedHours}h)');
+        return;
       }
 
       // ── Daily limit check ──
-      // If the global daily limit flag is set, block any non-essential
-      // foreground app regardless of its per-app limit.
+      // Only applies to apps NOT in the per-app restriction list.
+      // Apps with per-app limits are handled above.
       if (_dailyLimitExceeded) {
         debugPrint('⛔ BLOCKING: $foregroundApp — daily screen-time limit exceeded!');
         await _blockApp(foregroundApp);
@@ -248,6 +259,10 @@ class AppBlockerService extends ChangeNotifier {
     }
     
     final allowedHours = _restrictedApps[packageName]!;
+    
+    // 0 hours = fully blocked
+    if (allowedHours == 0) return true;
+    
     final usedSeconds = _appUsage[packageName] ?? 0;
     final usedHours = usedSeconds / 3600.0;
     

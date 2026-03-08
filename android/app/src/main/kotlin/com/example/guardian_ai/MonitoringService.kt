@@ -22,6 +22,7 @@ class MonitoringService : Service() {
         private const val PREFS_NAME = "guardian_ai_prefs"
         private const val KEY_RESTRICTIONS = "restrictions"
         private const val KEY_DAILY_LIMIT_EXCEEDED = "daily_limit_exceeded"
+        private const val KEY_DAILY_LIMIT_DATE = "daily_limit_date"
         private const val CHECK_INTERVAL = 3000L // Check every 3 seconds
 
         // Essential packages that must never be blocked (phone, messages, camera, guardian)
@@ -117,6 +118,17 @@ class MonitoringService : Service() {
             
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+            // ── Reset stale daily-limit flag at the start of each new day ──
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            val savedDate = prefs.getString(KEY_DAILY_LIMIT_DATE, "")
+            if (savedDate != today) {
+                prefs.edit()
+                    .putBoolean(KEY_DAILY_LIMIT_EXCEEDED, false)
+                    .putString(KEY_DAILY_LIMIT_DATE, today)
+                    .apply()
+                android.util.Log.d("MonitoringService", "New day detected ($today) — reset dailyLimitExceeded flag")
+            }
+
             // ── Per-app limit check ──
             // Only block this specific app if IT has exceeded ITS own limit.
             val restrictionsJson = prefs.getString(KEY_RESTRICTIONS, null)
@@ -127,18 +139,32 @@ class MonitoringService : Service() {
                     val usedSeconds = getAppUsageToday(foregroundApp)
                     val usedHours = usedSeconds / 3600.0
                     
-                    android.util.Log.d("MonitoringService", "Checking $foregroundApp: ${usedHours}h / ${allowedHours}h")
+                    android.util.Log.d("MonitoringService",
+                        "Per-app check: $foregroundApp | used=${String.format("%.2f", usedHours)}h / allowed=${allowedHours}h")
                     
-                    if (usedHours >= allowedHours) {
-                        android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - per-app limit exceeded!")
+                    if (allowedHours == 0.0) {
+                        // 0 hours = fully blocked (no usage allowed at all)
+                        android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - fully blocked (0h allowed)")
                         blockApp(foregroundApp)
                         return
                     }
+                    
+                    if (usedHours >= allowedHours) {
+                        android.util.Log.w("MonitoringService",
+                            "BLOCKING $foregroundApp - per-app limit exceeded! (${String.format("%.2f", usedHours)}h >= ${allowedHours}h)")
+                        blockApp(foregroundApp)
+                        return
+                    }
+                    
+                    // App is in restriction list but has NOT exceeded its limit — allow it
+                    android.util.Log.d("MonitoringService", "ALLOWING $foregroundApp - within per-app limit")
+                    return
                 }
             }
 
             // ── Daily limit check ──
-            // If global daily limit is exceeded, block any non-essential app.
+            // Only applies to apps NOT in the per-app restriction list.
+            // Apps with per-app limits are handled above.
             val dailyLimitExceeded = prefs.getBoolean(KEY_DAILY_LIMIT_EXCEEDED, false)
             if (dailyLimitExceeded) {
                 android.util.Log.w("MonitoringService", "BLOCKING $foregroundApp - daily screen-time limit exceeded!")
@@ -194,6 +220,13 @@ class MonitoringService : Service() {
         return null
     }
     
+    /**
+     * Get today's foreground usage for [packageName] in seconds.
+     *
+     * Uses event-based calculation (ACTIVITY_RESUMED / PAUSED) as the
+     * primary source because it is scoped exactly to today's events.
+     * Falls back to queryUsageStats only when no events are available.
+     */
     private fun getAppUsageToday(packageName: String): Long {
         try {
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -205,6 +238,51 @@ class MonitoringService : Service() {
             val startTime = calendar.timeInMillis
             val endTime = System.currentTimeMillis()
 
+            // ── Primary: event-based calculation (most accurate) ──
+            val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+            if (usageEvents != null) {
+                var lastForeground: Long? = null
+                var totalMs = 0L
+                var hasEvents = false
+                val event = android.app.usage.UsageEvents.Event()
+
+                while (usageEvents.hasNextEvent()) {
+                    usageEvents.getNextEvent(event)
+                    val pkg = event.packageName ?: continue
+                    if (pkg != packageName) continue
+
+                    hasEvents = true
+                    when (event.eventType) {
+                        android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED,
+                        android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                            lastForeground = event.timeStamp
+                        }
+                        android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED,
+                        android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED,
+                        android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                            val startTs = lastForeground
+                            if (startTs != null && event.timeStamp >= startTs) {
+                                totalMs += (event.timeStamp - startTs)
+                            }
+                            lastForeground = null
+                        }
+                    }
+                }
+
+                // Account for the current session if the app is still in foreground
+                if (lastForeground != null && endTime > lastForeground!!) {
+                    totalMs += (endTime - lastForeground!!)
+                }
+
+                if (hasEvents) {
+                    val seconds = totalMs / 1000
+                    android.util.Log.d("MonitoringService",
+                        "Usage (events) for $packageName: ${seconds}s (${String.format("%.2f", seconds / 3600.0)}h)")
+                    return seconds
+                }
+            }
+
+            // ── Fallback: queryUsageStats when events are unavailable ──
             val stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
                 startTime,
@@ -213,43 +291,11 @@ class MonitoringService : Service() {
 
             val appStat = stats?.firstOrNull { it.packageName == packageName }
             if (appStat != null && appStat.totalTimeInForeground > 0) {
-                return appStat.totalTimeInForeground / 1000
+                val seconds = appStat.totalTimeInForeground / 1000
+                android.util.Log.d("MonitoringService",
+                    "Usage (stats fallback) for $packageName: ${seconds}s (${String.format("%.2f", seconds / 3600.0)}h)")
+                return seconds
             }
-
-            val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
-            if (usageEvents == null) return 0
-
-            var lastForeground: Long? = null
-            var totalMs = 0L
-            val event = android.app.usage.UsageEvents.Event()
-
-            while (usageEvents.hasNextEvent()) {
-                usageEvents.getNextEvent(event)
-                val pkg = event.packageName ?: continue
-                if (pkg != packageName) continue
-
-                when (event.eventType) {
-                    android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED,
-                    android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                        lastForeground = event.timeStamp
-                    }
-                    android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED,
-                    android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED,
-                    android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                        val startTs = lastForeground
-                        if (startTs != null && event.timeStamp >= startTs) {
-                            totalMs += (event.timeStamp - startTs)
-                        }
-                        lastForeground = null
-                    }
-                }
-            }
-
-            if (lastForeground != null && endTime > lastForeground!!) {
-                totalMs += (endTime - lastForeground!!)
-            }
-
-            return totalMs / 1000 // Convert to seconds
         } catch (e: Exception) {
             android.util.Log.e("MonitoringService", "Error getting app usage: ${e.message}")
         }

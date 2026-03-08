@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/child.dart';
@@ -1724,6 +1725,656 @@ class ApiService {
       return {'success': false, 'error': err['message'] ?? 'Failed'};
     } catch (e) {
       debugPrint('❌ fetchChildTimeRequests error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // Document Vault APIs
+  // ─────────────────────────────────────────────────────────
+
+  /// List folders in the document vault.
+  Future<Map<String, dynamic>> listVaultFolders({
+    required String email,
+    required String password,
+    String? childHash,
+  }) async {
+    var uri = Uri.parse('$baseUrl/api/vault/folders/');
+    if (childHash != null) {
+      uri = uri.replace(queryParameters: {'child_hash': childHash});
+    }
+
+    try {
+      final response = await http.get(uri, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ listVaultFolders error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Create a folder in the document vault.
+  Future<Map<String, dynamic>> createVaultFolder({
+    required String email,
+    required String password,
+    required String name,
+    String? childHash,
+    String? description,
+    String? color,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/folders/create/');
+
+    final body = <String, dynamic>{'name': name};
+    if (childHash != null) body['child_hash'] = childHash;
+    if (description != null) body['description'] = description;
+    if (color != null) body['color'] = color;
+
+    try {
+      final response = await http.post(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ createVaultFolder error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// List documents in the vault, optionally filtered by folder or child.
+  Future<Map<String, dynamic>> listVaultDocuments({
+    required String email,
+    required String password,
+    int? folderId,
+    String? childHash,
+    String? category,
+  }) async {
+    final params = <String, String>{};
+    if (folderId != null) params['folder_id'] = folderId.toString();
+    if (childHash != null) params['child_hash'] = childHash;
+    if (category != null) params['category'] = category;
+
+    final uri = Uri.parse('$baseUrl/api/vault/documents/')
+        .replace(queryParameters: params.isNotEmpty ? params : null);
+
+    try {
+      final response = await http.get(uri, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ listVaultDocuments error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Upload a document to the vault.
+  Future<Map<String, dynamic>> uploadVaultDocument({
+    required String email,
+    required String password,
+    required String filePath,
+    required String fileName,
+    int? folderId,
+    String? childHash,
+    String? description,
+    String? displayName,
+    List<String>? tags,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/upload/');
+
+    try {
+      final request = http.MultipartRequest('POST', url);
+      request.headers['X-Email'] = email;
+      request.headers['X-Password'] = password;
+
+      // Determine MIME type from extension
+      final ext = fileName.split('.').last.toLowerCase();
+      final mimeMap = <String, String>{
+        'pdf': 'application/pdf',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'txt': 'text/plain',
+      };
+      final mimeStr = mimeMap[ext] ?? 'application/octet-stream';
+      final parts = mimeStr.split('/');
+
+      request.files.add(await http.MultipartFile.fromPath(
+        'file',
+        filePath,
+        filename: fileName,
+        contentType: MediaType(parts[0], parts[1]),
+      ));
+
+      if (folderId != null) request.fields['folder_id'] = folderId.toString();
+      if (childHash != null) request.fields['child_hash'] = childHash;
+      if (description != null) request.fields['description'] = description;
+      if (displayName != null) request.fields['display_name'] = displayName;
+      if (tags != null) request.fields['tags'] = jsonEncode(tags);
+
+      final streamed = await request.send();
+      final responseBody = await streamed.stream.bytesToString();
+
+      if (streamed.statusCode == 200 || streamed.statusCode == 201) {
+        final data = jsonDecode(responseBody) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+
+      debugPrint('❌ Upload failed (${streamed.statusCode}): $responseBody');
+      return {'success': false, 'error': 'HTTP ${streamed.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ uploadVaultDocument error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Delete a document from the vault.
+  Future<Map<String, dynamic>> deleteVaultDocument({
+    required String email,
+    required String password,
+    required int documentId,
+    bool permanent = false,
+  }) async {
+    var url = Uri.parse('$baseUrl/api/vault/documents/$documentId/delete/');
+    if (permanent) {
+      url = url.replace(queryParameters: {'permanent': 'true'});
+    }
+
+    try {
+      final response = await http.delete(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ deleteVaultDocument error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Get a download URL for a vault document.
+  Future<Map<String, dynamic>> getVaultDocumentDownloadUrl({
+    required String email,
+    required String password,
+    required int documentId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/download/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ getVaultDocumentDownloadUrl error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Get document details.
+  Future<Map<String, dynamic>> getVaultDocumentDetails({
+    required String email,
+    required String password,
+    required int documentId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ getVaultDocumentDetails error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Update a vault document (star, rename, move, etc).
+  Future<Map<String, dynamic>> updateVaultDocument({
+    required String email,
+    required String password,
+    required int documentId,
+    String? displayName,
+    String? description,
+    List<String>? tags,
+    bool? isStarred,
+    int? folderId,
+    bool setFolderNull = false,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/update/');
+
+    final body = <String, dynamic>{};
+    if (displayName != null) body['display_name'] = displayName;
+    if (description != null) body['description'] = description;
+    if (tags != null) body['tags'] = tags;
+    if (isStarred != null) body['is_starred'] = isStarred;
+    if (folderId != null) body['folder_id'] = folderId;
+    if (setFolderNull) body['folder_id'] = null;
+
+    try {
+      final response = await http.patch(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ updateVaultDocument error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Restore a trashed vault document.
+  Future<Map<String, dynamic>> restoreVaultDocument({
+    required String email,
+    required String password,
+    required int documentId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/restore/');
+
+    try {
+      final response = await http.post(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ restoreVaultDocument error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Get folder details with subfolders, documents, and breadcrumb.
+  Future<Map<String, dynamic>> getVaultFolderDetails({
+    required String email,
+    required String password,
+    required int folderId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/folders/$folderId/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ getVaultFolderDetails error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Update a vault folder.
+  Future<Map<String, dynamic>> updateVaultFolder({
+    required String email,
+    required String password,
+    required int folderId,
+    String? name,
+    String? description,
+    String? color,
+    bool? isStarred,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/folders/$folderId/update/');
+
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (description != null) body['description'] = description;
+    if (color != null) body['color'] = color;
+    if (isStarred != null) body['is_starred'] = isStarred;
+
+    try {
+      final response = await http.patch(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ updateVaultFolder error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Delete a vault folder and all its contents.
+  Future<Map<String, dynamic>> deleteVaultFolder({
+    required String email,
+    required String password,
+    required int folderId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/folders/$folderId/delete/');
+
+    try {
+      final response = await http.delete(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ deleteVaultFolder error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// List trashed vault documents.
+  Future<Map<String, dynamic>> listVaultTrash({
+    required String email,
+    required String password,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/trash/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ listVaultTrash error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Empty the vault trash permanently.
+  Future<Map<String, dynamic>> emptyVaultTrash({
+    required String email,
+    required String password,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/trash/empty/');
+
+    try {
+      final response = await http.post(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ emptyVaultTrash error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Create a share link for a vault document.
+  Future<Map<String, dynamic>> createVaultShareLink({
+    required String email,
+    required String password,
+    required int documentId,
+    int? expiresHours,
+    int? maxDownloads,
+    String? linkPassword,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/share/');
+
+    final body = <String, dynamic>{};
+    if (expiresHours != null) body['expires_hours'] = expiresHours;
+    if (maxDownloads != null) body['max_downloads'] = maxDownloads;
+    if (linkPassword != null && linkPassword.isNotEmpty) body['password'] = linkPassword;
+
+    try {
+      final response = await http.post(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ createVaultShareLink error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// List share links for a vault document.
+  Future<Map<String, dynamic>> listVaultShareLinks({
+    required String email,
+    required String password,
+    required int documentId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/documents/$documentId/shares/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ listVaultShareLinks error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Delete a vault share link.
+  Future<Map<String, dynamic>> deleteVaultShareLink({
+    required String email,
+    required String password,
+    required int linkId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/shares/$linkId/delete/');
+
+    try {
+      final response = await http.delete(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ deleteVaultShareLink error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Search the vault for documents and folders.
+  Future<Map<String, dynamic>> searchVault({
+    required String email,
+    required String password,
+    required String query,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/search/')
+        .replace(queryParameters: {'q': query});
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ searchVault error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Bulk move documents to a folder.
+  Future<Map<String, dynamic>> bulkMoveVaultDocuments({
+    required String email,
+    required String password,
+    required List<int> documentIds,
+    int? folderId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/bulk/move/');
+
+    final body = <String, dynamic>{'document_ids': documentIds};
+    if (folderId != null) body['folder_id'] = folderId;
+
+    try {
+      final response = await http.post(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ bulkMoveVaultDocuments error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Bulk delete documents.
+  Future<Map<String, dynamic>> bulkDeleteVaultDocuments({
+    required String email,
+    required String password,
+    required List<int> documentIds,
+    bool permanent = false,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/bulk/delete/');
+
+    final body = <String, dynamic>{
+      'document_ids': documentIds,
+      'permanent': permanent,
+    };
+
+    try {
+      final response = await http.post(url,
+          headers: {
+            'X-Email': email,
+            'X-Password': password,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ bulkDeleteVaultDocuments error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  /// Get the storage quota for the vault.
+  Future<Map<String, dynamic>> getVaultQuota({
+    required String email,
+    required String password,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/vault/quota/');
+
+    try {
+      final response = await http.get(url, headers: {
+        'X-Email': email,
+        'X-Password': password,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'error': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      debugPrint('❌ getVaultQuota error: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }

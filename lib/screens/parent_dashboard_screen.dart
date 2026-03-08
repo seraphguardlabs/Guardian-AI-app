@@ -24,6 +24,7 @@ import '../models/alert.dart';
 import 'alert_detail_screen.dart';
 import 'risk_alerts_screen.dart';
 import 'geofence_management_screen.dart';
+import 'document_vault_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -2566,7 +2567,16 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                   ),
                 ),
                 onPressed: () {
-                  // TODO: wire up certificate upload flow
+                  if (_selectedChild == null) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DocumentVaultScreen(
+                        childHash: _selectedChild!.childHash,
+                        childName: _selectedChild!.fullName,
+                      ),
+                    ),
+                  );
                 },
                 child: const Text(
                   'Upload',
