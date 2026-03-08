@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/app_logger.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -252,8 +253,19 @@ class _ChildScreenState extends State<ChildScreen>
     // Start native foreground services — safe now that permissions exist
     try {
       await BackgroundMonitoringService.start();
+      AppLogger.log('✅ BackgroundMonitoringService started');
     } catch (e) {
       AppLogger.log('❌ Error starting BackgroundMonitoringService: $e');
+    }
+    
+    try {
+      final service = FlutterBackgroundService();
+      if (!await service.isRunning()) {
+        await service.startService();
+        AppLogger.log('✅ FlutterBackgroundService started');
+      }
+    } catch (e) {
+      AppLogger.log('❌ Error starting FlutterBackgroundService: $e');
     }
     
     try {
@@ -797,18 +809,15 @@ class _ChildScreenState extends State<ChildScreen>
         AppLogger.log('❌ ScreenMonitoringService initialization failed');
         return;
       }
-
-      // Start screen monitoring (DISABLED)
-      // AppLogger.log('  🚀 Starting screen monitoring...');
-      // final monitoringStarted = await screenMonitoring.startMonitoring();
+      // Start screen monitoring
+      AppLogger.log('  🚀 Starting screen monitoring...');
+      final monitoringStarted = await screenMonitoring.startMonitoring();
       
-      // if (monitoringStarted) {
-      //   AppLogger.log('✅ Monitoring Services initialized and started successfully');
-      // } else {
-      //   AppLogger.log('⚠️  Monitoring Services initialized but not started (permission may be denied)');
-      // }
-      AppLogger.log('✅ Monitoring Services (Screen Capture) Disabled by request');
-
+      if (monitoringStarted) {
+        AppLogger.log('✅ Monitoring Services initialized and started successfully');
+      } else {
+        AppLogger.log('⚠️  Monitoring Services initialized but not started (permission may be denied)');
+      }
       
     } catch (e, stackTrace) {
       AppLogger.log('❌ Error initializing Services: $e');

@@ -24,6 +24,17 @@ class ContentAnalysisResult {
     );
   }
 
+  factory ContentAnalysisResult.fromJson(Map<String, dynamic> json) {
+    return ContentAnalysisResult(
+      riskScore: json['risk_score'] as int? ?? 0,
+      categories: (json['categories'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, (e as num).toDouble()),
+          ) ??
+          {},
+      summary: json['summary'] as String? ?? '',
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'risk_score': riskScore,
         'categories': categories,

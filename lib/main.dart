@@ -11,6 +11,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:guardian_ai/screens/login_screen.dart';
 import 'package:guardian_ai/screens/dashboard_screen.dart';
@@ -513,18 +514,25 @@ void onStart(ServiceInstance service) async {
         }
       }
 
-      // Capture screen via native channel
-      final Map? captureResult = await platform.invokeMethod('captureScreen');
-      if (captureResult == null) return;
-
-      final String path = captureResult['path'];
-      final Uint8List imageBytes = await File(path).readAsBytes();
+      // Read newest screenshot from cache
+      final dir = await getTemporaryDirectory();
+      final screenshotsDir = Directory('${dir.path}/screenshots');
+      if (!screenshotsDir.existsSync()) return;
+      
+      final files = screenshotsDir.listSync().whereType<File>().toList();
+      if (files.isEmpty) return;
+      
+      // Sort to get the newest file
+      files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      final latestScreenshot = files.first;
+      
+      final Uint8List imageBytes = await latestScreenshot.readAsBytes();
       
       // Zero-cache policy: delete immediately after reading
-      await File(path).delete();
+      await latestScreenshot.delete();
 
       if (analyzer != null) {
-        AppLogger.log('[BG] Triggering analysis for screenshot: $path');
+        AppLogger.log('[BG] Triggering analysis for screenshot: ${latestScreenshot.path}');
         final result = await analyzer!.analyzeImage(imageBytes);
         
         if (result.riskScore >= 70) {

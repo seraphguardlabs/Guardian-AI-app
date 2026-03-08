@@ -5,7 +5,8 @@ import '../models/alert.dart';
 import 'websocket_service.dart';
 import 'api_service.dart';
 import '../utils/app_logger.dart';
-
+import 'package:flutter_background_service/flutter_background_service.dart';
+import '../models/content_analysis_result.dart';
 /// Service that manages real-time alerts from multiple sources
 /// Listens to background model detections and WebSocket alerts from parent devices
 /// Provides a unified alerts stream and database persistence
@@ -63,6 +64,30 @@ class RealtimeAlertService {
       // Listen to WebSocket alerts
       _websocketSubscription =
           webSocketService.messages.listen(_onWebSocketMessage);
+          
+      // Listen to Background Service alerts
+      FlutterBackgroundService().on('alertGenerated').listen((event) {
+        if (event != null) {
+          try {
+            _log('🚨 Received alert from background isolate!');
+            final alertResult = ContentAnalysisResult.fromJson(event.cast<String, dynamic>());
+            final alert = Alert(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              timestamp: DateTime.now(),
+              riskScore: alertResult.riskScore,
+              severity: alertResult.riskScore >= 90 ? AlertSeverity.HIGH : AlertSeverity.MEDIUM,
+              summary: 'Detected High Risk Content',
+              contentType: ContentType.IMAGE,
+              childName: 'Child',
+              childHash: _currentChildHash ?? 'unknown',
+              detectedContent: alertResult.categories.toString(),
+            );
+            addAlert(alert);
+          } catch (e) {
+            _log('❌ Error parsing background alert: $e');
+          }
+        }
+      });
 
       _isInitialized = true;
       _log('✅ RealtimeAlertService initialized successfully');
