@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_logger.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -25,6 +26,7 @@ import '../models/task.dart';
 import '../widgets/app_bottom_nav.dart';
 import 'my_tasks_screen.dart';
 import '../services/gemma_manager.dart';
+import 'log_viewer_screen.dart';
 
 import '../widgets/time_request_dialog.dart';
 
@@ -251,13 +253,13 @@ class _ChildScreenState extends State<ChildScreen>
     try {
       await BackgroundMonitoringService.start();
     } catch (e) {
-      debugPrint('❌ Error starting BackgroundMonitoringService: $e');
+      AppLogger.log('❌ Error starting BackgroundMonitoringService: $e');
     }
     
     try {
       await LocationBackgroundService.start();
     } catch (e) {
-      debugPrint('❌ Error starting LocationBackgroundService: $e');
+      AppLogger.log('❌ Error starting LocationBackgroundService: $e');
     }
 
     // Start data loading
@@ -277,7 +279,7 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Future<void> _uploadChildPublicKey() async {
-    debugPrint('🔐 Child Screen: Uploading child public key to server...');
+    AppLogger.log('🔐 Child Screen: Uploading child public key to server...');
     
     // Initialize encryption service if not already done
     if (!EncryptionService.instance.isInitialized) {
@@ -288,7 +290,7 @@ class _ChildScreenState extends State<ChildScreen>
     final childHash = prefs.getChildHash();
     
     if (childHash == null || childHash.isEmpty) {
-      debugPrint('⚠️ Child Screen: No child hash available');
+      AppLogger.log('⚠️ Child Screen: No child hash available');
       return;
     }
     
@@ -300,12 +302,12 @@ class _ChildScreenState extends State<ChildScreen>
       );
       
       if (result['success'] == true) {
-        debugPrint('✅ Child Screen: Child public key uploaded successfully');
+        AppLogger.log('✅ Child Screen: Child public key uploaded successfully');
       } else {
-        debugPrint('❌ Child Screen: Failed to upload child public key: ${result['error']}');
+        AppLogger.log('❌ Child Screen: Failed to upload child public key: ${result['error']}');
       }
     } else {
-      debugPrint('⚠️ Child Screen: No encryption keys available');
+      AppLogger.log('⚠️ Child Screen: No encryption keys available');
     }
   }
 
@@ -332,7 +334,7 @@ class _ChildScreenState extends State<ChildScreen>
         _fetchRestrictions(),
       ]).timeout(const Duration(seconds: 15));
     } catch (e) {
-      debugPrint('⚠️ Error or timeout in _refreshData: $e');
+      AppLogger.log('⚠️ Error or timeout in _refreshData: $e');
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -349,13 +351,13 @@ class _ChildScreenState extends State<ChildScreen>
     if (childHash != null && childHash.isNotEmpty) {
       final wsService = Provider.of<WebSocketService>(context, listen: false);
       await wsService.connect(childHash);
-      debugPrint('🔌 WebSocket connected for child: $childHash');
+      AppLogger.log('🔌 WebSocket connected for child: $childHash');
 
       _wsMessageSubscription = wsService.messages.listen((message) {
         if (message['type'] == 'restrictions_update') {
-          debugPrint('🚫 Received restrictions update via WebSocket');
+          AppLogger.log('🚫 Received restrictions update via WebSocket');
           _fetchRestrictions();
-          debugPrint('🎓 Fetching exam mode after WebSocket restrictions update');
+          AppLogger.log('🎓 Fetching exam mode after WebSocket restrictions update');
           _fetchExamMode(); // Also check exam mode when restrictions update
         }
       });
@@ -370,16 +372,16 @@ class _ChildScreenState extends State<ChildScreen>
           final d = data['data'] as Map<String, dynamic>? ?? {};
           final status = d['status'] as String? ?? '';
           if (status == 'approved') {
-            debugPrint('⏰ Time extension approved — refreshing restrictions');
+            AppLogger.log('⏰ Time extension approved — refreshing restrictions');
             _fetchRestrictions();
           }
         } else if (type == 'task_auto_approved') {
-          debugPrint('🎉 Task completed & auto-approved — refreshing restrictions');
+          AppLogger.log('🎉 Task completed & auto-approved — refreshing restrictions');
           _fetchRestrictions();
         }
       });
     } else {
-      debugPrint('⚠️ No child hash found, skipping WebSocket connection');
+      AppLogger.log('⚠️ No child hash found, skipping WebSocket connection');
     }
   }
 
@@ -388,7 +390,7 @@ class _ChildScreenState extends State<ChildScreen>
     final childHash = prefsManager.getChildHash();
 
     if (childHash == null || childHash.isEmpty) {
-      debugPrint('⚠️ No child hash, skipping restrictions fetch');
+      AppLogger.log('⚠️ No child hash, skipping restrictions fetch');
       return;
     }
 
@@ -409,7 +411,7 @@ class _ChildScreenState extends State<ChildScreen>
       setState(() {
         _restrictions = restrictions;
       });
-      debugPrint('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
+      AppLogger.log('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
 
       // Fetch exam mode to get the combined restrictions
       await _fetchExamMode();
@@ -421,27 +423,27 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Future<void> _fetchExamMode() async {
-    debugPrint('\n🎓 ===== FETCHING EXAM MODE =====');
+    AppLogger.log('\n🎓 ===== FETCHING EXAM MODE =====');
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefsManager.getChildHash();
     final parentEmail = prefsManager.getParentEmail();
     final parentPassword = prefsManager.getParentPassword();
 
-    debugPrint('🎓 Child hash: $childHash');
-    debugPrint('🎓 Parent email available: ${parentEmail?.isNotEmpty ?? false}');
-    debugPrint('🎓 Parent password available: ${parentPassword?.isNotEmpty ?? false}');
+    AppLogger.log('🎓 Child hash: $childHash');
+    AppLogger.log('🎓 Parent email available: ${parentEmail?.isNotEmpty ?? false}');
+    AppLogger.log('🎓 Parent password available: ${parentPassword?.isNotEmpty ?? false}');
 
     if (childHash == null || childHash.isEmpty) {
-      debugPrint('⚠️ No child hash, skipping exam mode fetch');
+      AppLogger.log('⚠️ No child hash, skipping exam mode fetch');
       return;
     }
 
     if (parentEmail == null || parentPassword == null) {
-      debugPrint('⚠️ No parent credentials found, skipping exam mode fetch');
+      AppLogger.log('⚠️ No parent credentials found, skipping exam mode fetch');
       return;
     }
 
-    debugPrint('🎓 Calling API: GET /api/mobile/child/$childHash/exam-mode/');
+    AppLogger.log('🎓 Calling API: GET /api/mobile/child/$childHash/exam-mode/');
     final apiService = Provider.of<ApiService>(context, listen: false);
     final result = await apiService.getExamMode(
       email: parentEmail,
@@ -449,34 +451,34 @@ class _ChildScreenState extends State<ChildScreen>
       childHash: childHash,
     );
 
-    debugPrint('🎓 API Response: $result');
-    debugPrint('🎓 Success: ${result['success']}');
-    debugPrint('🎓 Data: ${result['data']}');
+    AppLogger.log('🎓 API Response: $result');
+    AppLogger.log('🎓 Success: ${result['success']}');
+    AppLogger.log('🎓 Data: ${result['data']}');
 
     if (result['success'] == true && mounted) {
       final data = result['data'] as Map<String, dynamic>;
       final examModeValue = data['exam_mode'] ?? false;
       final examModeAppsList = List<String>.from(data['exam_mode_apps'] ?? []);
       
-      debugPrint('🎓 Parsed exam_mode: $examModeValue (type: ${examModeValue.runtimeType})');
-      debugPrint('🎓 Parsed exam_mode_apps: $examModeAppsList');
+      AppLogger.log('🎓 Parsed exam_mode: $examModeValue (type: ${examModeValue.runtimeType})');
+      AppLogger.log('🎓 Parsed exam_mode_apps: $examModeAppsList');
       
       setState(() {
         _examMode = examModeValue;
         _examModeApps = examModeAppsList;
       });
       
-      debugPrint('✅ EXAM MODE STATE UPDATED:');
-      debugPrint('   - Exam Mode Active: $_examMode');
-      debugPrint('   - Blocked Apps Count: ${_examModeApps.length}');
-      debugPrint('   - Blocked Apps: $_examModeApps');
+      AppLogger.log('✅ EXAM MODE STATE UPDATED:');
+      AppLogger.log('   - Exam Mode Active: $_examMode');
+      AppLogger.log('   - Blocked Apps Count: ${_examModeApps.length}');
+      AppLogger.log('   - Blocked Apps: $_examModeApps');
     } else {
-      debugPrint('❌ Failed to fetch exam mode or widget not mounted');
-      debugPrint('   - Success: ${result['success']}');
-      debugPrint('   - Mounted: $mounted');
-      debugPrint('   - Error: ${result['error']}');
+      AppLogger.log('❌ Failed to fetch exam mode or widget not mounted');
+      AppLogger.log('   - Success: ${result['success']}');
+      AppLogger.log('   - Mounted: $mounted');
+      AppLogger.log('   - Error: ${result['error']}');
     }
-    debugPrint('🎓 ===== EXAM MODE FETCH COMPLETE =====\n');
+    AppLogger.log('🎓 ===== EXAM MODE FETCH COMPLETE =====\n');
   }
 
   Map<String, double> _getEffectiveRestrictions() {
@@ -488,7 +490,7 @@ class _ChildScreenState extends State<ChildScreen>
     if (_examMode) {
       for (final packageName in _examModeApps) {
         effective[packageName] = 0.0;
-        debugPrint('🎓 Exam mode: Blocking $packageName');
+        AppLogger.log('🎓 Exam mode: Blocking $packageName');
       }
     }
     
@@ -499,7 +501,7 @@ class _ChildScreenState extends State<ChildScreen>
     final wsService = Provider.of<WebSocketService>(context, listen: false);
 
     if (!wsService.isConnected) {
-      debugPrint('⚠️ WebSocket not connected, skipping data send');
+      AppLogger.log('⚠️ WebSocket not connected, skipping data send');
       return;
     }
 
@@ -547,7 +549,7 @@ class _ChildScreenState extends State<ChildScreen>
       timezoneName: tzName,
     );
 
-    debugPrint('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
+    AppLogger.log('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
   }
 
   Future<void> _sendLocationData() async {
@@ -566,7 +568,7 @@ class _ChildScreenState extends State<ChildScreen>
         );
 
         if (distance < 5.0) {
-          debugPrint('📍 Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
+          AppLogger.log('📍 Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
           return;
         }
       }
@@ -578,7 +580,7 @@ class _ChildScreenState extends State<ChildScreen>
       );
 
       _lastSentPosition = currentPosition;
-      debugPrint('📍 Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      AppLogger.log('📍 Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
     }
   }
 
@@ -597,7 +599,7 @@ class _ChildScreenState extends State<ChildScreen>
 
     await wsService.sendSiteAccess(logs: logs);
 
-    debugPrint('🌐 Sent ${logs.length} website visits');
+    AppLogger.log('🌐 Sent ${logs.length} website visits');
   }
 
   Future<void> _getScreenTime() async {
@@ -680,52 +682,52 @@ class _ChildScreenState extends State<ChildScreen>
     if (!mounted) return;
     setState(() {
       _dailyLimitHours = dailyLimit;
-      debugPrint('🧒 Child screen daily limit hours: $_dailyLimitHours');
+      AppLogger.log('🧒 Child screen daily limit hours: $_dailyLimitHours');
     });
     // After loading the daily limit, check enforcement with the latest screen time
     _checkAndApplyDailyLimitEnforcement();
   }
 
   Future<void> _loadPendingTasks() async {
-    debugPrint('📋 Child Screen: Loading pending tasks...');
+    AppLogger.log('📋 Child Screen: Loading pending tasks...');
     setState(() => _loadingTasks = true);
 
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash() ?? '';
 
-    debugPrint('📋 ========== CHILD_SCREEN LOAD TASKS ==========');
-    debugPrint('📋 Child Hash: ${childHash.isEmpty ? "EMPTY" : childHash}');
+    AppLogger.log('📋 ========== CHILD_SCREEN LOAD TASKS ==========');
+    AppLogger.log('📋 Child Hash: ${childHash.isEmpty ? "EMPTY" : childHash}');
 
     if (childHash.isEmpty) {
-      debugPrint('📋 ❌ CANNOT LOAD TASKS: Child Hash is empty');
+      AppLogger.log('📋 ❌ CANNOT LOAD TASKS: Child Hash is empty');
       setState(() => _loadingTasks = false);
       return;
     }
 
-    debugPrint('📋 ✅ Child Hash OK, calling API...');
+    AppLogger.log('📋 ✅ Child Hash OK, calling API...');
     final apiService = ApiService();
     final result = await apiService.getMyTasks(
       childHash: childHash,
       completed: 'false', // Only get pending tasks
     );
 
-    debugPrint('📋 API Result success: ${result['success']}');
-    debugPrint('📋 API Result: $result');
+    AppLogger.log('📋 API Result success: ${result['success']}');
+    AppLogger.log('📋 API Result: $result');
 
     if (!mounted) {
-      debugPrint('📋 ⚠️ Widget not mounted, cannot update state');
+      AppLogger.log('📋 ⚠️ Widget not mounted, cannot update state');
       return;
     }
 
     if (result['success'] == true) {
       List<Task> tasks = result['tasks'] as List<Task>;
-      debugPrint('📋 ✅ Received ${tasks.length} tasks from API');
-      debugPrint('📋 Tasks: ${tasks.map((t) => t.id).toList()}');
+      AppLogger.log('📋 ✅ Received ${tasks.length} tasks from API');
+      AppLogger.log('📋 Tasks: ${tasks.map((t) => t.id).toList()}');
       
 
       // Decrypt task titles and descriptions
       final encryptionService = EncryptionService.instance;
-      debugPrint('📋 Starting decryption...');
+      AppLogger.log('📋 Starting decryption...');
       List<Task> decryptedTasks = tasks.map((task) {
         String? decryptedTitle;
         String? decryptedDescription;
@@ -735,7 +737,7 @@ class _ChildScreenState extends State<ChildScreen>
             decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
           }
         } catch (e) {
-          debugPrint('⚠️ Decryption failed for title (Task ${task.id}): $e');
+          AppLogger.log('⚠️ Decryption failed for title (Task ${task.id}): $e');
           decryptedTitle = task.title; // Fallback to raw title
         }
         
@@ -744,11 +746,11 @@ class _ChildScreenState extends State<ChildScreen>
             decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
           }
         } catch (e) {
-          debugPrint('⚠️ Decryption failed for description (Task ${task.id}): $e');
+          AppLogger.log('⚠️ Decryption failed for description (Task ${task.id}): $e');
           decryptedDescription = task.description; // Fallback to raw description
         }
         
-        debugPrint('📋 Task ${task.id}: decrypted=${decryptedTitle != task.title}');
+        AppLogger.log('📋 Task ${task.id}: decrypted=${decryptedTitle != task.title}');
         
         return Task(
           id: task.id,
@@ -762,25 +764,25 @@ class _ChildScreenState extends State<ChildScreen>
         );
       }).toList();
       
-      debugPrint('📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks');
+      AppLogger.log('📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks');
       setState(() {
         _pendingTasks = decryptedTasks;
         _loadingTasks = false;
       });
-      debugPrint('📋 State updated: _pendingTasks.length = ${_pendingTasks.length}');
+      AppLogger.log('📋 State updated: _pendingTasks.length = ${_pendingTasks.length}');
     } else {
-      debugPrint('📋 ❌ Failed to load tasks: ${result['error']}');
+      AppLogger.log('📋 ❌ Failed to load tasks: ${result['error']}');
       setState(() => _loadingTasks = false);
     }
   }
 
   Future<void> _initializeBackgroundServices() async {
-    debugPrint('🤖 Child Screen: Initializing Monitoring Services...');
+    AppLogger.log('🤖 Child Screen: Initializing Monitoring Services...');
     if (!mounted) return;
     
     try {
       // Initialize ScreenMonitoringService
-      debugPrint('  📸 Initializing ScreenMonitoringService...');
+      AppLogger.log('  📸 Initializing ScreenMonitoringService...');
       final prefs = Provider.of<PreferencesManager>(context, listen: false);
       final childHash = prefs.getChildHash() ?? '';
       final childName = 'Child'; 
@@ -792,25 +794,25 @@ class _ChildScreenState extends State<ChildScreen>
       );
       
       if (!monitoringInitialized) {
-        debugPrint('❌ ScreenMonitoringService initialization failed');
+        AppLogger.log('❌ ScreenMonitoringService initialization failed');
         return;
       }
 
       // Start screen monitoring (DISABLED)
-      // debugPrint('  🚀 Starting screen monitoring...');
+      // AppLogger.log('  🚀 Starting screen monitoring...');
       // final monitoringStarted = await screenMonitoring.startMonitoring();
       
       // if (monitoringStarted) {
-      //   debugPrint('✅ Monitoring Services initialized and started successfully');
+      //   AppLogger.log('✅ Monitoring Services initialized and started successfully');
       // } else {
-      //   debugPrint('⚠️  Monitoring Services initialized but not started (permission may be denied)');
+      //   AppLogger.log('⚠️  Monitoring Services initialized but not started (permission may be denied)');
       // }
-      debugPrint('✅ Monitoring Services (Screen Capture) Disabled by request');
+      AppLogger.log('✅ Monitoring Services (Screen Capture) Disabled by request');
 
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Error initializing Services: $e');
-      debugPrint('Stack trace: $stackTrace');
+      AppLogger.log('❌ Error initializing Services: $e');
+      AppLogger.log('Stack trace: $stackTrace');
     }
   }
 
@@ -875,9 +877,9 @@ class _ChildScreenState extends State<ChildScreen>
     BackgroundMonitoringService.updateDailyLimitExceeded(hasExceeded);
 
     if (hasExceeded) {
-      debugPrint('⏰ Daily limit exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+      AppLogger.log('⏰ Daily limit exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
     } else {
-      debugPrint('✅ Daily limit not exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+      AppLogger.log('✅ Daily limit not exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
     }
   }
 
@@ -923,7 +925,7 @@ class _ChildScreenState extends State<ChildScreen>
         });
       }
     } catch (e) {
-      debugPrint('Error fetching usage stats: $e');
+      AppLogger.log('Error fetching usage stats: $e');
     }
   }
 
@@ -1035,7 +1037,7 @@ class _ChildScreenState extends State<ChildScreen>
         });
       }
     } catch (e) {
-      debugPrint('Error fetching browser history: $e');
+      AppLogger.log('Error fetching browser history: $e');
       if (mounted) {
         setState(() {
           _browserHistory = [];
@@ -1251,7 +1253,7 @@ class _ChildScreenState extends State<ChildScreen>
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('🎓 BUILD: Exam Mode = $_examMode, Apps = ${_examModeApps.length}');
+    AppLogger.log('🎓 BUILD: Exam Mode = $_examMode, Apps = ${_examModeApps.length}');
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
@@ -1309,6 +1311,15 @@ class _ChildScreenState extends State<ChildScreen>
                       ],
                     ),
                   ),
+                IconButton(
+                  icon: const Icon(Icons.bug_report, color: Colors.white70, size: 22),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LogViewerScreen()),
+                    );
+                  },
+                ),
                 Consumer<LocationService>(
                   builder: (context, locationService, child) {
                     return Container(

@@ -8,6 +8,7 @@ import 'api_service.dart';
 import '../models/alert.dart';
 import 'package:uuid/uuid.dart';
 import '../config.dart';
+import '../utils/app_logger.dart';
 
 /// Service to manage continuous screen monitoring
 /// Receives screenshots from native Android code and analyzes them with vision models
@@ -54,12 +55,12 @@ class ScreenMonitoringService {
     required String childName,
   }) async {
     if (_isInitialized) {
-      debugPrint('✅ ScreenMonitoringService already initialized');
+      AppLogger.log('✅ ScreenMonitoringService already initialized');
       return true;
     }
     
     try {
-      debugPrint('🔄 Initializing ScreenMonitoringService...');
+      AppLogger.log('🔄 Initializing ScreenMonitoringService...');
       
       _currentChildHash = childHash;
       _currentChildName = childName;
@@ -71,11 +72,10 @@ class ScreenMonitoringService {
       platform.setMethodCallHandler(_handleMethodCall);
       
       _isInitialized = true;
-      debugPrint('✅ ScreenMonitoringService initialized successfully');
+      AppLogger.log('✅ ScreenMonitoringService initialized successfully');
       return true;
     } catch (e, stackTrace) {
-      debugPrint('❌ ScreenMonitoringService initialization failed: $e');
-      debugPrint('Stack trace: $stackTrace');
+      AppLogger.logError('ScreenMonitoringService initialization failed', e, stackTrace);
       return false;
     }
   }
@@ -83,31 +83,31 @@ class ScreenMonitoringService {
   /// Start continuous screen monitoring
   Future<bool> startMonitoring() async {
     if (!_isInitialized) {
-      debugPrint('❌ ScreenMonitoringService not initialized');
+      AppLogger.log('❌ ScreenMonitoringService not initialized');
       return false;
     }
     
     if (_isMonitoring) {
-      debugPrint('⚠️  ScreenMonitoringService already monitoring');
+      AppLogger.log('⚠️  ScreenMonitoringService already monitoring');
       return false;
     }
     
     try {
-      debugPrint('🚀 Starting screen monitoring...');
+      AppLogger.log('🚀 Starting screen monitoring...');
       
       // Request screen capture permission from Android
       final result = await platform.invokeMethod('requestPermission');
       
       if (result == true) {
         _isMonitoring = true;
-        debugPrint('✅ Screen monitoring started successfully');
+        AppLogger.log('✅ Screen monitoring started successfully');
         return true;
       } else {
-        debugPrint('❌ Screen capture permission denied');
+        AppLogger.log('❌ Screen capture permission denied');
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Error starting screen monitoring: $e');
+      AppLogger.log('❌ Error starting screen monitoring: $e');
       return false;
     }
   }
@@ -115,18 +115,18 @@ class ScreenMonitoringService {
   /// Stop screen monitoring
   Future<void> stopMonitoring() async {
     if (!_isMonitoring) {
-      debugPrint('⚠️  ScreenMonitoringService not monitoring');
+      AppLogger.log('⚠️  ScreenMonitoringService not monitoring');
       return;
     }
     
     try {
-      debugPrint('🛑 Stopping screen monitoring...');
+      AppLogger.log('🛑 Stopping screen monitoring...');
       await platform.invokeMethod('stopCapture');
       _isMonitoring = false;
       _analysisQueue.clear();
-      debugPrint('✅ Screen monitoring stopped');
+      AppLogger.log('✅ Screen monitoring stopped');
     } catch (e) {
-      debugPrint('❌ Error stopping screen monitoring: $e');
+      AppLogger.log('❌ Error stopping screen monitoring: $e');
     }
   }
   
@@ -139,7 +139,7 @@ class ScreenMonitoringService {
         final timestamp = args['timestamp'] as int;
         final foregroundApp = args['foregroundApp'] as String?;
         
-        debugPrint('📸 Screenshot received: $path');
+        AppLogger.log('📸 Screenshot received: $path');
         
         // Add to analysis queue
         _analysisQueue.add({
@@ -155,7 +155,7 @@ class ScreenMonitoringService {
         break;
         
       default:
-        debugPrint('⚠️  Unknown method: ${call.method}');
+        AppLogger.log('⚠️  Unknown method: ${call.method}');
     }
   }
   
@@ -184,7 +184,7 @@ class ScreenMonitoringService {
     String? foregroundApp,
   ) async {
     try {
-      debugPrint('🔍 Screenshot captured: $path');
+      AppLogger.log('🔍 Screenshot captured: $path');
       
       // AI Integration Removed:
       // Simply delete the file to save space since we aren't analyzing it.
@@ -193,15 +193,14 @@ class ScreenMonitoringService {
         final file = File(path);
         if (await file.exists()) {
           await file.delete();
-          debugPrint('  🗑️  Screenshot deleted (Analysis disabled)');
+          AppLogger.log('  🗑️  Screenshot deleted (Analysis disabled)');
         }
       } catch (e) {
-        debugPrint('  ⚠️  Failed to delete screenshot file: $e');
+        AppLogger.log('  ⚠️  Failed to delete screenshot file: $e');
       }
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Error handling screenshot: $e');
-      debugPrint('Stack trace: $stackTrace');
+      AppLogger.logError('Error handling screenshot', e, stackTrace);
     }
   }
   

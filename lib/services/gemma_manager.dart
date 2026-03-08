@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../utils/app_logger.dart';
 
 class GemmaManager {
   static final GemmaManager instance = GemmaManager._Internal();
@@ -27,20 +28,20 @@ class GemmaManager {
     _isInitializing = true;
     
     try {
-      debugPrint('🤖 GemmaManager: Initializing FlutterGemma...');
+      AppLogger.log('🤖 GemmaManager: Initializing FlutterGemma...');
       // Initialize the plugin with the HuggingFace token
       await FlutterGemma.initialize(huggingFaceToken: hfToken);
       
       final installed = await isModelInstalled();
       if (installed) {
-        debugPrint('✅ GemmaManager: Model already installed.');
+        AppLogger.log('✅ GemmaManager: Model already installed.');
         _statusController.add('Ready');
       } else {
-        debugPrint('⚠️ GemmaManager: Model not found. User needs to download.');
+        AppLogger.log('⚠️ GemmaManager: Model not found. User needs to download.');
         _statusController.add('Not Installed');
       }
     } catch (e) {
-      debugPrint('❌ GemmaManager: Initialization error: $e');
+      AppLogger.log('❌ GemmaManager: Initialization error: $e');
       _statusController.add('Error: $e');
     } finally {
       _isInitializing = false;
@@ -51,7 +52,7 @@ class GemmaManager {
     try {
       return await FlutterGemma.isModelInstalled(modelId);
     } catch (e) {
-      debugPrint('⚠️ GemmaManager: Error checking installation: $e');
+      AppLogger.log('⚠️ GemmaManager: Error checking installation: $e');
       return false;
     }
   }
@@ -62,7 +63,7 @@ class GemmaManager {
     
     try {
       _statusController.add('Downloading Model...');
-      debugPrint('🤖 GemmaManager: Starting download from HuggingFace...');
+      AppLogger.log('🤖 GemmaManager: Starting download from HuggingFace...');
       
       // The URL for the gemma-3n model on HuggingFace
       final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
@@ -73,16 +74,16 @@ class GemmaManager {
           .withProgress((progress) {
             _progressController.add(progress / 100);
             _statusController.add('Downloading: $progress%');
-            debugPrint('📥 Download Progress: $progress%');
+            if (progress % 2 == 0) AppLogger.log('📥 Download Progress: $progress%');
           })
           .install();
 
       _statusController.add('Ready');
       _progressController.add(1.0);
-      debugPrint('✅ GemmaManager: Model installed successfully.');
+      AppLogger.log('✅ GemmaManager: Model installed successfully.');
       
     } catch (e) {
-      debugPrint('❌ GemmaManager: Download error: $e');
+      AppLogger.log('❌ GemmaManager: Download error: $e');
       _statusController.add('Download Failed: $e');
       _progressController.add(0.0);
       rethrow;
