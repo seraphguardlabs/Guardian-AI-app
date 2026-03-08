@@ -33,37 +33,52 @@ import 'package:guardian_ai/services/gemma_manager.dart';
 import 'package:guardian_ai/utils/preferences_manager.dart';
 import 'package:guardian_ai/utils/app_theme.dart';
 import 'package:guardian_ai/models/content_analysis_result.dart';
-
+import 'package:guardian_ai/utils/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
   
-  print('═══════════════════════════════════════════════════════');
-  print('🚀 GUARDIAN AI APP STARTING...');
-  print('═══════════════════════════════════════════════════════');
+  // Initialize AppLogger
+  await AppLogger.init();
+  AppLogger.log('═══════════════════════════════════════════════════════');
+  AppLogger.log('🚀 GUARDIAN AI APP STARTING...');
+  AppLogger.log('═══════════════════════════════════════════════════════');
   
   // Initialize PreferencesManager
-  print('📦 Initializing PreferencesManager...');
+  AppLogger.log('📦 Initializing PreferencesManager...');
   final prefsManager = await PreferencesManager.init();
-  print('✅ PreferencesManager initialized');
+  AppLogger.log('✅ PreferencesManager initialized');
   
   try {
     await EncryptionService.instance.initialize();
-    print('✅ Encryption Service initialized successfully');
+    AppLogger.log('✅ Encryption Service initialized successfully');
   } catch (e, stackTrace) {
-    print('❌ ENCRYPTION SERVICE INITIALIZATION FAILED!');
-    print('Error: $e');
+    AppLogger.logError('ENCRYPTION SERVICE INITIALIZATION FAILED!', e, stackTrace);
   }
   
   // Initialize Background Service
-  print('🔄 Initializing Background Service...');
+  AppLogger.log('🔄 Initializing Background Service...');
   await initializeBackgroundService();
-  print('✅ Background Service initialized');
+  AppLogger.log('✅ Background Service initialized');
   
-  print('═══════════════════════════════════════════════════════');
+  AppLogger.log('═══════════════════════════════════════════════════════');
 
-  runApp(GuardianAIAppWrapper());
+  runZonedGuarded(
+    () {
+      FlutterError.onError = (details) {
+        AppLogger.logError(
+          'FlutterError',
+          details.exceptionAsString(),
+          details.stack,
+        );
+      };
+      runApp(GuardianAIAppWrapper());
+    },
+    (error, stack) {
+      AppLogger.logError('Uncaught zone error', error, stack);
+    },
+  );
 }
 
 // Wrapper that handles initialization after app starts
@@ -462,6 +477,9 @@ void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+  
+  await AppLogger.init();
+  AppLogger.log('[BG] Background Service onStart initialized');
 
   if (service is AndroidServiceInstance) {
     service.on('setAsForeground').listen((_) => service.setAsForegroundService());
@@ -488,9 +506,9 @@ void onStart(ServiceInstance service) async {
             supportImage: true,
           );
           analyzer = GemmaContentAnalyzer(model!);
-          debugPrint('[BG] Gemma model initialized in isolate');
+          AppLogger.log('[BG] Gemma model initialized in isolate');
         } else {
-          debugPrint('[BG] Model not ready yet, skipping capture');
+          AppLogger.log('[BG] Model not ready yet, skipping capture');
           return;
         }
       }
@@ -506,9 +524,11 @@ void onStart(ServiceInstance service) async {
       await File(path).delete();
 
       if (analyzer != null) {
+        AppLogger.log('[BG] Triggering analysis for screenshot: $path');
         final result = await analyzer!.analyzeImage(imageBytes);
         
         if (result.riskScore >= 70) {
+          AppLogger.log('[BG] 🚨 HIGH RISK DETECTED (${result.riskScore}%)! Categories: ${result.categories.toString()}');
           // Trigger Notification
           await notifications.show(
             999,
@@ -530,7 +550,7 @@ void onStart(ServiceInstance service) async {
         }
       }
     } catch (e) {
-      debugPrint('[BG] Error in monitoring cycle: $e');
+      AppLogger.log('[BG] Error in monitoring cycle: $e');
     }
   });
 }

@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/alert.dart';
 import 'websocket_service.dart';
 import 'api_service.dart';
+import '../utils/app_logger.dart';
 
 /// Service that manages real-time alerts from multiple sources
 /// Listens to background model detections and WebSocket alerts from parent devices
@@ -561,13 +562,7 @@ class RealtimeAlertService {
 
   /// Log message with timestamp
   void _log(String message) {
-    final timestamp = DateTime.now();
-    final formattedTime =
-        '${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}:'
-        '${timestamp.second.toString().padLeft(2, '0')}';
-    final logMessage = '[$formattedTime] 🚨 $message';
-    print(logMessage);
-    developer.log(logMessage, name: 'RealtimeAlertService');
+    AppLogger.log('[RealtimeAlertService] $message');
   }
 }
 
