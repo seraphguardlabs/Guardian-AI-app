@@ -83,8 +83,10 @@ class ScreenMonitoringService {
     }
   }
   
-  /// Start continuous screen monitoring
-  Future<bool> startMonitoring() async {
+  /// Start continuous screen monitoring.
+  /// If [skipPermissionRequest] is true, assumes permission was already granted
+  /// (e.g. from the permission setup page) and just marks as monitoring.
+  Future<bool> startMonitoring({bool skipPermissionRequest = false}) async {
     if (!_isInitialized) {
       AppLogger.log('❌ ScreenMonitoringService not initialized');
       return false;
@@ -92,11 +94,17 @@ class ScreenMonitoringService {
     
     if (_isMonitoring) {
       AppLogger.log('⚠️  ScreenMonitoringService already monitoring');
-      return false;
+      return true; // Already running, not an error
     }
     
     try {
       AppLogger.log('🚀 Starting screen monitoring...');
+      
+      if (skipPermissionRequest) {
+        _isMonitoring = true;
+        AppLogger.log('✅ Screen monitoring started (permission pre-granted)');
+        return true;
+      }
       
       // Request screen capture permission from Android
       final result = await platform.invokeMethod('requestPermission');
@@ -109,6 +117,9 @@ class ScreenMonitoringService {
         AppLogger.log('❌ Screen capture permission denied');
         return false;
       }
+    } on PlatformException catch (e) {
+      AppLogger.log('❌ Platform error starting screen monitoring: ${e.message}');
+      return false;
     } catch (e) {
       AppLogger.log('❌ Error starting screen monitoring: $e');
       return false;
@@ -135,13 +146,16 @@ class ScreenMonitoringService {
   
   /// Handle method calls from native code
   Future<void> _handleMethodCall(MethodCall call) async {
+    try {
     switch (call.method) {
       case 'onScreenshotCaptured':
-        final args = call.arguments as Map;
-        final path = args['path'] as String;
-        final timestamp = args['timestamp'] as int;
+        final args = call.arguments as Map?;
+        if (args == null) return;
+        final path = args['path'] as String?;
+        final timestamp = args['timestamp'] as int?;
         final foregroundApp = args['foregroundApp'] as String?;
         
+        if (path == null || timestamp == null) return;
         AppLogger.log('📸 Screenshot received: $path');
         
         // Add to analysis queue
@@ -159,6 +173,9 @@ class ScreenMonitoringService {
         
       default:
         AppLogger.log('⚠️  Unknown method: ${call.method}');
+    }
+    } catch (e, stackTrace) {
+      AppLogger.logError('Error handling method call ${call.method}', e, stackTrace);
     }
   }
   
@@ -189,10 +206,8 @@ class ScreenMonitoringService {
         AppLogger.log('⚠️ ScreenMonitoring: Gemma model not installed yet');
         return false;
       }
-      if (!FlutterGemma.hasActiveModel()) {
-        AppLogger.log('⚠️ ScreenMonitoring: No active model, skipping');
-        return false;
-      }
+      // Load model into inference engine (required each session)
+      await GemmaManager.instance.activateModel();
       _model = await FlutterGemma.getActiveModel(
         maxTokens: 1024,
         supportImage: true,
@@ -231,6 +246,7 @@ class ScreenMonitoringService {
         return;
       }
 
+      if (_analyzer == null) return;
       final result = await _analyzer!.analyzeImage(imageBytes);
       _framesAnalyzed++;
       _lastAnalysisTime = DateTime.now();

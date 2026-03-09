@@ -161,6 +161,9 @@ class MainActivity: FlutterActivity() {
                     ScreenCaptureService.stop(this)
                     result.success(true)
                 }
+                "isCapturing" -> {
+                    result.success(ScreenCaptureService.isRunning)
+                }
                 else -> result.notImplemented()
             }
         }

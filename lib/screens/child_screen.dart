@@ -74,10 +74,12 @@ class _ChildScreenState extends State<ChildScreen>
   bool _locationGranted        = false;
   bool _usageStatsGranted      = false;
   bool _accessibilityGranted   = false;
+  bool _screenCaptureGranted   = false;
   // Per-row loading spinners — one per permission
   bool _locationLoading        = false;
   bool _usageLoading           = false;
   bool _accessibilityLoading   = false;
+  bool _screenCaptureLoading   = false;
   
   // AI Model status
   bool _modelInstalled = false;
@@ -145,8 +147,11 @@ class _ChildScreenState extends State<ChildScreen>
             if (progress >= 1.0) {
                _isDownloadingModel = false;
                _modelInstalled = true;
-               // Model just finished downloading — start AI monitoring
-               _startAIMonitoring();
+               // Model just finished downloading — check if we can proceed
+               if (_locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted) {
+                 _awaitingPermissions = false;
+                 _startServicesAndLoad();
+               }
             }
           }
         });
@@ -163,7 +168,7 @@ class _ChildScreenState extends State<ChildScreen>
     if (state == AppLifecycleState.resumed) {
       if (_awaitingPermissions) {
         _checkAllPermissions().then((_) {
-          if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
+          if (_locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted && _modelInstalled) {
             if (mounted) setState(() => _awaitingPermissions = false);
             _startServicesAndLoad();
           }
@@ -171,7 +176,15 @@ class _ChildScreenState extends State<ChildScreen>
       }
       // Also re-check model status
       GemmaManager.instance.isModelInstalled().then((installed) {
-        if (mounted) setState(() => _modelInstalled = installed);
+        if (mounted) {
+          setState(() => _modelInstalled = installed);
+          if (installed && !_awaitingPermissions) {
+            // Model was installed externally, update state
+          } else if (installed && _locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted) {
+            setState(() => _awaitingPermissions = false);
+            _startServicesAndLoad();
+          }
+        }
       });
     }
   }
@@ -179,8 +192,10 @@ class _ChildScreenState extends State<ChildScreen>
   Future<void> _initPermissionGate() async {
     if (!mounted) return;
     await _checkAllPermissions();
-    if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
-      _startServicesAndLoad();
+    if (_locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted) {
+      if (_modelInstalled) {
+        _startServicesAndLoad();
+      }
     }
   }
 
@@ -200,13 +215,24 @@ class _ChildScreenState extends State<ChildScreen>
       accessGranted = result == true;
     } catch (_) {}
 
+    // Screen capture — check if the service is currently running
+    bool captureGranted = _screenCaptureGranted;
+    try {
+      final result = await ScreenMonitoringService.platform.invokeMethod<bool>('isCapturing');
+      captureGranted = result == true;
+    } catch (_) {
+      // isCapturing may not exist yet — keep previous state
+    }
+
     if (mounted) {
       setState(() {
         _locationGranted      = locGranted;
         _usageStatsGranted    = usageGranted == true;
         _accessibilityGranted = accessGranted;
+        _screenCaptureGranted = captureGranted;
         _awaitingPermissions  =
-            !(_locationGranted && _usageStatsGranted && _accessibilityGranted);
+            !(_locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted)
+            || !_modelInstalled;
       });
     }
   }
@@ -251,14 +277,54 @@ class _ChildScreenState extends State<ChildScreen>
     if (mounted) setState(() => _accessibilityLoading = false);
   }
 
+  Future<void> _requestScreenCapture() async {
+    if (_screenCaptureGranted || _screenCaptureLoading) return;
+    setState(() => _screenCaptureLoading = true);
+
+    try {
+      // Initialize the monitoring service first if needed
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      final childHash = prefs.getChildHash() ?? '';
+      final screenMonitoring = ScreenMonitoringService.instance;
+      
+      if (!screenMonitoring.isInitialized) {
+        await screenMonitoring.initialize(
+          childHash: childHash,
+          childName: 'Child',
+        );
+      }
+      
+      // This triggers the Android MediaProjection permission dialog
+      final result = await ScreenMonitoringService.platform.invokeMethod('requestPermission');
+      final granted = result == true;
+      
+      if (mounted) {
+        setState(() {
+          _screenCaptureGranted = granted;
+          _screenCaptureLoading = false;
+        });
+      }
+      _checkIfAllGranted();
+    } on PlatformException catch (e) {
+      AppLogger.log('❌ Screen capture permission error: ${e.message}');
+      if (mounted) setState(() => _screenCaptureLoading = false);
+    } catch (e) {
+      AppLogger.log('❌ Screen capture permission error: $e');
+      if (mounted) setState(() => _screenCaptureLoading = false);
+    }
+  }
+
   void _checkIfAllGranted() {
-    if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
+    final allPermsGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted;
+    if (allPermsGranted) {
       // Auto-trigger model download if not yet installed
       if (!_modelInstalled && !_isDownloadingModel) {
         _autoStartModelDownload();
       }
-      if (mounted) setState(() => _awaitingPermissions = false);
-      _startServicesAndLoad();
+      if (_modelInstalled) {
+        if (mounted) setState(() => _awaitingPermissions = false);
+        _startServicesAndLoad();
+      }
     }
   }
 
@@ -893,15 +959,15 @@ class _ChildScreenState extends State<ChildScreen>
     AppLogger.log('🧠 Starting AI monitoring pipeline...');
     
     try {
-      // 1. Start screen capture (requests MediaProjection permission from user)
+      // 1. Start screen capture (permission was already granted on permission page)
       final screenMonitoring = ScreenMonitoringService.instance;
       if (screenMonitoring.isInitialized && !screenMonitoring.isMonitoring) {
-        AppLogger.log('  📸 Requesting screen capture permission...');
-        final started = await screenMonitoring.startMonitoring();
+        AppLogger.log('  📸 Starting screen capture (permission pre-granted)...');
+        final started = await screenMonitoring.startMonitoring(skipPermissionRequest: true);
         if (started) {
           AppLogger.log('  ✅ Screen capture started');
         } else {
-          AppLogger.log('  ⚠️ Screen capture not started (permission denied or error)');
+          AppLogger.log('  ⚠️ Screen capture not started');
         }
       }
       
@@ -2555,126 +2621,292 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Widget _buildPermissionSetup() {
-    final allGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted;
+    final allPermsGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted && _screenCaptureGranted;
+    final allReady = allPermsGranted && _modelInstalled;
+    
+    // Count granted items (4 permissions + 1 model)
+    int grantedCount = 0;
+    if (_locationGranted) grantedCount++;
+    if (_usageStatsGranted) grantedCount++;
+    if (_accessibilityGranted) grantedCount++;
+    if (_screenCaptureGranted) grantedCount++;
+    if (_modelInstalled) grantedCount++;
+    const totalSteps = 5;
+    
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF050608), Color(0xFF0D1B3E)],
+          colors: [Color(0xFF050608), Color(0xFF0A1628), Color(0xFF0D1B3E)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
+          stops: [0.0, 0.5, 1.0],
         ),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(),
-              // Shield icon
+              const SizedBox(height: 16),
+              // ── Header with animated shield ──
               Center(
-                child: Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF317AF7), Color(0xFF15335C)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF317AF7).withOpacity(0.45),
-                        blurRadius: 28,
-                        spreadRadius: 4,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Outer glow ring
+                    Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: allReady 
+                              ? Colors.greenAccent.withOpacity(0.3) 
+                              : const Color(0xFF317AF7).withOpacity(0.15),
+                          width: 2,
+                        ),
                       ),
-                    ],
-                  ),
-                  child: const Icon(Icons.security_rounded, color: Colors.white, size: 46),
+                    ),
+                    // Shield icon container
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 500),
+                      width: 88,
+                      height: 88,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: allReady 
+                              ? [const Color(0xFF00C853), const Color(0xFF1B5E20)]
+                              : [const Color(0xFF317AF7), const Color(0xFF0D47A1)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (allReady ? Colors.greenAccent : const Color(0xFF317AF7)).withOpacity(0.4),
+                            blurRadius: 30,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        allReady ? Icons.verified_user_rounded : Icons.shield_rounded,
+                        color: Colors.white,
+                        size: 42,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 28),
-              const Text(
-                'Permissions Required',
+              const SizedBox(height: 24),
+              
+              // ── Title & subtitle ──
+              Text(
+                allReady ? 'All Set!' : 'Setup Guardian AI',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                allReady
+                    ? 'Your device is protected. Tap Continue to start.'
+                    : 'Complete each step below to activate monitoring.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.3,
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 14,
+                  height: 1.5,
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Tap each item below to grant the required permissions.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
+              const SizedBox(height: 20),
+              
+              // ── Progress indicator ──
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F1624).withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF1B2433), width: 0.5),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '$grantedCount of $totalSteps completed',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          '${(grantedCount / totalSteps * 100).toInt()}%',
+                          style: TextStyle(
+                            color: allReady ? Colors.greenAccent : const Color(0xFF317AF7),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: grantedCount / totalSteps,
+                        backgroundColor: const Color(0xFF1B2433),
+                        color: allReady ? Colors.greenAccent : const Color(0xFF317AF7),
+                        minHeight: 8,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 32),
-              // ── Individual tappable permission rows ──
+              const SizedBox(height: 24),
+              
+              // ── Section: Permissions ──
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF317AF7),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'PERMISSIONS',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // ── Permission rows ──
               _buildPermRow(
+                stepNumber: 1,
                 icon: Icons.location_on_rounded,
-                title: 'Location',
-                subtitle: 'Tap to grant • Used for safety & geofencing',
+                title: 'Location Access',
+                subtitle: 'Required for safety zones & geofencing',
                 granted: _locationGranted,
                 loading: _locationLoading,
                 onTap: _requestLocation,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               _buildPermRow(
+                stepNumber: 2,
                 icon: Icons.bar_chart_rounded,
                 title: 'Usage Access',
-                subtitle: 'Tap to open Settings • Screen time tracking',
+                subtitle: 'Opens Settings — enable app usage tracking',
                 granted: _usageStatsGranted,
                 loading: _usageLoading,
                 onTap: _requestUsageAccess,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               _buildPermRow(
+                stepNumber: 3,
                 icon: Icons.accessibility_new_rounded,
                 title: 'Accessibility Service',
-                subtitle: 'Tap to open Settings • Browser monitoring',
+                subtitle: 'Opens Settings — enable browser monitoring',
                 granted: _accessibilityGranted,
                 loading: _accessibilityLoading,
                 onTap: _requestAccessibility,
               ),
               if (!_accessibilityGranted)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8, left: 18),
+                  padding: const EdgeInsets.only(top: 6, left: 56),
                   child: GestureDetector(
                     onTap: _showRestrictedHelp,
-                    child: const Text(
-                      'Help: "Restricted setting" error?',
-                      style: TextStyle(
-                        color: Color(0xFF317AF7),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                      ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.help_outline_rounded, color: const Color(0xFF317AF7).withOpacity(0.8), size: 14),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '"Restricted setting" error?',
+                          style: TextStyle(
+                            color: Color(0xFF317AF7),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              const SizedBox(height: 14),
-              // -- Model Status Row --
+              const SizedBox(height: 10),
               _buildPermRow(
+                stepNumber: 4,
+                icon: Icons.screenshot_monitor_rounded,
+                title: 'Screen Recording',
+                subtitle: 'Required for AI content safety monitoring',
+                granted: _screenCaptureGranted,
+                loading: _screenCaptureLoading,
+                onTap: _requestScreenCapture,
+              ),
+              const SizedBox(height: 24),
+              
+              // ── Section: AI Model ──
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: _modelInstalled ? Colors.greenAccent : const Color(0xFF317AF7),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'AI MODEL',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              _buildPermRow(
+                stepNumber: 5,
                 icon: Icons.psychology_rounded,
                 title: 'AI Safety Model',
-                subtitle: _isDownloadingModel 
-                    ? 'Downloading: ${(_downloadProgress * 100).toStringAsFixed(1)}%' 
-                    : (_modelInstalled 
-                        ? 'Model Ready' 
-                        : (_modelStatus.contains('Failed') || _modelStatus.contains('Error') 
-                            ? '$_modelStatus\nTap to Retry' 
-                            : 'Tap to Download Model (2.9 GB)')),
+                subtitle: _isDownloadingModel
+                    ? 'Downloading... ${(_downloadProgress * 100).toStringAsFixed(1)}%'
+                    : (_modelInstalled
+                        ? 'Model Ready'
+                        : (_modelStatus.contains('Failed') || _modelStatus.contains('Error')
+                            ? 'Download failed — tap to retry'
+                            : 'Tap to download (~2.9 GB, Wi-Fi recommended)')),
                 granted: _modelInstalled,
                 loading: _isDownloadingModel,
                 onTap: _startModelDownload,
               ),
               if (_isDownloadingModel)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8, left: 18, right: 18),
+                  padding: const EdgeInsets.only(top: 8, left: 56, right: 12),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
@@ -2686,38 +2918,85 @@ class _ChildScreenState extends State<ChildScreen>
                   ),
                 ),
               const SizedBox(height: 32),
-              // Continue / Re-check button
+              
+              // ── Continue / Re-check button ──
               SizedBox(
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: allGranted
-                      ? () {
-                          setState(() => _awaitingPermissions = false);
-                          _startServicesAndLoad();
-                        }
-                      : () async {
-                          await _checkAllPermissions();
-                          _checkIfAllGranted();
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: allGranted
-                        ? Colors.greenAccent.shade700
-                        : const Color(0xFF317AF7),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
+                height: 56,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: allReady
+                        ? const LinearGradient(
+                            colors: [Color(0xFF00C853), Color(0xFF00E676)],
+                          )
+                        : null,
+                    boxShadow: allReady
+                        ? [
+                            BoxShadow(
+                              color: Colors.greenAccent.withOpacity(0.3),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
                   ),
-                  child: Text(
-                    allGranted ? 'Continue →' : 'Re-check Permissions',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  child: ElevatedButton(
+                    onPressed: allReady
+                        ? () {
+                            setState(() => _awaitingPermissions = false);
+                            _startServicesAndLoad();
+                          }
+                        : () async {
+                            await _checkAllPermissions();
+                            _checkIfAllGranted();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: allReady
+                          ? Colors.transparent
+                          : const Color(0xFF317AF7),
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          allReady ? 'Continue' : 'Re-check Permissions',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (allReady) ...[
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ),
-              const Spacer(),
+              if (!allPermsGranted && !allReady)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    _modelInstalled
+                        ? 'Grant all permissions above to continue'
+                        : allPermsGranted
+                            ? 'Download the AI model to continue'
+                            : 'Grant all permissions and download the AI model',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.35),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -2726,6 +3005,7 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Widget _buildPermRow({
+    required int stepNumber,
     required IconData icon,
     required String title,
     required String subtitle,
@@ -2737,84 +3017,115 @@ class _ChildScreenState extends State<ChildScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: granted ? null : onTap,
-        borderRadius: BorderRadius.circular(14),
-        splashColor: const Color(0xFF317AF7).withOpacity(0.12),
-        highlightColor: const Color(0xFF317AF7).withOpacity(0.06),
+        borderRadius: BorderRadius.circular(16),
+        splashColor: const Color(0xFF317AF7).withOpacity(0.1),
+        highlightColor: const Color(0xFF317AF7).withOpacity(0.05),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             color: granted
-                ? Colors.greenAccent.withOpacity(0.06)
+                ? Colors.greenAccent.withOpacity(0.05)
                 : const Color(0xFF0F1624),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: granted
-                  ? Colors.greenAccent.withOpacity(0.5)
+                  ? Colors.greenAccent.withOpacity(0.4)
                   : loading
-                      ? const Color(0xFF317AF7).withOpacity(0.6)
+                      ? const Color(0xFF317AF7).withOpacity(0.5)
                       : const Color(0xFF1B2433),
               width: granted || loading ? 1.5 : 1.0,
             ),
           ),
           child: Row(
             children: [
+              // Step number badge
               AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                width: 44,
-                height: 44,
+                duration: const Duration(milliseconds: 300),
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  color: granted
-                      ? Colors.greenAccent.withOpacity(0.14)
-                      : const Color(0xFF317AF7).withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(11),
+                  gradient: granted
+                      ? LinearGradient(
+                          colors: [Colors.greenAccent.withOpacity(0.2), Colors.greenAccent.withOpacity(0.08)],
+                        )
+                      : LinearGradient(
+                          colors: [const Color(0xFF317AF7).withOpacity(0.18), const Color(0xFF317AF7).withOpacity(0.06)],
+                        ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  icon,
-                  color: granted ? Colors.greenAccent : const Color(0xFF317AF7),
-                  size: 22,
-                ),
+                child: granted
+                    ? const Icon(Icons.check_rounded, color: Colors.greenAccent, size: 22)
+                    : Icon(icon, color: const Color(0xFF317AF7), size: 20),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: granted ? Colors.white : Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        if (granted)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Done',
+                              style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      granted ? '✓ Granted' : subtitle,
+                      granted ? 'Permission granted' : subtitle,
                       style: TextStyle(
-                        color: granted ? Colors.greenAccent.withOpacity(0.8) : Colors.white54,
+                        color: granted ? Colors.greenAccent.withOpacity(0.6) : Colors.white.withOpacity(0.4),
                         fontSize: 12,
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF317AF7)),
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          const Color(0xFF317AF7).withOpacity(0.8),
+                        ),
                       ),
                     )
-                  : Icon(
-                      granted
-                          ? Icons.check_circle_rounded
-                          : Icons.arrow_forward_ios_rounded,
-                      color: granted ? Colors.greenAccent : Colors.white30,
-                      size: granted ? 22 : 16,
+                  : AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: Icon(
+                        granted
+                            ? Icons.check_circle_rounded
+                            : Icons.arrow_forward_ios_rounded,
+                        key: ValueKey(granted),
+                        color: granted ? Colors.greenAccent : Colors.white24,
+                        size: granted ? 24 : 14,
+                      ),
                     ),
             ],
           ),

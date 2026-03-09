@@ -69,6 +69,8 @@ class ScreenCaptureService : Service() {
         var methodChannel: MethodChannel? = null
         private var instance: ScreenCaptureService? = null
         
+        val isRunning: Boolean get() = instance?.isCapturing == true
+        
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ScreenCaptureService::class.java)
             intent.putExtra("resultCode", resultCode)
@@ -159,6 +161,19 @@ class ScreenCaptureService : Service() {
                 stopSelf()
                 return
             }
+            
+            // Register callback to handle projection being revoked
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.w(TAG, "MediaProjection stopped by system")
+                    isCapturing = false
+                    captureRunnable?.let { handler.removeCallbacks(it) }
+                    virtualDisplay?.release()
+                    imageReader?.close()
+                    virtualDisplay = null
+                    imageReader = null
+                }
+            }, handler)
             
             // Create ImageReader for capturing frames
             imageReader = ImageReader.newInstance(

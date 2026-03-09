@@ -21,20 +21,37 @@ class GemmaManager {
   Stream<double> get progressStream => _progressController.stream;
 
   bool _isInitializing = false;
+  bool _isInitialized = false;
   bool _isDownloading = false;
+  bool _modelReady = false;
+
+  bool _modelActivated = false;
+
+  /// Whether the model has been downloaded and is ready for activation.
+  bool get modelReady => _modelReady;
+
+  /// Whether the model has been loaded into the inference engine this session.
+  bool get modelActivated => _modelActivated;
 
   Future<void> initialize() async {
-    if (_isInitializing) return;
+    if (_isInitialized || _isInitializing) return;
     _isInitializing = true;
     
     try {
+      if (hfToken.isEmpty) {
+        AppLogger.log('❌ GemmaManager: hfToken is empty – is .env missing? Copy .env.example to .env and add your HuggingFace token.');
+        _statusController.add('Error: Missing HuggingFace token');
+        return;
+      }
       AppLogger.log('🤖 GemmaManager: Initializing FlutterGemma...');
       // Initialize the plugin with the HuggingFace token
       await FlutterGemma.initialize(huggingFaceToken: hfToken);
+      _isInitialized = true;
       
       final installed = await isModelInstalled();
       if (installed) {
         AppLogger.log('✅ GemmaManager: Model already installed.');
+        _modelReady = true;
         _statusController.add('Ready');
       } else {
         AppLogger.log('⚠️ GemmaManager: Model not found. User needs to download.');
@@ -49,12 +66,29 @@ class GemmaManager {
   }
 
   Future<bool> isModelInstalled() async {
+    if (_modelReady) return true;
     try {
-      return await FlutterGemma.isModelInstalled(modelId);
+      final installed = await FlutterGemma.isModelInstalled(modelId);
+      if (installed) _modelReady = true;
+      return installed;
     } catch (e) {
       AppLogger.log('⚠️ GemmaManager: Error checking installation: $e');
       return false;
     }
+  }
+
+  /// Load the model into the inference engine. Must be called each session
+  /// before getActiveModel() will work, even if the model files are on disk.
+  Future<void> activateModel() async {
+    if (_modelActivated) return;
+    final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
+    AppLogger.log('🤖 GemmaManager: Activating model in inference engine...');
+    await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+        .fromNetwork(url, token: hfToken)
+        .install();
+    _modelActivated = true;
+    _modelReady = true;
+    AppLogger.log('✅ GemmaManager: Model activated in inference engine.');
   }
 
   Future<void> downloadModel() async {
@@ -78,6 +112,8 @@ class GemmaManager {
           })
           .install();
 
+      _modelReady = true;
+      _modelActivated = true;
       _statusController.add('Ready');
       _progressController.add(1.0);
       AppLogger.log('✅ GemmaManager: Model installed successfully.');

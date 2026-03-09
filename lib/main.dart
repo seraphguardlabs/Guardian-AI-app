@@ -501,22 +501,32 @@ void onStart(ServiceInstance service) async {
   
   InferenceModel? model;
   GemmaContentAnalyzer? analyzer;
+  bool gemmaInitialized = false;
 
   // Background monitoring interval (5 seconds)
   Timer.periodic(const Duration(seconds: 5), (timer) async {
     try {
       if (analyzer == null) {
-        // Ensure Gemma is initialized in this isolate
-        await GemmaManager.instance.initialize();
-        if (await GemmaManager.instance.isModelInstalled() && FlutterGemma.hasActiveModel()) {
+        // Initialize Gemma only once in this isolate
+        if (!gemmaInitialized) {
+          await GemmaManager.instance.initialize();
+          gemmaInitialized = true;
+        }
+        if (!GemmaManager.instance.modelReady) {
+          return; // Model not downloaded yet
+        }
+        try {
+          // Load model into inference engine (required each session)
+          await GemmaManager.instance.activateModel();
           model = await FlutterGemma.getActiveModel(
             maxTokens: 1024,
             supportImage: true,
           );
           analyzer = GemmaContentAnalyzer(model!);
           AppLogger.log('[BG] Gemma model initialized in isolate');
-        } else {
-          return; // Model not ready yet
+        } catch (e) {
+          AppLogger.log('[BG] Model activation failed, will retry: $e');
+          return; // Retry on next timer tick
         }
       }
 
