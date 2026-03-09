@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -32,7 +31,6 @@ import 'package:guardian_ai/services/gemma_manager.dart';
 
 import 'package:guardian_ai/utils/preferences_manager.dart';
 import 'package:guardian_ai/utils/app_theme.dart';
-import 'package:guardian_ai/models/content_analysis_result.dart';
 import 'package:guardian_ai/utils/app_logger.dart';
 
 void main() async {
@@ -490,7 +488,17 @@ void onStart(ServiceInstance service) async {
 
   final notifications = FlutterLocalNotificationsPlugin();
   
-  const platform = MethodChannel('com.example.guardian_ai/screen_capture');
+  // Initialize notification channel for alerts
+  const alertChannel = AndroidNotificationChannel(
+    'alerts_channel',
+    'Safety Alerts',
+    description: 'High-risk content safety alerts',
+    importance: Importance.high,
+  );
+  await notifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(alertChannel);
+  
   InferenceModel? model;
   GemmaContentAnalyzer? analyzer;
 
@@ -508,46 +516,57 @@ void onStart(ServiceInstance service) async {
           analyzer = GemmaContentAnalyzer(model!);
           AppLogger.log('[BG] Gemma model initialized in isolate');
         } else {
-          AppLogger.log('[BG] Model not ready yet, skipping capture');
-          return;
+          return; // Model not ready yet
         }
       }
 
-      // Capture screen via native channel
-      final Map? captureResult = await platform.invokeMethod('captureScreen');
-      if (captureResult == null) return;
+      // Poll the screenshots directory written by native ScreenCaptureService
+      final cacheDir = Directory('/data/data/com.example.guardian_ai/cache/screenshots');
+      if (!await cacheDir.exists()) return;
 
-      final String path = captureResult['path'];
-      final Uint8List imageBytes = await File(path).readAsBytes();
-      
+      final files = cacheDir.listSync().whereType<File>().toList();
+      if (files.isEmpty) return;
+
+      // Sort by modified time descending, take newest
+      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      final newest = files.first;
+
+      final Uint8List imageBytes;
+      try {
+        imageBytes = await newest.readAsBytes();
+      } catch (_) {
+        return; // File may have been deleted by another consumer
+      }
+
       // Zero-cache policy: delete immediately after reading
-      await File(path).delete();
+      // Also clean up any older screenshots
+      for (final f in files) {
+        try { await f.delete(); } catch (_) {}
+      }
 
-      if (analyzer != null) {
-        AppLogger.log('[BG] Triggering analysis for screenshot: $path');
-        final result = await analyzer!.analyzeImage(imageBytes);
-        
-        if (result.riskScore >= 70) {
-          AppLogger.log('[BG] 🚨 HIGH RISK DETECTED (${result.riskScore}%)! Categories: ${result.categories.toString()}');
-          // Trigger Notification
-          await notifications.show(
-            999,
-            '🚨 Safety Alert: ${result.riskScore}% Risk',
-            'Detected ${result.categories.entries.where((e) => e.value > 0.5).map((e) => e.key).join(", ")} content.',
-            const NotificationDetails(
-              android: AndroidNotificationDetails(
-                'alerts_channel',
-                'Safety Alerts',
-                importance: Importance.high,
-                priority: Priority.high,
-                ticker: 'Safety Alert',
-              ),
+      AppLogger.log('[BG] Analysing screenshot: ${newest.path}');
+      final result = await analyzer!.analyzeImage(imageBytes);
+      
+      if (result.riskScore >= 70) {
+        AppLogger.log('[BG] 🚨 HIGH RISK (${result.riskScore}%)! ${result.categories}');
+        // Trigger on-device notification
+        await notifications.show(
+          999,
+          '🚨 Safety Alert: ${result.riskScore}% Risk',
+          'Detected ${result.categories.entries.where((e) => e.value > 0.5).map((e) => e.key).join(", ")} content.',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'alerts_channel',
+              'Safety Alerts',
+              importance: Importance.high,
+              priority: Priority.high,
+              ticker: 'Safety Alert',
             ),
-          );
+          ),
+        );
 
-          // Notify UI
-          service.invoke('alertGenerated', result.toJson());
-        }
+        // Notify the main isolate (UI) about the alert
+        service.invoke('alertGenerated', result.toJson());
       }
     } catch (e) {
       AppLogger.log('[BG] Error in monitoring cycle: $e');

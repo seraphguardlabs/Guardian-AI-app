@@ -1,0 +1,43 @@
+ Guardian AI - On-Device AI Architecture Overview
+
+This document explains how the AI monitoring system is integrated into the Guardian AI application, connecting the native Android layer with the Flutter frontend and the background AI engine.
+
+ 1. The "Brain" (Gemma-3n Model)
+The app uses a quantized version of the Gemma-3n (E2B-it-int4) model.
+   Why On-Device?: By running the model directly on the phone, we ensure maximum privacy (no screenshots sent to a server for analysis) and low latency (no network required for the AI to "think").
+   Initialization: Managed by `GemmaManager.dart`. It downloads the 2.9GB `.task` file from Hugging Face strictly when a child profile is active.
+
+ 2. The Ear & Eye (Native Android Capture)
+The system relies on native Android components to "see" the screen without slowing down the phone.
+   ScreenCaptureService.kt: A Native Kotlin Foreground Service.
+   How it works: It uses the Android `MediaProjection` API to capture the screen. 
+   Silent Storage: It saves a high-quality JPEG to a temporary directory (`/screenshots/latest.jpg`) every 5 seconds.
+   Adaptive Frequency: The capture interval can be adjusted based on risk (e.g., faster when a browser is open).
+
+ 3. The Bridge (Background Service Isolate)
+Flutter normally runs in a "Main Isolate" (the UI thread). However, the AI must work even when the app is swiped away.
+   FlutterBackgroundService: This component starts a separate Dart Isolate (a "Background Isolate") that runs independently of the UI.
+   Main Entry Point: Found in `main.dart` -> `onStart()`.
+
+ 4. The Loop (Analyze & Alert)
+The background isolate runs a persistent loop that follows these steps:
+1.  Poll for View: It checks the `/screenshots/` directory for the latest file saved by the Kotlin service.
+2.  Analysis: It loads the image bytes and passes them to `GemmaContentAnalyzer.dart`.
+3.  Risk Scoring: The Gemma model analyzes the visual content for categories like:
+       Explicit Content
+       Violence
+       Cyberbullying / Predatory behavior
+       Suggestive imagery
+4.  Decision: If the `riskScore` exceeds a threshold (Default: 70):
+       Local Notify: It triggers a system notification on the child's device.
+       Emit Alert: It sends an `alertGenerated` message back to the main isolate via `invoke('alertGenerated')`.
+5.  Cleanup: It immediately deletes the screenshot after analysis to preserve privacy and storage.
+
+ 5. Connecting to the Parent
+Once a high-risk alert is generated in the background:
+   RealtimeAlertService: Listens for these background events.
+   Sync: It encrypts the alert metadata and pushes it to the Parent's Dashboard via the WebSocket Ingest channel.
+   Persistence: Alerts are saved locally in `alerts.db` (SQLite) so they are never lost.
+
+ 6. Development Tools
+   LogViewerScreen: A custom screen (accessible via the 🐞 icon on the Child Screen) that reads `ai_guardian.log`. This file captures logs from both the UI and the Background Isolate, allowing developers to see the AI's "thoughts" raw.

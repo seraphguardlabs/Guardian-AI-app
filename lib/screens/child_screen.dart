@@ -10,6 +10,9 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 import '../utils/preferences_manager.dart';
 import '../utils/app_theme.dart';
 import '../services/location_service.dart';
@@ -21,8 +24,11 @@ import '../services/background_monitoring_service.dart';
 import '../services/location_background_service.dart';
 import '../services/time_extension_service.dart';
 import '../services/screen_monitoring_service.dart';
+import '../services/realtime_alert_service.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
+import '../models/alert.dart';
+import '../models/content_analysis_result.dart';
 import '../widgets/app_bottom_nav.dart';
 import 'my_tasks_screen.dart';
 import '../services/gemma_manager.dart';
@@ -80,6 +86,10 @@ class _ChildScreenState extends State<ChildScreen>
   String _modelStatus = '';
   StreamSubscription? _modelStatusSub;
   StreamSubscription? _modelProgressSub;
+  
+  // Background AI monitoring
+  StreamSubscription? _bgAlertSub;
+  bool _aiMonitoringActive = false;
 
   @override
   void initState() {
@@ -109,6 +119,11 @@ class _ChildScreenState extends State<ChildScreen>
       _modelStatus = installed ? 'Installed' : 'Not installed';
     });
     
+    // If model is already installed, start AI monitoring immediately
+    if (installed && !_awaitingPermissions) {
+      _startAIMonitoring();
+    }
+    
     _modelStatusSub = GemmaManager.instance.statusStream.listen((status) {
       if (mounted) {
         setState(() {
@@ -130,6 +145,8 @@ class _ChildScreenState extends State<ChildScreen>
             if (progress >= 1.0) {
                _isDownloadingModel = false;
                _modelInstalled = true;
+               // Model just finished downloading — start AI monitoring
+               _startAIMonitoring();
             }
           }
         });
@@ -236,9 +253,24 @@ class _ChildScreenState extends State<ChildScreen>
 
   void _checkIfAllGranted() {
     if (_locationGranted && _usageStatsGranted && _accessibilityGranted) {
+      // Auto-trigger model download if not yet installed
+      if (!_modelInstalled && !_isDownloadingModel) {
+        _autoStartModelDownload();
+      }
       if (mounted) setState(() => _awaitingPermissions = false);
       _startServicesAndLoad();
     }
+  }
+
+  /// Auto-start AI model download once all permissions pass
+  void _autoStartModelDownload() {
+    if (_isDownloadingModel || _modelInstalled) return;
+    AppLogger.log('🤖 Auto-starting AI model download...');
+    setState(() {
+      _isDownloadingModel = true;
+      _downloadProgress = 0.0;
+    });
+    GemmaManager.instance.downloadModel();
   }
 
   /// Called only after all permissions are confirmed.  Mirrors what initState
@@ -319,6 +351,9 @@ class _ChildScreenState extends State<ChildScreen>
     _refreshTimer?.cancel();
     _wsMessageSubscription?.cancel();
     _timeExtResponseSubscription?.cancel();
+    _modelStatusSub?.cancel();
+    _modelProgressSub?.cancel();
+    _bgAlertSub?.cancel();
     final locationService = Provider.of<LocationService>(context, listen: false);
     locationService.stopTracking();
     super.dispose();
@@ -798,21 +833,138 @@ class _ChildScreenState extends State<ChildScreen>
         return;
       }
 
-      // Start screen monitoring (DISABLED)
-      // AppLogger.log('  🚀 Starting screen monitoring...');
-      // final monitoringStarted = await screenMonitoring.startMonitoring();
-      
-      // if (monitoringStarted) {
-      //   AppLogger.log('✅ Monitoring Services initialized and started successfully');
-      // } else {
-      //   AppLogger.log('⚠️  Monitoring Services initialized but not started (permission may be denied)');
-      // }
-      AppLogger.log('✅ Monitoring Services (Screen Capture) Disabled by request');
+      // Initialize RealtimeAlertService with a database
+      await _initializeAlertService(childHash, childName);
 
+      // If model is already installed, start monitoring now
+      if (_modelInstalled) {
+        _startAIMonitoring();
+      } else {
+        AppLogger.log('⏳ AI model not installed yet — monitoring will start after download');
+      }
       
+      AppLogger.log('✅ Monitoring Services initialized');
     } catch (e, stackTrace) {
       AppLogger.log('❌ Error initializing Services: $e');
       AppLogger.log('Stack trace: $stackTrace');
+    }
+  }
+  
+  /// Initialize the RealtimeAlertService with SQLite database
+  Future<void> _initializeAlertService(String childHash, String childName) async {
+    try {
+      final dbPath = await getDatabasesPath();
+      final db = await openDatabase(
+        '$dbPath/alerts.db',
+        version: 1,
+        onCreate: (db, version) async {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS alerts (
+              id TEXT PRIMARY KEY,
+              timestamp TEXT NOT NULL,
+              risk_score INTEGER NOT NULL,
+              summary TEXT NOT NULL,
+              severity TEXT NOT NULL,
+              content_type TEXT NOT NULL,
+              detected_content TEXT,
+              child_hash TEXT NOT NULL,
+              child_name TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              source TEXT NOT NULL
+            )
+          ''');
+        },
+      );
+      
+      final wsService = Provider.of<WebSocketService>(context, listen: false);
+      await RealtimeAlertService.instance.initialize(db, wsService);
+      RealtimeAlertService.instance.setCurrentChild(childHash, childName);
+      AppLogger.log('✅ RealtimeAlertService initialized');
+    } catch (e) {
+      AppLogger.log('⚠️ RealtimeAlertService init failed: $e');
+    }
+  }
+
+  /// Start AI monitoring: screen capture service + background service + alert listener
+  Future<void> _startAIMonitoring() async {
+    if (_aiMonitoringActive) return;
+    if (!_modelInstalled) return;
+    
+    AppLogger.log('🧠 Starting AI monitoring pipeline...');
+    
+    try {
+      // 1. Start screen capture (requests MediaProjection permission from user)
+      final screenMonitoring = ScreenMonitoringService.instance;
+      if (screenMonitoring.isInitialized && !screenMonitoring.isMonitoring) {
+        AppLogger.log('  📸 Requesting screen capture permission...');
+        final started = await screenMonitoring.startMonitoring();
+        if (started) {
+          AppLogger.log('  ✅ Screen capture started');
+        } else {
+          AppLogger.log('  ⚠️ Screen capture not started (permission denied or error)');
+        }
+      }
+      
+      // 2. Start the Flutter background service (runs the AI loop in a background isolate)
+      final bgService = FlutterBackgroundService();
+      final isRunning = await bgService.isRunning();
+      if (!isRunning) {
+        AppLogger.log('  🔄 Starting background AI service...');
+        await bgService.startService();
+        AppLogger.log('  ✅ Background AI service started');
+      }
+      
+      // 3. Listen for alertGenerated events from the background service
+      _bgAlertSub?.cancel();
+      _bgAlertSub = bgService.on('alertGenerated').listen((event) {
+        if (event == null || !mounted) return;
+        AppLogger.log('📡 Received alertGenerated from background service');
+        _handleBackgroundAlert(event);
+      });
+      
+      if (mounted) setState(() => _aiMonitoringActive = true);
+      AppLogger.log('🧠 AI monitoring pipeline active');
+    } catch (e) {
+      AppLogger.log('❌ Error starting AI monitoring: $e');
+    }
+  }
+
+  /// Handle an alert event from the background service isolate
+  void _handleBackgroundAlert(Map<String, dynamic> event) async {
+    try {
+      final result = ContentAnalysisResult.fromJson(event);
+      final prefs = Provider.of<PreferencesManager>(context, listen: false);
+      final childHash = prefs.getChildHash() ?? '';
+      
+      final alert = Alert(
+        id: const Uuid().v4(),
+        timestamp: DateTime.now(),
+        riskScore: result.riskScore,
+        summary: result.summary,
+        severity: Alert.determineSeverity(result.riskScore),
+        contentType: ContentType.IMAGE,
+        detectedContent: result.categories.entries
+            .where((e) => e.value > 0.5)
+            .map((e) => '${e.key}: ${(e.value * 100).toInt()}%')
+            .join(', '),
+        childHash: childHash,
+        childName: 'Child',
+      );
+      
+      // Save to local DB + emit to stream
+      await RealtimeAlertService.instance.addAlert(alert);
+      
+      // Sync to server
+      try {
+        final apiService = Provider.of<ApiService>(context, listen: false);
+        await RealtimeAlertService.instance.syncAlertToServer(
+          alert, apiService, 'Child',
+        );
+      } catch (_) {}
+      
+      AppLogger.log('✅ Background alert processed and stored: ${alert.id}');
+    } catch (e) {
+      AppLogger.log('❌ Error handling background alert: $e');
     }
   }
 

@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'realtime_alert_service.dart';
-import 'api_service.dart';
-import 'api_service.dart';
+import 'gemma_content_analyzer.dart';
+import 'gemma_manager.dart';
 import '../models/alert.dart';
 import 'package:uuid/uuid.dart';
-import '../config.dart';
 import '../utils/app_logger.dart';
 
 /// Service to manage continuous screen monitoring
@@ -41,6 +40,10 @@ class ScreenMonitoringService {
   
   // Services
   late RealtimeAlertService _alertService;
+
+  // AI analysis
+  InferenceModel? _model;
+  GemmaContentAnalyzer? _analyzer;
   
   // Getters
   bool get isMonitoring => _isMonitoring;
@@ -177,47 +180,117 @@ class ScreenMonitoringService {
     _isProcessingQueue = false;
   }
   
-  /// Analyze a screenshot with the vision model (DISABLED)
+  /// Ensure the Gemma model is loaded for analysis.
+  Future<bool> _ensureAnalyzerReady() async {
+    if (_analyzer != null) return true;
+    try {
+      final installed = await GemmaManager.instance.isModelInstalled();
+      if (!installed) {
+        AppLogger.log('⚠️ ScreenMonitoring: Gemma model not installed yet');
+        return false;
+      }
+      if (!FlutterGemma.hasActiveModel()) {
+        AppLogger.log('⚠️ ScreenMonitoring: No active model, skipping');
+        return false;
+      }
+      _model = await FlutterGemma.getActiveModel(
+        maxTokens: 1024,
+        supportImage: true,
+      );
+      _analyzer = GemmaContentAnalyzer(_model!);
+      AppLogger.log('✅ ScreenMonitoring: Gemma analyzer ready');
+      return true;
+    } catch (e) {
+      AppLogger.log('❌ ScreenMonitoring: Failed to init analyzer: $e');
+      return false;
+    }
+  }
+
+  /// Analyze a screenshot with the Gemma vision model
   Future<void> _analyzeScreenshot(
     String path,
     int timestamp,
     String? foregroundApp,
   ) async {
     try {
-      AppLogger.log('🔍 Screenshot captured: $path');
-      
-      // AI Integration Removed:
-      // Simply delete the file to save space since we aren't analyzing it.
-      
-      try {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-          AppLogger.log('  🗑️  Screenshot deleted (Analysis disabled)');
-        }
-      } catch (e) {
-        AppLogger.log('  ⚠️  Failed to delete screenshot file: $e');
+      AppLogger.log('🔍 Analysing screenshot: $path');
+
+      final file = File(path);
+      if (!await file.exists()) {
+        AppLogger.log('⚠️ Screenshot file not found: $path');
+        return;
       }
-      
+
+      final imageBytes = await file.readAsBytes();
+
+      // Delete immediately after reading (zero-cache privacy policy)
+      try { await file.delete(); } catch (_) {}
+
+      if (!await _ensureAnalyzerReady()) {
+        AppLogger.log('⏭️ Skipping analysis – model not ready');
+        return;
+      }
+
+      final result = await _analyzer!.analyzeImage(imageBytes);
+      _framesAnalyzed++;
+      _lastAnalysisTime = DateTime.now();
+
+      AppLogger.log('📊 Analysis result: risk=${result.riskScore}, cats=${result.categories}');
+
+      if (result.riskScore >= 70) {
+        AppLogger.log('🚨 HIGH RISK (${result.riskScore}%) – generating alert');
+        await _generateAlert(
+          riskScore: result.riskScore,
+          scores: result.categories,
+          summary: result.summary,
+          foregroundApp: foregroundApp,
+        );
+      }
     } catch (e, stackTrace) {
-      AppLogger.logError('Error handling screenshot', e, stackTrace);
+      AppLogger.logError('Error analysing screenshot', e, stackTrace);
     }
   }
-  
-  /// Generate an alert (DISABLED)
+
+  /// Create an Alert and push it into RealtimeAlertService
   Future<void> _generateAlert({
-    required String path,
     required int riskScore,
     required Map<String, double> scores,
+    required String summary,
     String? foregroundApp,
-    String extractedText = '',
-    bool isTextAlert = false,
   }) async {
-     // Alert generation removed
+    try {
+      final alert = Alert(
+        id: const Uuid().v4(),
+        timestamp: DateTime.now(),
+        riskScore: riskScore,
+        summary: _generateAlertSummary(riskScore, scores, foregroundApp),
+        severity: Alert.determineSeverity(riskScore),
+        contentType: ContentType.IMAGE,
+        detectedContent: summary,
+        childHash: _currentChildHash ?? '',
+        childName: _currentChildName ?? 'Child',
+        sourceApp: foregroundApp,
+      );
+
+      await _alertService.addAlert(alert);
+      _alertsGenerated++;
+      AppLogger.log('✅ Alert generated: ${alert.severity} – ${alert.id}');
+    } catch (e, stackTrace) {
+      AppLogger.logError('Error generating alert', e, stackTrace);
+    }
   }
 
-  String _generateAlertSummary(int riskScore, Map<String, double> scores, String? foregroundApp, bool isTextAlert) {
-    return 'Analysis Disabled';
+  String _generateAlertSummary(int riskScore, Map<String, double> scores, String? foregroundApp) {
+    final topCategory = scores.entries
+        .where((e) => e.value > 0.3)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final cats = topCategory.isNotEmpty
+        ? topCategory.map((e) => e.key).join(', ')
+        : 'general';
+    final app = foregroundApp != null ? ' in $foregroundApp' : '';
+    return 'Risk $riskScore%: $cats content detected$app';
   }
 
   
