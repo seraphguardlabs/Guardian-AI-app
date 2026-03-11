@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../services/document_vault_service.dart';
+import '../services/api_service.dart';
+import '../utils/preferences_manager.dart';
 
 const _kBgDark = Color(0xFF0D0D1A);
 const _kCardDark = Color(0xFF1A1A2E);
@@ -9,17 +11,21 @@ const _kAccent = Color(0xFF283C9A);
 const _kAccentLight = Color(0xFF5B8DEF);
 
 class VaultTrashScreen extends StatefulWidget {
-  final String childHash;
-  const VaultTrashScreen({super.key, required this.childHash});
+  const VaultTrashScreen({super.key});
 
   @override
   State<VaultTrashScreen> createState() => _VaultTrashScreenState();
 }
 
 class _VaultTrashScreenState extends State<VaultTrashScreen> {
-  final _vaultService = DocumentVaultService();
   bool _loading = true;
   List<Map<String, dynamic>> _trashedDocs = [];
+
+  ApiService get _api => Provider.of<ApiService>(context, listen: false);
+  String get _email =>
+      Provider.of<PreferencesManager>(context, listen: false).getParentEmail() ?? '';
+  String get _password =>
+      Provider.of<PreferencesManager>(context, listen: false).getParentPassword() ?? '';
 
   @override
   void initState() {
@@ -29,31 +35,37 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
 
   Future<void> _loadTrash() async {
     setState(() => _loading = true);
-    try {
-      final docs = await _vaultService.listTrash(childHash: widget.childHash);
-      if (!mounted) return;
-      setState(() { _trashedDocs = docs; _loading = false; });
-    } catch (e) {
-      if (!mounted) return;
+    final result = await _api.listVaultTrash(email: _email, password: _password);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      final data = result['data'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _trashedDocs = List<Map<String, dynamic>>.from(data['documents'] ?? []);
+        _loading = false;
+      });
+    } else {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load trash: $e')),
+        SnackBar(content: Text('Failed to load trash: ${result['error']}')),
       );
     }
   }
 
   Future<void> _restoreDocument(int documentId, String name) async {
-    try {
-      await _vaultService.restoreDocument(documentId: documentId);
-      if (!mounted) return;
+    final result = await _api.restoreVaultDocument(
+      email: _email,
+      password: _password,
+      documentId: documentId,
+    );
+    if (!mounted) return;
+    if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('"$name" restored')),
       );
       _loadTrash();
-    } catch (e) {
-      if (!mounted) return;
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Restore failed: $e')),
+        SnackBar(content: Text('Restore failed: ${result['error']}')),
       );
     }
   }
@@ -63,7 +75,6 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _kDialogBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Permanently Delete', style: TextStyle(color: Colors.white)),
         content: Text(
           'Permanently delete "$name"?\nThis cannot be undone.',
@@ -81,17 +92,22 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
 
     if (confirmed != true) return;
 
-    try {
-      await _vaultService.permanentDeleteDocument(documentId: documentId);
-      if (!mounted) return;
+    final result = await _api.deleteVaultDocument(
+      email: _email,
+      password: _password,
+      documentId: documentId,
+      permanent: true,
+    );
+
+    if (!mounted) return;
+    if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('"$name" permanently deleted')),
       );
       _loadTrash();
-    } catch (e) {
-      if (!mounted) return;
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
+        SnackBar(content: Text('Delete failed: ${result['error']}')),
       );
     }
   }
@@ -103,7 +119,6 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _kDialogBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Empty Trash', style: TextStyle(color: Colors.white)),
         content: Text(
           'Permanently delete all ${_trashedDocs.length} item(s)?\nThis cannot be undone.',
@@ -121,17 +136,16 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
 
     if (confirmed != true) return;
 
-    try {
-      await _vaultService.emptyTrash(childHash: widget.childHash);
-      if (!mounted) return;
+    final result = await _api.emptyVaultTrash(email: _email, password: _password);
+    if (!mounted) return;
+    if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Trash emptied')),
       );
       _loadTrash();
-    } catch (e) {
-      if (!mounted) return;
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
+        SnackBar(content: Text('Failed: ${result['error']}')),
       );
     }
   }
@@ -187,7 +201,7 @@ class _VaultTrashScreenState extends State<VaultTrashScreen> {
   }
 
   Widget _buildTrashTile(Map<String, dynamic> doc) {
-    final name = doc['display_name'] ?? doc['original_filename'] ?? 'Unknown';
+    final name = doc['name'] ?? doc['original_filename'] ?? 'Unknown';
     final category = doc['file_category'] as String?;
     final size = doc['formatted_size'] ?? '';
     final id = doc['id'] as int?;

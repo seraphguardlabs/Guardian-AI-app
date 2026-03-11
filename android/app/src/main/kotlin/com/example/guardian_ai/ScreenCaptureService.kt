@@ -25,383 +25,325 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
+/**
+ * Captures a screenshot every 5 seconds using a **persistent** VirtualDisplay.
+ *
+ * Previous design created / destroyed a VirtualDisplay + ImageReader on every
+ * capture tick, which caused heavy GC pressure, race conditions between the
+ * image-available listener and the timeout handler, and frequent OOM crashes.
+ *
+ * New approach:
+ *  1. A single ImageReader + VirtualDisplay is created once when the service
+ *     starts and kept alive for the entire session.
+ *  2. A repeating Handler tick (every 5 s) calls `acquireLatestImage()` to
+ *     grab whatever frame the display has rendered most recently, converts it
+ *     to a JPEG, and sends the path to Flutter.
+ *  3. Only one screenshot file exists at a time (`latest.jpg`) – no
+ *     accumulation, no old-file cleanup needed.
+ *  4. A `pendingFlutterDelivery` flag provides back-pressure: if Flutter
+ *     hasn't consumed the previous screenshot yet, the tick is skipped.
+ */
 class ScreenCaptureService : Service() {
     companion object {
         private const val TAG = "ScreenCaptureService"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "screen_capture_channel"
-        
-        // Adaptive sampling intervals (in milliseconds)
-        private const val HIGH_RISK_INTERVAL = 2000L  // 2 seconds for browsers
-        private const val NORMAL_INTERVAL = 10000L     // 10 seconds for normal apps
-        private const val LOW_BATTERY_MULTIPLIER = 2   // Double interval when battery < 20%
-        
-        // High-risk app packages (browsers, social media)
-        private val HIGH_RISK_PACKAGES = setOf(
-            "com.android.chrome",
-            "com.chrome.beta",
-            "com.chrome.dev",
-            "org.mozilla.firefox",
-            "com.opera.browser",
-            "com.microsoft.emmx",
-            "com.brave.browser",
-            "org.mozilla.focus",
-            "com.duckduckgo.mobile.android",
-            "com.instagram.android",
-            "com.snapchat.android",
-            "com.twitter.android",
-            "com.facebook.katana",
-            "com.whatsapp",
-            "com.telegram.messenger"
-        )
-        
-        // Trusted apps (skip analysis)
-        private val TRUSTED_PACKAGES = setOf(
-            "com.android.calculator2",
-            "com.google.android.calculator",
-            "com.android.camera",
-            "com.google.android.apps.photos",
-            "com.android.settings",
-            "com.android.dialer",
-            "com.android.contacts"
-        )
-        
+
+        /** Fixed capture interval – one screenshot every 5 seconds. */
+        private const val CAPTURE_INTERVAL_MS = 5000L
+
         var methodChannel: MethodChannel? = null
         private var instance: ScreenCaptureService? = null
-        
+
         val isRunning: Boolean get() = instance?.isCapturing == true
-        
+
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ScreenCaptureService::class.java)
             intent.putExtra("resultCode", resultCode)
             intent.putExtra("data", data)
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
         }
-        
+
         fun stop(context: Context) {
             context.stopService(Intent(context, ScreenCaptureService::class.java))
         }
     }
-    
+
+    // ── Persistent capture resources (created once, released on destroy) ──
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+
     private val handler = Handler(Looper.getMainLooper())
-    private var captureRunnable: Runnable? = null
-    
-    private var screenWidth = 0
-    private var screenHeight = 0
+    private var tickRunnable: Runnable? = null
+
+    private var captureWidth = 0
+    private var captureHeight = 0
     private var screenDensity = 0
-    
-    private var lastCaptureTime = 0L
-    private var currentInterval = NORMAL_INTERVAL
+
     private var isCapturing = false
-    
+
+    /**
+     * Back-pressure flag. Set to `true` when a screenshot is sent to Flutter;
+     * cleared when Flutter finishes processing (or on the next tick if the
+     * channel call threw). Prevents unbounded queue growth on the Dart side.
+     */
+    @Volatile
+    private var pendingFlutterDelivery = false
+
+    // Reusable file – only one screenshot on disk at any time
+    private lateinit var screenshotFile: File
+
+    // ─────────────────────────────────────────────────────────────────────────
     override fun onCreate() {
         super.onCreate()
         instance = this
         Log.d(TAG, "ScreenCaptureService created")
-        
-        // Get screen dimensions
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
+        // Use half-resolution to save memory
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
-        windowManager.defaultDisplay.getRealMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
+        wm.defaultDisplay.getRealMetrics(metrics)
+        captureWidth  = metrics.widthPixels  / 2
+        captureHeight = metrics.heightPixels / 2
         screenDensity = metrics.densityDpi
-        
-        Log.d(TAG, "Screen: ${screenWidth}x$screenHeight @ ${screenDensity}dpi")
+
+        // Prepare single screenshot file
+        val dir = File(cacheDir, "screenshots")
+        if (!dir.exists()) dir.mkdirs()
+        screenshotFile = File(dir, "latest.jpg")
+
+        Log.d(TAG, "Capture resolution: ${captureWidth}x$captureHeight @ ${screenDensity}dpi")
     }
-    
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand called")
-        
-        // Create notification channel
+
         createNotificationChannel()
-        
-        // Start foreground service
+
         val notification = createNotification()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                startForeground(
+                    NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground ScreenCaptureService: \${e.message}")
+            Log.e(TAG, "Failed to start foreground: ${e.message}")
         }
-        
-        // Get MediaProjection permission data
-        val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
+
+        val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED)
+            ?: Activity.RESULT_CANCELED
         val data = intent?.getParcelableExtra<Intent>("data")
-        
+
         if (resultCode == Activity.RESULT_OK && data != null) {
             startScreenCapture(resultCode, data)
         } else {
             Log.e(TAG, "Invalid MediaProjection permission data")
             stopSelf()
         }
-        
+
         return START_STICKY
     }
-    
+
+    // ── Core capture setup (runs once) ───────────────────────────────────────
     private fun startScreenCapture(resultCode: Int, data: Intent) {
         try {
-            val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
-            
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = mpm.getMediaProjection(resultCode, data)
+
             if (mediaProjection == null) {
                 Log.e(TAG, "Failed to create MediaProjection")
                 stopSelf()
                 return
             }
-            
-            // Register callback to handle projection being revoked
+
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.w(TAG, "MediaProjection stopped by system")
-                    isCapturing = false
-                    captureRunnable?.let { handler.removeCallbacks(it) }
-                    virtualDisplay?.release()
-                    imageReader?.close()
-                    virtualDisplay = null
-                    imageReader = null
+                    tearDown()
                 }
             }, handler)
-            
-            // Create ImageReader for capturing frames
+
+            // Create a persistent ImageReader (maxImages = 2 so the system can
+            // double-buffer without blocking).
             imageReader = ImageReader.newInstance(
-                screenWidth / 2,  // Reduce resolution for performance
-                screenHeight / 2,
-                PixelFormat.RGBA_8888,
-                2
+                captureWidth, captureHeight,
+                PixelFormat.RGBA_8888, 2
             )
-            
-            // Create VirtualDisplay
+
+            // Create ONE VirtualDisplay that mirrors the screen into the reader.
             virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "ScreenCapture",
-                screenWidth / 2,
-                screenHeight / 2,
-                screenDensity,
+                "GuardianCapture",
+                captureWidth, captureHeight, screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader?.surface,
-                null,
-                null
+                imageReader!!.surface,
+                null, null
             )
-            
-            Log.d(TAG, "Screen capture started successfully")
+
             isCapturing = true
-            
-            // Start continuous capture loop
-            scheduleNextCapture()
-            
+            Log.d(TAG, "Persistent VirtualDisplay created – capturing every ${CAPTURE_INTERVAL_MS}ms")
+
+            // Start the repeating tick
+            scheduleTick()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error starting screen capture", e)
             stopSelf()
         }
     }
-    
-    private fun scheduleNextCapture() {
+
+    // ── Repeating 5-second tick ──────────────────────────────────────────────
+    private fun scheduleTick() {
         if (!isCapturing) return
-        
-        // Update interval based on foreground app and battery
-        updateCaptureInterval()
-        
-        captureRunnable = Runnable {
-            captureScreen()
-            scheduleNextCapture()
+
+        tickRunnable = Runnable {
+            grabLatestFrame()
+            scheduleTick()          // schedule the next tick
         }
-        
-        handler.postDelayed(captureRunnable!!, currentInterval)
+        handler.postDelayed(tickRunnable!!, CAPTURE_INTERVAL_MS)
     }
-    
-    private fun updateCaptureInterval() {
-        // Get foreground app
-        val foregroundApp = getForegroundApp()
-        
-        // Determine base interval
-        val baseInterval = when {
-            foregroundApp in TRUSTED_PACKAGES -> {
-                // Skip capture for trusted apps
-                currentInterval = Long.MAX_VALUE
-                return
-            }
-            foregroundApp in HIGH_RISK_PACKAGES -> HIGH_RISK_INTERVAL
-            else -> NORMAL_INTERVAL
+
+    /**
+     * Grab the most recent frame the VirtualDisplay has rendered into the
+     * ImageReader. If no new frame is available (e.g. screen hasn't changed),
+     * `acquireLatestImage()` returns null — we simply skip silently.
+     */
+    private fun grabLatestFrame() {
+        if (!isCapturing) return
+
+        // Back-pressure: skip if Flutter hasn't finished processing the last one
+        if (pendingFlutterDelivery) {
+            Log.d(TAG, "Skipping capture – Flutter still processing previous screenshot")
+            return
         }
-        
-        // Adjust for battery level
-        val batteryLevel = getBatteryLevel()
-        val batteryMultiplier = when {
-            batteryLevel < 10 -> 4
-            batteryLevel < 20 -> 2
-            else -> 1
-        }
-        
-        currentInterval = baseInterval * batteryMultiplier
-        
-        Log.d(TAG, "Capture interval: ${currentInterval}ms (app: $foregroundApp, battery: $batteryLevel%)")
-    }
-    
-    private fun captureScreen() {
+
+        val reader = imageReader ?: return
+        var image: Image? = null
         try {
-            val image = imageReader?.acquireLatestImage()
-            if (image != null) {
-                val bitmap = imageToBitmap(image)
-                image.close()
-                
-                if (bitmap != null) {
-                    // Save screenshot to temp file
-                    val screenshotFile = saveScreenshot(bitmap)
-                    bitmap.recycle()
-                    
-                    if (screenshotFile != null) {
-                        // Send to Flutter for analysis
-                        sendScreenshotToFlutter(screenshotFile.absolutePath)
-                    }
-                }
+            image = reader.acquireLatestImage() ?: return   // nothing new
+            val bitmap = imageToBitmap(image) ?: return
+            image.close()
+            image = null
+
+            if (saveBitmapToFile(bitmap)) {
+                bitmap.recycle()
+                sendScreenshotToFlutter(screenshotFile.absolutePath)
+            } else {
+                bitmap.recycle()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error capturing screen", e)
+            Log.e(TAG, "Error grabbing frame", e)
+        } finally {
+            // Always close the image if it wasn't closed above
+            try { image?.close() } catch (_: Exception) {}
         }
     }
-    
+
+    // ── Bitmap conversion ────────────────────────────────────────────────────
     private fun imageToBitmap(image: Image): Bitmap? {
-        try {
-            val planes = image.planes
-            val buffer: ByteBuffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * image.width
-            
-            val bitmap = Bitmap.createBitmap(
+        return try {
+            val plane = image.planes[0]
+            val buffer: ByteBuffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride   = plane.rowStride
+            val rowPadding  = rowStride - pixelStride * image.width
+
+            val bmp = Bitmap.createBitmap(
                 image.width + rowPadding / pixelStride,
                 image.height,
                 Bitmap.Config.ARGB_8888
             )
-            bitmap.copyPixelsFromBuffer(buffer)
-            
-            // Crop to actual dimensions if there's padding
-            return if (rowPadding > 0) {
-                Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
+            bmp.copyPixelsFromBuffer(buffer)
+
+            if (rowPadding > 0) {
+                val cropped = Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
+                if (cropped !== bmp) bmp.recycle()
+                cropped
             } else {
-                bitmap
+                bmp
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error converting image to bitmap", e)
-            return null
+            null
         }
     }
-    
-    private fun saveScreenshot(bitmap: Bitmap): File? {
-        try {
-            val screenshotsDir = File(cacheDir, "screenshots")
-            if (!screenshotsDir.exists()) {
-                screenshotsDir.mkdirs()
+
+    // ── File I/O (single file, overwritten each time) ────────────────────────
+    private fun saveBitmapToFile(bitmap: Bitmap): Boolean {
+        return try {
+            FileOutputStream(screenshotFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out)
             }
-            
-            // Clean old screenshots (keep only last 10)
-            cleanOldScreenshots(screenshotsDir)
-            
-            val timestamp = System.currentTimeMillis()
-            val file = File(screenshotsDir, "screenshot_$timestamp.jpg")
-            
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 70, out)
-            }
-            
-            Log.d(TAG, "Screenshot saved: ${file.absolutePath}")
-            return file
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Error saving screenshot", e)
-            return null
+            false
         }
     }
-    
-    private fun cleanOldScreenshots(dir: File) {
-        try {
-            val files = dir.listFiles() ?: return
-            if (files.size > 10) {
-                files.sortedBy { it.lastModified() }
-                    .take(files.size - 10)
-                    .forEach { it.delete() }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cleaning old screenshots", e)
-        }
-    }
-    
+
+    // ── Flutter communication ────────────────────────────────────────────────
     private fun sendScreenshotToFlutter(path: String) {
+        pendingFlutterDelivery = true
         handler.post {
             try {
-                methodChannel?.invokeMethod("onScreenshotCaptured", mapOf(
-                    "path" to path,
-                    "timestamp" to System.currentTimeMillis(),
-                    "foregroundApp" to getForegroundApp()
-                ))
-                Log.d(TAG, "Screenshot sent to Flutter: $path")
+                methodChannel?.invokeMethod(
+                    "onScreenshotCaptured",
+                    mapOf(
+                        "path" to path,
+                        "timestamp" to System.currentTimeMillis(),
+                        "foregroundApp" to getForegroundApp()
+                    )
+                )
+                Log.d(TAG, "Screenshot sent to Flutter")
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending screenshot to Flutter", e)
+            } finally {
+                // Release back-pressure regardless of success/failure so the
+                // next tick can proceed.
+                pendingFlutterDelivery = false
             }
         }
     }
-    
+
+    // ── Foreground-app detection ─────────────────────────────────────────────
     private fun getForegroundApp(): String? {
-        try {
-            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
-            val currentTime = System.currentTimeMillis()
-            
-            // First try to get the most recent foreground event (look back 1 hour)
-            val events = usageStatsManager.queryEvents(currentTime - 3600000, currentTime)
-            var foregroundApp: String? = null
-            val event = android.app.usage.UsageEvents.Event()
-            
+        return try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val now = System.currentTimeMillis()
+
+            val events = usm.queryEvents(now - 60_000, now)
+            var fg: String? = null
+            val ev = android.app.usage.UsageEvents.Event()
+
             while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                if (event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED || 
-                    event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                    foregroundApp = event.packageName
-                } else if (event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED || 
-                           event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED || 
-                           event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND) {
-                    if (foregroundApp == event.packageName) {
-                        foregroundApp = null
+                events.getNextEvent(ev)
+                when (ev.eventType) {
+                    android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED,
+                    android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> fg = ev.packageName
+                    android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED,
+                    android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED,
+                    android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        if (fg == ev.packageName) fg = null
                     }
                 }
             }
-            
-            if (foregroundApp != null) {
-                return foregroundApp
-            }
-            
-            // Fallback to queryUsageStats (look back 1 minute)
-            val stats = usageStatsManager.queryUsageStats(
-                android.app.usage.UsageStatsManager.INTERVAL_BEST,
-                currentTime - 60000,
-                currentTime
-            )
-            
-            if (stats != null && stats.isNotEmpty()) {
-                val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
-                return sortedStats.firstOrNull()?.packageName
-            }
+            fg
         } catch (e: Exception) {
             Log.e(TAG, "Error getting foreground app", e)
+            null
         }
-        return null
     }
-    
-    private fun getBatteryLevel(): Int {
-        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
-        return batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-    }
-    
+
+    // ── Notification ─────────────────────────────────────────────────────────
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -412,50 +354,47 @@ class ScreenCaptureService : Service() {
                 description = "Guardian AI is monitoring screen content for safety"
                 setShowBadge(false)
             }
-            
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
     }
-    
+
     private fun createNotification(): Notification {
-        val notificationIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
+            else PendingIntent.FLAG_UPDATE_CURRENT
         )
-        
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Guardian AI Active")
             .setContentText("Monitoring screen for safety")
             .setSmallIcon(android.R.drawable.ic_menu_view)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(pi)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
-    
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
     override fun onBind(intent: Intent?): IBinder? = null
-    
+
+    private fun tearDown() {
+        isCapturing = false
+        tickRunnable?.let { handler.removeCallbacks(it) }
+        try { virtualDisplay?.release() }  catch (_: Exception) {}
+        try { imageReader?.close() }       catch (_: Exception) {}
+        virtualDisplay = null
+        imageReader = null
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "ScreenCaptureService destroyed")
-        
-        isCapturing = false
-        captureRunnable?.let { handler.removeCallbacks(it) }
-        
-        virtualDisplay?.release()
-        imageReader?.close()
+        tearDown()
         mediaProjection?.stop()
-        
-        virtualDisplay = null
-        imageReader = null
         mediaProjection = null
         instance = null
     }

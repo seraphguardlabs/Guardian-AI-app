@@ -158,7 +158,9 @@ class ScreenMonitoringService {
         if (path == null || timestamp == null) return;
         AppLogger.log('📸 Screenshot received: $path');
         
-        // Add to analysis queue
+        // Drop older queued items – only keep the latest screenshot
+        // to avoid unbounded queue growth when the AI model is slow.
+        _analysisQueue.clear();
         _analysisQueue.add({
           'path': path,
           'timestamp': timestamp,

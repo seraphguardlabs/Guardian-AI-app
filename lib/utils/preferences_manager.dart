@@ -34,6 +34,7 @@ class PreferencesManager {
   static const String _keyLastRoute = 'last_route';
   static const String _keyTaskMetadata = 'task_metadata'; // Stores unencrypted task titles/descriptions
   static const String _keyLocallyDoneRewardTasks = 'locally_done_reward_tasks'; // Child-side: reward task IDs child considers done
+  static const String _keyScreenCaptureGranted = 'screen_capture_granted';
 
   final SharedPreferences _prefs;
 
@@ -151,6 +152,15 @@ class PreferencesManager {
 
   String? getLastRoute() {
     return _prefs.getString(_keyLastRoute);
+  }
+
+  // Screen Capture Permission
+  Future<void> setScreenCaptureGranted(bool granted) async {
+    await _prefs.setBool(_keyScreenCaptureGranted, granted);
+  }
+
+  bool isScreenCaptureGranted() {
+    return _prefs.getBool(_keyScreenCaptureGranted) ?? false;
   }
 
   // Clear all (Logout)

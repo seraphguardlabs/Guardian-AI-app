@@ -215,13 +215,16 @@ class _ChildScreenState extends State<ChildScreen>
       accessGranted = result == true;
     } catch (_) {}
 
-    // Screen capture — check if the service is currently running
-    bool captureGranted = _screenCaptureGranted;
-    try {
-      final result = await ScreenMonitoringService.platform.invokeMethod<bool>('isCapturing');
-      captureGranted = result == true;
-    } catch (_) {
-      // isCapturing may not exist yet — keep previous state
+    // Screen capture — check persisted preference OR running service
+    final prefs = Provider.of<PreferencesManager>(context, listen: false);
+    bool captureGranted = prefs.isScreenCaptureGranted();
+    if (!captureGranted) {
+      try {
+        final result = await ScreenMonitoringService.platform.invokeMethod<bool>('isCapturing');
+        captureGranted = result == true;
+      } catch (_) {
+        // isCapturing may not exist yet — keep previous state
+      }
     }
 
     if (mounted) {
@@ -297,6 +300,12 @@ class _ChildScreenState extends State<ChildScreen>
       // This triggers the Android MediaProjection permission dialog
       final result = await ScreenMonitoringService.platform.invokeMethod('requestPermission');
       final granted = result == true;
+      
+      // Persist the permission state so it survives app restarts
+      if (granted) {
+        final prefs = Provider.of<PreferencesManager>(context, listen: false);
+        await prefs.setScreenCaptureGranted(true);
+      }
       
       if (mounted) {
         setState(() {
@@ -959,15 +968,24 @@ class _ChildScreenState extends State<ChildScreen>
     AppLogger.log('🧠 Starting AI monitoring pipeline...');
     
     try {
-      // 1. Start screen capture (permission was already granted on permission page)
+      // 1. Now that AI is ready, actually start the native ScreenCaptureService.
+      //    Permission was already granted earlier and stored; this triggers the service.
+      try {
+        final captureStarted = await ScreenMonitoringService.platform.invokeMethod('startCapture');
+        AppLogger.log('  📸 Native screen capture service started: $captureStarted');
+      } catch (e) {
+        AppLogger.log('  ⚠️ Could not start native capture service: $e');
+      }
+
+      // 2. Mark Flutter-side monitoring as active
       final screenMonitoring = ScreenMonitoringService.instance;
       if (screenMonitoring.isInitialized && !screenMonitoring.isMonitoring) {
-        AppLogger.log('  📸 Starting screen capture (permission pre-granted)...');
+        AppLogger.log('  📸 Activating Flutter screen monitoring handler...');
         final started = await screenMonitoring.startMonitoring(skipPermissionRequest: true);
         if (started) {
-          AppLogger.log('  ✅ Screen capture started');
+          AppLogger.log('  ✅ Screen monitoring active');
         } else {
-          AppLogger.log('  ⚠️ Screen capture not started');
+          AppLogger.log('  ⚠️ Screen monitoring not started');
         }
       }
       

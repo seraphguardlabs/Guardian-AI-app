@@ -30,6 +30,10 @@ class MainActivity: FlutterActivity() {
     
     private val SCREEN_CAPTURE_REQUEST_CODE = 1000
     private var screenCaptureResultCallback: MethodChannel.Result? = null
+    
+    // Store permission result so capture can start later (after AI is ready)
+    private var pendingProjectionResultCode: Int? = null
+    private var pendingProjectionData: Intent? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -156,6 +160,17 @@ class MainActivity: FlutterActivity() {
             when (call.method) {
                 "requestPermission" -> {
                     requestScreenCapturePermission(result)
+                }
+                "startCapture" -> {
+                    // Actually start the capture service (call after AI is ready)
+                    val rc = pendingProjectionResultCode
+                    val data = pendingProjectionData
+                    if (rc != null && data != null) {
+                        ScreenCaptureService.start(this, rc, data)
+                        result.success(true)
+                    } else {
+                        result.error("NO_PERMISSION", "Screen capture permission not yet granted", null)
+                    }
                 }
                 "stopCapture" -> {
                     ScreenCaptureService.stop(this)
@@ -449,9 +464,11 @@ class MainActivity: FlutterActivity() {
         
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK && data != null) {
-                Log.d("MainActivity", "Screen capture permission granted")
-                // Start the screen capture service
-                ScreenCaptureService.start(this, resultCode, data)
+                Log.d("MainActivity", "Screen capture permission granted (stored, not started yet)")
+                // Store the permission result — don't start the service yet.
+                // Flutter will call 'startCapture' once the AI model is activated.
+                pendingProjectionResultCode = resultCode
+                pendingProjectionData = data
                 screenCaptureResultCallback?.success(true)
             } else {
                 Log.d("MainActivity", "Screen capture permission denied")
