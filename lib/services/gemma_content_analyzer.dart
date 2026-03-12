@@ -9,6 +9,38 @@ class GemmaContentAnalyzer {
 
   GemmaContentAnalyzer(this._model);
 
+  /// Analyzes an image using a persistsent chat context.
+  /// This is much faster than creating a new chat every time.
+  Future<ContentAnalysisResult> analyzeWithChat(InferenceChat chat, Uint8List imageBytes) async {
+    final prompt = '''Safety classification from image.
+Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
+{"explicit":0.0, "violence":0.0, "predatory":0.0, "suggestive":0.0, "risk_score":0, "summary":"short reason"}''';
+
+    try {
+      final message = Message.withImage(
+        text: prompt,
+        imageBytes: imageBytes,
+        isUser: true,
+      );
+      await chat.addQuery(message);
+
+      final responseBuffer = StringBuffer();
+      await for (final modelResponse in chat.generateChatResponseAsync()) {
+        if (modelResponse is TextResponse) {
+          responseBuffer.write(modelResponse.token);
+        }
+      }
+
+      final rawResponse = responseBuffer.toString();
+      debugPrint('🔍 Raw Gemma Image response: ${rawResponse.substring(0, rawResponse.length.clamp(0, 500))}');
+      
+      return _parseAnalysisResponse(rawResponse);
+    } catch (e) {
+      debugPrint('❌ GemmaContentAnalyzer withChat error: $e');
+      return ContentAnalysisResult.safe();
+    }
+  }
+
   Future<ContentAnalysisResult> analyzeImage(Uint8List imageBytes) async {
     int retryCount = 0;
     const maxRetries = 1;

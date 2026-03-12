@@ -173,8 +173,12 @@ class ScreenCaptureService : Service() {
                 }
             }, handler)
 
-            // Create a persistent ImageReader (maxImages = 2 so the system can
-            // double-buffer without blocking).
+            // Create a persistent ImageReader (maxImages = 2)
+            // FIXED OPTIMIZATION: Scale down to 448px baseline for Gemma 3 Vision processing speed (< 5s target)
+            val scaleFactor = 448f / Math.max(screenWidth, screenHeight).toFloat()
+            val captureWidth = (screenWidth * scaleFactor).toInt()
+            val captureHeight = (screenHeight * scaleFactor).toInt()
+
             imageReader = ImageReader.newInstance(
                 captureWidth, captureHeight,
                 PixelFormat.RGBA_8888, 2

@@ -39,8 +39,9 @@ class GemmaManager {
     
     try {
       if (hfToken.isEmpty) {
-        AppLogger.log('❌ GemmaManager: hfToken is empty – is .env missing? Copy .env.example to .env and add your HuggingFace token.');
-        _statusController.add('Error: Missing HuggingFace token');
+        final errorMsg = '❌ GemmaManager: hfToken is empty. Ensure .env exists with hfToken=...';
+        AppLogger.log(errorMsg);
+        _statusController.add('Error: $errorMsg');
         return;
       }
       AppLogger.log('🤖 GemmaManager: Initializing FlutterGemma...');

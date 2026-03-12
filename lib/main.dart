@@ -474,7 +474,11 @@ Future<bool> onIosBackground(ServiceInstance service) async => true;
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    AppLogger.log('[BG] Warning: .env file missing in background isolate');
+  }
   
   await AppLogger.init();
   AppLogger.log('[BG] Background Service onStart initialized');
@@ -499,8 +503,7 @@ void onStart(ServiceInstance service) async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(alertChannel);
   
-  InferenceModel? model;
-  GemmaContentAnalyzer? analyzer;
+  InferenceChat? chat;
   bool gemmaInitialized = false;
 
   // Background monitoring interval (5 seconds)
@@ -512,18 +515,29 @@ void onStart(ServiceInstance service) async {
           await GemmaManager.instance.initialize();
           gemmaInitialized = true;
         }
+        
         if (!GemmaManager.instance.modelReady) {
-          return; // Model not downloaded yet
+          AppLogger.log('[BG] Waiting for model to be downloaded/ready...');
+          return; 
         }
+
         try {
           // Load model into inference engine (required each session)
           await GemmaManager.instance.activateModel();
           model = await FlutterGemma.getActiveModel(
-            maxTokens: 1024,
+            maxTokens: 128, // Optimized: lower tokens = faster response
             supportImage: true,
           );
+          
           analyzer = GemmaContentAnalyzer(model!);
-          AppLogger.log('[BG] Gemma model initialized in isolate');
+          // PRE-CREATE CHAT CONTEXT: Significant speed optimization back-port
+          chat = await model!.createChat(
+            temperature: 0.1,
+            topK: 40,
+            supportImage: true,
+          );
+          
+          AppLogger.log('[BG] Gemma model & chat context initialized in isolate');
         } catch (e) {
           AppLogger.log('[BG] Model activation failed, will retry: $e');
           return; // Retry on next timer tick
@@ -555,7 +569,8 @@ void onStart(ServiceInstance service) async {
       }
 
       AppLogger.log('[BG] Analysing screenshot: ${newest.path}');
-      final result = await analyzer!.analyzeImage(imageBytes);
+      // OPTIMIZED: Using the pre-created chat context instead of creating a new one inside the analyzer
+      final result = await analyzer!.analyzeWithChat(chat!, imageBytes);
       
       if (result.riskScore >= 70) {
         AppLogger.log('[BG] 🚨 HIGH RISK (${result.riskScore}%)! ${result.categories}');
