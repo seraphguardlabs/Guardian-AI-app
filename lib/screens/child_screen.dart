@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/app_logger.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -359,8 +360,19 @@ class _ChildScreenState extends State<ChildScreen>
     // Start native foreground services — safe now that permissions exist
     try {
       await BackgroundMonitoringService.start();
+      AppLogger.log('✅ BackgroundMonitoringService started');
     } catch (e) {
       AppLogger.log('❌ Error starting BackgroundMonitoringService: $e');
+    }
+    
+    try {
+      final service = FlutterBackgroundService();
+      if (!await service.isRunning()) {
+        await service.startService();
+        AppLogger.log('✅ FlutterBackgroundService started');
+      }
+    } catch (e) {
+      AppLogger.log('❌ Error starting FlutterBackgroundService: $e');
     }
     
     try {
@@ -907,7 +919,6 @@ class _ChildScreenState extends State<ChildScreen>
         AppLogger.log('❌ ScreenMonitoringService initialization failed');
         return;
       }
-
       // Initialize RealtimeAlertService with a database
       await _initializeAlertService(childHash, childName);
 
