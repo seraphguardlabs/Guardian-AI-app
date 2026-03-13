@@ -504,6 +504,8 @@ void onStart(ServiceInstance service) async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(alertChannel);
   
+  InferenceModel? model;
+  GemmaContentAnalyzer? analyzer;
   InferenceChat? chat;
   bool gemmaInitialized = false;
 

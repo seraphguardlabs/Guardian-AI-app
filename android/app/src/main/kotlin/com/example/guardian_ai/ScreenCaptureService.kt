@@ -82,6 +82,8 @@ class ScreenCaptureService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var tickRunnable: Runnable? = null
 
+    private var screenWidth = 0
+    private var screenHeight = 0
     private var captureWidth = 0
     private var captureHeight = 0
     private var screenDensity = 0
@@ -109,8 +111,8 @@ class ScreenCaptureService : Service() {
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         wm.defaultDisplay.getRealMetrics(metrics)
-        captureWidth  = metrics.widthPixels  / 2
-        captureHeight = metrics.heightPixels / 2
+        screenWidth = metrics.widthPixels
+        screenHeight = metrics.heightPixels
         screenDensity = metrics.densityDpi
 
         // Prepare single screenshot file
@@ -176,18 +178,18 @@ class ScreenCaptureService : Service() {
             // Create a persistent ImageReader (maxImages = 2)
             // FIXED OPTIMIZATION: Scale down to 448px baseline for Gemma 3 Vision processing speed (< 5s target)
             val scaleFactor = 448f / Math.max(screenWidth, screenHeight).toFloat()
-            val captureWidth = (screenWidth * scaleFactor).toInt()
-            val captureHeight = (screenHeight * scaleFactor).toInt()
+            this.captureWidth = (screenWidth * scaleFactor).toInt()
+            this.captureHeight = (screenHeight * scaleFactor).toInt()
 
             imageReader = ImageReader.newInstance(
-                captureWidth, captureHeight,
+                this.captureWidth, this.captureHeight,
                 PixelFormat.RGBA_8888, 2
             )
 
             // Create ONE VirtualDisplay that mirrors the screen into the reader.
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "GuardianCapture",
-                captureWidth, captureHeight, screenDensity,
+                this.captureWidth, this.captureHeight, screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader!!.surface,
                 null, null
