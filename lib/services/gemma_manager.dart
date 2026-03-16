@@ -1,16 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:path_provider/path_provider.dart';
 import '../utils/app_logger.dart';
 
 class GemmaManager {
   static final GemmaManager instance = GemmaManager._Internal();
   GemmaManager._Internal();
 
-  // Model ID for Gemma 3n (Stable version from mobile-ai)
+  // Model filename (must match what the plugin downloads from the URL)
   static const String modelId = 'gemma-3n-E2B-it-int4.task';
-  
+
+  // Minimum file size for a complete model (2.5GB) — used for our own FS check
+  static const int _minModelSizeBytes = 2500 * 1024 * 1024; // 2.5 GB
+
   // Read token from .env file
   static String get hfToken => dotenv.env['hfToken'] ?? '';
 
@@ -24,19 +28,47 @@ class GemmaManager {
   bool _isInitialized = false;
   bool _isDownloading = false;
   bool _modelReady = false;
-
   bool _modelActivated = false;
 
-  /// Whether the model has been downloaded and is ready for activation.
   bool get modelReady => _modelReady;
-
-  /// Whether the model has been loaded into the inference engine this session.
   bool get modelActivated => _modelActivated;
+
+  /// Directly checks if the model file exists on disk with a valid size.
+  /// This is a reliable fallback when the plugin's isModelInstalled() returns
+  /// a false negative after a crash/restart.
+  Future<bool> _isModelFileOnDisk() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      // Apply Android path correction: /data/user/0/ -> /data/data/
+      final correctedPath = dir.path.contains('/data/user/0/')
+          ? dir.path.replaceFirst('/data/user/0/', '/data/data/')
+          : dir.path;
+      final filePath = '$correctedPath/$modelId';
+      final file = File(filePath);
+
+      if (!await file.exists()) {
+        AppLogger.log('🔍 GemmaManager: File not at $filePath');
+        return false;
+      }
+
+      final fileSize = await file.length();
+      AppLogger.log('🔍 GemmaManager: Model file found at $filePath (${(fileSize / 1024 / 1024 / 1024).toStringAsFixed(2)} GB)');
+
+      if (fileSize < _minModelSizeBytes) {
+        AppLogger.log('⚠️ GemmaManager: File exists but too small (${fileSize} bytes) — likely partial/corrupt.');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      AppLogger.log('⚠️ GemmaManager: Error checking file on disk: $e');
+      return false;
+    }
+  }
 
   Future<void> initialize() async {
     if (_isInitialized || _isInitializing) return;
     _isInitializing = true;
-    
+
     try {
       if (hfToken.isEmpty) {
         final errorMsg = '❌ GemmaManager: hfToken is empty. Ensure .env exists with hfToken=...';
@@ -45,10 +77,9 @@ class GemmaManager {
         return;
       }
       AppLogger.log('🤖 GemmaManager: Initializing FlutterGemma...');
-      // Initialize the plugin with the HuggingFace token
       await FlutterGemma.initialize(huggingFaceToken: hfToken);
       _isInitialized = true;
-      
+
       final installed = await isModelInstalled();
       if (installed) {
         AppLogger.log('✅ GemmaManager: Model already installed.');
@@ -66,50 +97,97 @@ class GemmaManager {
     }
   }
 
+  /// Two-stage check: plugin API first, then raw file-system check as fallback.
+  /// This prevents false negatives after app crashes.
   Future<bool> isModelInstalled() async {
     if (_modelReady) return true;
+
+    // Stage 1: Ask the plugin
     try {
-      final installed = await FlutterGemma.isModelInstalled(modelId);
-      if (installed) _modelReady = true;
-      return installed;
+      final pluginSays = await FlutterGemma.isModelInstalled(modelId);
+      if (pluginSays) {
+        _modelReady = true;
+        AppLogger.log('✅ GemmaManager: Plugin confirms model is installed.');
+        return true;
+      }
     } catch (e) {
-      AppLogger.log('⚠️ GemmaManager: Error checking installation: $e');
-      return false;
+      AppLogger.log('⚠️ GemmaManager: Plugin check failed: $e');
     }
+
+    // Stage 2: Fallback — directly check the filesystem
+    final fileOnDisk = await _isModelFileOnDisk();
+    if (fileOnDisk) {
+      _modelReady = true;
+      AppLogger.log('✅ GemmaManager: File-system check confirms model is on disk. Plugin had a false negative.');
+      return true;
+    }
+
+    return false;
   }
 
-  /// Load the model into the inference engine. Must be called each session
-  /// before getActiveModel() will work, even if the model files are on disk.
+  /// Activate the model in the inference engine for the current session.
   Future<void> activateModel() async {
     if (_modelActivated) return;
+
+    // Always do a fresh isModelInstalled() check to catch file-system truth
+    final installed = await isModelInstalled();
+    if (installed) {
+      AppLogger.log('🤖 GemmaManager: Model on disk. Activating inference engine without re-downloading...');
+      // The plugin needs getActiveModel() called, which is done in main.dart after this,
+      // so we just mark it activated here.
+      _modelActivated = true;
+      _modelReady = true;
+      AppLogger.log('✅ GemmaManager: Model marked as activated.');
+      return;
+    }
+
+    AppLogger.log('🤖 GemmaManager: Model not on disk, triggering download via activateModel...');
     final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
-    AppLogger.log('🤖 GemmaManager: Activating model in inference engine...');
-    await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-        .fromNetwork(url, token: hfToken)
-        .install();
-    _modelActivated = true;
-    _modelReady = true;
-    AppLogger.log('✅ GemmaManager: Model activated in inference engine.');
+    try {
+      await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+          .fromNetwork(url, token: hfToken, foreground: true) // foreground:true = prevents OS killing download
+          .install();
+      _modelActivated = true;
+      _modelReady = true;
+      AppLogger.log('✅ GemmaManager: Model activated in inference engine.');
+    } catch (e) {
+      AppLogger.log('❌ GemmaManager: Activation error: $e');
+      rethrow;
+    }
   }
 
   Future<void> downloadModel() async {
     if (_isDownloading) return;
     _isDownloading = true;
-    
+
     try {
+      _statusController.add('Checking model...');
+
+      // Guard: if the model is already fully on disk, don't re-download
+      final installed = await isModelInstalled();
+      if (installed) {
+        AppLogger.log('✅ GemmaManager: Model already on disk. Skipping download.');
+        _modelReady = true;
+        _modelActivated = true;
+        _statusController.add('Ready');
+        _progressController.add(1.0);
+        return;
+      }
+
       _statusController.add('Downloading Model...');
-      AppLogger.log('🤖 GemmaManager: Starting download from HuggingFace...');
-      
-      // The URL for the gemma-3n model on HuggingFace
+      AppLogger.log('🤖 GemmaManager: Starting download with foreground service (prevents OS kill)...');
+
       final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
-      
-      // Use the modern installation builder
+
+      // CRITICAL: foreground:true ensures Android's foreground service is used for
+      // this large download. Without it, Android kills the process mid-download
+      // when the app is backgrounded or the screen turns off -> partial files -> restart loop.
       await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-          .fromNetwork(url, token: hfToken)
+          .fromNetwork(url, token: hfToken, foreground: true)
           .withProgress((progress) {
             _progressController.add(progress / 100);
             _statusController.add('Downloading: $progress%');
-            if (progress % 2 == 0) AppLogger.log('📥 Download Progress: $progress%');
+            if (progress % 10 == 0) AppLogger.log('📥 Download Progress: $progress%');
           })
           .install();
 
@@ -117,8 +195,7 @@ class GemmaManager {
       _modelActivated = true;
       _statusController.add('Ready');
       _progressController.add(1.0);
-      AppLogger.log('✅ GemmaManager: Model installed successfully.');
-      
+      AppLogger.log('✅ GemmaManager: Model downloaded and installed successfully.');
     } catch (e) {
       AppLogger.log('❌ GemmaManager: Download error: $e');
       _statusController.add('Download Failed: $e');
@@ -128,7 +205,7 @@ class GemmaManager {
       _isDownloading = false;
     }
   }
-  
+
   void dispose() {
     _statusController.close();
     _progressController.close();

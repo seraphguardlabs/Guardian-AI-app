@@ -520,6 +520,10 @@ void onStart(ServiceInstance service) async {
         }
         
         if (!GemmaManager.instance.modelReady) {
+          await GemmaManager.instance.isModelInstalled();
+        }
+        
+        if (!GemmaManager.instance.modelReady) {
           AppLogger.log('[BG] Waiting for model to be downloaded/ready...');
           return; 
         }
