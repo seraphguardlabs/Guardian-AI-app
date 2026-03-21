@@ -3,11 +3,112 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import '../models/content_analysis_result.dart';
+import '../utils/app_logger.dart';
 
 class GemmaContentAnalyzer {
   final InferenceModel _model;
+  final Map<String, ContentAnalysisResult> _textCache = {};
 
   GemmaContentAnalyzer(this._model);
+
+  /// Describe the screenshot in natural language first (gemma3n flow).
+  Future<String> describeImageWithChat(
+    InferenceChat chat,
+    Uint8List imageBytes,
+  ) async {
+    const describePrompt =
+        'In exactly 2 short sentences, describe what is on this screen: who is visible, what actions are happening, and whether there is any dangerous, violent, or suggestive content. Then on a new line write "risk:" followed by a number 0-100.';
+
+    try {
+      final message = Message.withImage(
+        text: describePrompt,
+        imageBytes: imageBytes,
+        isUser: true,
+      );
+      await chat.addQuery(message);
+
+      final buffer = StringBuffer();
+      await for (final modelResponse in chat.generateChatResponseAsync()) {
+        if (modelResponse is TextResponse) {
+          buffer.write(modelResponse.token);
+        }
+      }
+
+      final description = buffer.toString().trim();
+      await chat.clearHistory();
+
+      AppLogger.log(
+        '[GemmaAnalyzer] Description generated (${description.length} chars)',
+      );
+      return description;
+    } catch (e, st) {
+      AppLogger.logError('[GemmaAnalyzer] describeImageWithChat failed', e, st);
+      return '';
+    }
+  }
+
+  /// Analyze textual screen description for safety categories (gemma3n flow).
+  Future<ContentAnalysisResult> analyzeText(
+    String text, {
+    String? foregroundApp,
+    bool useCache = true,
+  }) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) {
+      return ContentAnalysisResult.safe();
+    }
+
+    if (useCache && _textCache.containsKey(normalized)) {
+      return _textCache[normalized]!;
+    }
+
+    try {
+      final session = await _model.createChat(
+        temperature: 0.2,
+        topK: 20,
+        supportImage: false,
+      );
+
+      final prompt = '''You are a child-safety content classifier. Given the following screen description, rate it on these categories from 0.0 to 1.0:
+- explicit: sexual or adult content
+- violence: violent or gore content
+- predatory: grooming or predatory behaviour
+- suggestive: mildly inappropriate content
+
+Also provide an overall risk score from 0 to 100 and a one-line summary.
+
+Respond ONLY in this exact format (no extra text):
+explicit:0.0
+violence:0.0
+predatory:0.0
+suggestive:0.0
+risk:0
+summary:One line summary here
+
+Screen description: $normalized
+${foregroundApp != null ? 'Foreground app: $foregroundApp' : ''}''';
+
+      await session.addQuery(Message(text: prompt, isUser: true));
+
+      final responseBuffer = StringBuffer();
+      await for (final modelResponse in session.generateChatResponseAsync()) {
+        if (modelResponse is TextResponse) {
+          responseBuffer.write(modelResponse.token);
+        }
+      }
+
+      await session.clearHistory();
+
+      final result = _parseTextClassifierResponse(responseBuffer.toString());
+      if (useCache) {
+        _textCache[normalized] = result;
+      }
+      return result;
+    } catch (e, st) {
+      AppLogger.logError('[GemmaAnalyzer] analyzeText failed', e, st);
+      return ContentAnalysisResult.safe();
+    }
+  }
 
   /// Analyzes an image using a persistsent chat context.
   /// This is much faster than creating a new chat every time.
@@ -75,7 +176,7 @@ Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
         debugPrint('🔍 Raw Gemma Image response: ${rawResponse.substring(0, rawResponse.length.clamp(0, 500))}');
         
         return _parseAnalysisResponse(rawResponse);
-      } catch (e, st) {
+      } catch (e) {
         debugPrint('❌ GemmaContentAnalyzer Image error: $e');
         final errStr = e.toString().toLowerCase();
         if ((errStr.contains('range') ||
@@ -162,6 +263,49 @@ Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
         'suggestive': ((result['suggestive'] as double?) ?? 0.0).clamp(0.0, 1.0),
       },
       summary: (result['summary'] as String?) ?? 'Analysis completed (regex fallback).',
+    );
+  }
+
+  ContentAnalysisResult _parseTextClassifierResponse(String response) {
+    final categories = <String, double>{
+      'explicit': 0.0,
+      'violence': 0.0,
+      'predatory': 0.0,
+      'suggestive': 0.0,
+    };
+    int riskScore = 0;
+    String summary = 'No summary available';
+
+    for (final line in response.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+
+      final colonIndex = trimmed.indexOf(':');
+      if (colonIndex == -1) continue;
+
+      final key = trimmed.substring(0, colonIndex).trim().toLowerCase();
+      final value = trimmed.substring(colonIndex + 1).trim();
+
+      switch (key) {
+        case 'explicit':
+        case 'violence':
+        case 'predatory':
+        case 'suggestive':
+          categories[key] = (double.tryParse(value) ?? 0.0).clamp(0.0, 1.0);
+          break;
+        case 'risk':
+          riskScore = (int.tryParse(value) ?? 0).clamp(0, 100);
+          break;
+        case 'summary':
+          summary = value;
+          break;
+      }
+    }
+
+    return ContentAnalysisResult(
+      riskScore: riskScore,
+      categories: categories,
+      summary: summary,
     );
   }
 }

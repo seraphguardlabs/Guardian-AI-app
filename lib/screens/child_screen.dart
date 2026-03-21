@@ -26,6 +26,7 @@ import '../services/location_background_service.dart';
 import '../services/time_extension_service.dart';
 import '../services/screen_monitoring_service.dart';
 import '../services/realtime_alert_service.dart';
+import '../services/chat_service.dart';
 import '../models/restrictions_data.dart';
 import '../models/task.dart';
 import '../models/alert.dart';
@@ -1017,6 +1018,16 @@ class _ChildScreenState extends State<ChildScreen>
         _handleBackgroundAlert(event);
       });
       
+      // 4. Start on-demand screenshot analysis timer (every 30 seconds)
+      // This is much better than continuous 5s polling - AI gets time to process
+      // and we're not wasting battery on continuous screening
+      if (_refreshTimer != null) _refreshTimer!.cancel();
+      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        AppLogger.log('🔄 Requesting on-demand screenshot analysis...');
+        screenMonitoring.requestScreenshotAnalysis();
+      });
+      AppLogger.log('  ⏱️ On-demand screenshot analysis scheduled every 30 seconds');
+      
       if (mounted) setState(() => _aiMonitoringActive = true);
       AppLogger.log('🧠 AI monitoring pipeline active');
     } catch (e) {
@@ -1417,6 +1428,11 @@ class _ChildScreenState extends State<ChildScreen>
       // Already on dashboard, do nothing
       return;
     }
+
+    if (index == 0) {
+      _showGuardianChatBottomSheet();
+      return;
+    }
     
     // Show coming soon dialog for other tabs
     final titles = [
@@ -1496,6 +1512,311 @@ class _ChildScreenState extends State<ChildScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _showGuardianChatBottomSheet() async {
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefsManager.getChildHash() ?? '';
+
+    if (childHash.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Child profile is not configured yet'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    final chatService = Provider.of<ChatService>(context, listen: false);
+    final guardianId = await chatService.ensureGuardianIdForChild(childHash);
+
+    if (guardianId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No guardian is linked for chat yet'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    await chatService.openChildChat(childHash: childHash, guardianId: guardianId);
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildGuardianChatBottomSheet(guardianId: guardianId),
+    );
+
+    if (!mounted) return;
+    await chatService.disconnect();
+    chatService.clearChat();
+  }
+
+  Widget _buildGuardianChatBottomSheet({required int guardianId}) {
+    final TextEditingController messageController = TextEditingController();
+    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final childHash = prefsManager.getChildHash() ?? '';
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F0F0F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF317AF7), Color(0xFF5B4A9F)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Guardian Chat',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Consumer<ChatService>(
+                          builder: (context, chatService, child) {
+                            return Row(
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: chatService.isConnected
+                                        ? Colors.greenAccent
+                                        : Colors.grey,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  chatService.isConnected
+                                      ? 'E2E Encrypted • Connected'
+                                      : 'E2E Encrypted • Offline',
+                                  style: TextStyle(
+                                    color: chatService.isConnected
+                                        ? Colors.greenAccent.withOpacity(0.8)
+                                        : Colors.white60,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Consumer<ChatService>(
+                builder: (context, chatService, child) {
+                  if (chatService.isLoading && chatService.messages.isEmpty) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF317AF7)),
+                    );
+                  }
+
+                  if (chatService.messages.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.lock_outline, size: 64, color: Colors.white24),
+                          SizedBox(height: 16),
+                          Text(
+                            'No messages yet',
+                            style: TextStyle(color: Colors.white60, fontSize: 16),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Start an encrypted chat with your guardian',
+                            style: TextStyle(color: Colors.white38, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: chatService.messages.length,
+                    itemBuilder: (context, index) {
+                      final message =
+                          chatService.messages[chatService.messages.length - 1 - index];
+                      final isFromChild = !message.isFromParent;
+                      final displayText = message.messageDecrypted ?? '[Encrypted]';
+
+                      return Align(
+                        alignment:
+                            isFromChild ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.72,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: isFromChild
+                                ? const LinearGradient(
+                                    colors: [Color(0xFF317AF7), Color(0xFF5B4A9F)],
+                                  )
+                                : null,
+                            color: isFromChild ? null : const Color(0xFF1A1A1A),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _formatChatTime(message.timestamp),
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.62),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: messageController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Type a message...',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: AppTheme.surfaceDark,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                        ),
+                        maxLines: null,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF317AF7), Color(0xFF5B4A9F)],
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.send, color: Colors.white),
+                        onPressed: () async {
+                          final message = messageController.text.trim();
+                          if (message.isEmpty || childHash.isEmpty) {
+                            return;
+                          }
+
+                          messageController.clear();
+
+                          final chatService =
+                              Provider.of<ChatService>(context, listen: false);
+                          final success = await chatService.sendMessageAsChild(
+                            childHash: childHash,
+                            guardianId: guardianId,
+                            message: message,
+                          );
+
+                          if (!success && mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to send encrypted message'),
+                                backgroundColor: AppTheme.error,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatChatTime(DateTime timestamp) {
+    return DateFormat('HH:mm').format(timestamp.toLocal());
   }
 
   @override
@@ -3362,6 +3683,18 @@ class _ChildScreenState extends State<ChildScreen>
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
                     _drawerSectionLabel('ACTIVITIES'),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 50),
+                      child: _buildChildDrawerItem(
+                        context,
+                        icon: Icons.chat_bubble_outline,
+                        label: 'Guardian Chat',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showGuardianChatBottomSheet();
+                        },
+                      ),
+                    ),
                     FadeSlideIn(
                       delay: const Duration(milliseconds: 80),
                       child: _buildChildDrawerItem(

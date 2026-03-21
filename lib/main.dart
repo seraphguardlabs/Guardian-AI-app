@@ -29,6 +29,7 @@ import 'package:guardian_ai/services/geofence_service.dart';
 import 'package:guardian_ai/services/gamified_permission_service.dart';
 import 'package:guardian_ai/services/gemma_content_analyzer.dart';
 import 'package:guardian_ai/services/gemma_manager.dart';
+import 'package:guardian_ai/services/alert_sync_service.dart';
 
 import 'package:guardian_ai/utils/preferences_manager.dart';
 import 'package:guardian_ai/utils/app_theme.dart';
@@ -506,102 +507,176 @@ void onStart(ServiceInstance service) async {
   
   InferenceModel? model;
   GemmaContentAnalyzer? analyzer;
-  InferenceChat? chat;
+  InferenceChat? visionChat;
   bool gemmaInitialized = false;
+  bool isAnalyzingScreenshot = false;
+  int screenshotsAnalyzed = 0;
 
-  // Background monitoring interval (5 seconds)
-  Timer.periodic(const Duration(seconds: 5), (timer) async {
-    try {
-      if (analyzer == null) {
-        // Initialize Gemma only once in this isolate
-        if (!gemmaInitialized) {
-          await GemmaManager.instance.initialize();
-          gemmaInitialized = true;
-        }
+  /// Request screenshot analysis on-demand (only when ready)
+  Future<void> analyzeNextScreenshot() async {
+    if (isAnalyzingScreenshot) {
+      AppLogger.log('[BG] Already analyzing a screenshot, skipping request');
+      return;
+    }
+
+    // Lazy initialize Gemma model once
+    if (!gemmaInitialized) {
+      try {
+        AppLogger.log('[BG] 🔄 Initializing Gemma in background isolate...');
+        await GemmaManager.instance.initialize();
         
         if (!GemmaManager.instance.modelReady) {
           await GemmaManager.instance.isModelInstalled();
         }
         
         if (!GemmaManager.instance.modelReady) {
-          AppLogger.log('[BG] Waiting for model to be downloaded/ready...');
-          return; 
+          AppLogger.log('[BG] ⏳ Model not ready yet, scheduling retry...');
+          Future.delayed(const Duration(seconds: 3), analyzeNextScreenshot);
+          return;
         }
 
+        // Activate model with proper error handling
         try {
-          // Load model into inference engine (required each session)
+          AppLogger.log('[BG] 📁 Activating Gemma model...');
           await GemmaManager.instance.activateModel();
           model = await FlutterGemma.getActiveModel(
-            maxTokens: 128, // Optimized: lower tokens = faster response
+            maxTokens: 128,
             supportImage: true,
           );
-          
+
+          if (model == null) {
+            throw Exception('Failed to get active model after activation');
+          }
+
           analyzer = GemmaContentAnalyzer(model!);
-          // PRE-CREATE CHAT CONTEXT: Significant speed optimization back-port
-          chat = await model!.createChat(
+          visionChat = await model!.createChat(
             temperature: 0.1,
             topK: 40,
             supportImage: true,
           );
-          
-          AppLogger.log('[BG] Gemma model & chat context initialized in isolate');
+
+          gemmaInitialized = true;
+          AppLogger.log('[BG] ✅ Gemma model successfully initialized in background isolate');
         } catch (e) {
-          AppLogger.log('[BG] Model activation failed, will retry: $e');
-          return; // Retry on next timer tick
+          AppLogger.log('[BG] ❌ Model activation failed: $e');
+          gemmaInitialized = false;
+          return;
         }
+      } catch (e) {
+        AppLogger.log('[BG] ❌ Gemma initialization error: $e');
+        gemmaInitialized = false;
+        return;
+      }
+    }
+
+    if (analyzer == null || visionChat == null) {
+      AppLogger.log('[BG] ⚠️ Analyzer not ready');
+      return;
+    }
+
+    isAnalyzingScreenshot = true;
+    try {
+      // Check for latest screenshot
+      final cacheDir = Directory('/data/data/com.example.guardian_ai/cache/screenshots');
+      if (!await cacheDir.exists()) {
+        AppLogger.log('[BG] Screenshot cache dir does not exist');
+        return;
       }
 
-      // Poll the screenshots directory written by native ScreenCaptureService
-      final cacheDir = Directory('/data/data/com.example.guardian_ai/cache/screenshots');
-      if (!await cacheDir.exists()) return;
-
       final files = cacheDir.listSync().whereType<File>().toList();
-      if (files.isEmpty) return;
+      if (files.isEmpty) {
+        AppLogger.log('[BG] No screenshots available for analysis');
+        return;
+      }
 
-      // Sort by modified time descending, take newest
+      // Get most recent screenshot
       files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
       final newest = files.first;
 
       final Uint8List imageBytes;
       try {
         imageBytes = await newest.readAsBytes();
-      } catch (_) {
-        return; // File may have been deleted by another consumer
+      } catch (e) {
+        AppLogger.log('[BG] Could not read screenshot file: $e');
+        return;
       }
 
-      // Zero-cache policy: delete immediately after reading
-      // Also clean up any older screenshots
+      if (imageBytes.isEmpty) {
+        AppLogger.log('[BG] Screenshot is empty');
+        return;
+      }
+
+      // Delete all screenshots (zero-cache policy)
       for (final f in files) {
         try { await f.delete(); } catch (_) {}
       }
 
-      AppLogger.log('[BG] Analysing screenshot: ${newest.path}');
-      // OPTIMIZED: Using the pre-created chat context instead of creating a new one inside the analyzer
-      final result = await analyzer!.analyzeWithChat(chat!, imageBytes);
+      screenshotsAnalyzed++;
+      AppLogger.log('[BG] 📸 Analyzing screenshot #$screenshotsAnalyzed (${imageBytes.length} bytes)');
+
+      // Describe image
+      final description = await analyzer!.describeImageWithChat(
+        visionChat!,
+        imageBytes,
+      );
       
+      if (description.isEmpty) {
+        AppLogger.log('[BG] Empty description, skipping');
+        return;
+      }
+
+      AppLogger.log('[BG] 🔍 Description: ${description.substring(0, description.length.clamp(0, 80))}...');
+
+      // Analyze for safety
+      final result = await analyzer!.analyzeText(
+        description,
+        foregroundApp: 'Background Monitor',
+        useCache: false,
+      );
+
+      AppLogger.log('[BG] ✔️ Analysis complete - Risk Score: ${result.riskScore}%');
+
       if (result.riskScore >= 70) {
-        AppLogger.log('[BG] 🚨 HIGH RISK (${result.riskScore}%)! ${result.categories}');
-        // Trigger on-device notification
+        AppLogger.log('[BG] 🚨 HIGH RISK CONTENT DETECTED (${result.riskScore}%)');
+        
+        // Sync to backend
+        try {
+          final alertSync = AlertSyncService();
+          await alertSync.syncAlert(result, 'Screenshot Analysis');
+        } catch (e) {
+          AppLogger.log('[BG] Alert sync error: $e');
+        }
+
+        // Show notification
         await notifications.show(
           999,
           '🚨 Safety Alert: ${result.riskScore}% Risk',
-          'Detected ${result.categories.entries.where((e) => e.value > 0.5).map((e) => e.key).join(", ")} content.',
+          'Detected content: ${result.summary}',
           const NotificationDetails(
             android: AndroidNotificationDetails(
               'alerts_channel',
               'Safety Alerts',
               importance: Importance.high,
               priority: Priority.high,
-              ticker: 'Safety Alert',
             ),
           ),
         );
 
-        // Notify the main isolate (UI) about the alert
+        // Notify UI
         service.invoke('alertGenerated', result.toJson());
       }
     } catch (e) {
-      AppLogger.log('[BG] Error in monitoring cycle: $e');
+      AppLogger.log('[BG] ❌ Screenshot analysis error: $e');
+    } finally {
+      isAnalyzingScreenshot = false;
     }
+  }
+
+  // Listen for screenshot requests from the UI
+  service.on('requestAnalysis').listen((_) {
+    AppLogger.log('[BG] 📲 Received request to analyze screenshot');
+    analyzeNextScreenshot();
   });
+
+  AppLogger.log('[BG] ✅ Background service initialized - ready for on-demand screenshot analysis');
 }

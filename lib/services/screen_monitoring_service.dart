@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'realtime_alert_service.dart';
 import 'gemma_content_analyzer.dart';
 import 'gemma_manager.dart';
@@ -9,8 +10,8 @@ import '../models/alert.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 
-/// Service to manage continuous screen monitoring
-/// Receives screenshots from native Android code and analyzes them with vision models
+/// Service to manage on-demand screen monitoring
+/// Requests screenshots from native only when AI is ready and not processing
 class ScreenMonitoringService {
   static final ScreenMonitoringService _instance = ScreenMonitoringService._internal();
   
@@ -24,15 +25,8 @@ class ScreenMonitoringService {
   
   bool _isMonitoring = false;
   bool _isInitialized = false;
-  
-  // Statistics (now updated via events or handled by BG service)
-  int _framesAnalyzed = 0;
-  int _alertsGenerated = 0;
-  DateTime? _lastAnalysisTime;
-  
-  // Child context
-  String? _currentChildHash;
-  String? _currentChildName;
+  bool _isRequestingScreenshot = false;
+  int _screenshotRequests = 0;
   
   // Services
   late RealtimeAlertService _alertService;
@@ -40,9 +34,7 @@ class ScreenMonitoringService {
   // Getters
   bool get isMonitoring => _isMonitoring;
   bool get isInitialized => _isInitialized;
-  int get framesAnalyzed => _framesAnalyzed;
-  int get alertsGenerated => _alertsGenerated;
-  DateTime? get lastAnalysisTime => _lastAnalysisTime;
+  int get screenshotRequests => _screenshotRequests;
   
   /// Initialize the screen monitoring service
   Future<bool> initialize({
@@ -56,9 +48,6 @@ class ScreenMonitoringService {
     
     try {
       AppLogger.log('🔄 Initializing ScreenMonitoringService...');
-      
-      _currentChildHash = childHash;
-      _currentChildName = childName;
       
       // Initialize alert service
       _alertService = RealtimeAlertService();
@@ -86,11 +75,11 @@ class ScreenMonitoringService {
     
     if (_isMonitoring) {
       AppLogger.log('⚠️  ScreenMonitoringService already monitoring');
-      return true; // Already running, not an error
+      return true;
     }
     
     try {
-      AppLogger.log('🚀 Starting screen monitoring...');
+      AppLogger.log('🚀 Starting screen monitoring (on-demand mode)...');
       
       if (skipPermissionRequest) {
         _isMonitoring = true;
@@ -134,6 +123,34 @@ class ScreenMonitoringService {
       AppLogger.log('❌ Error stopping screen monitoring: $e');
     }
   }
+
+  /// Request a screenshot to be analyzed (on-demand)
+  /// Call this when the AI is ready and not busy
+  Future<void> requestScreenshotAnalysis() async {
+    if (!_isMonitoring) {
+      AppLogger.log('⚠️  Screen monitoring not active');
+      return;
+    }
+
+    if (_isRequestingScreenshot) {
+      AppLogger.log('⏳ Already requesting screenshot, skipping');
+      return;
+    }
+
+    _isRequestingScreenshot = true;
+    try {
+      _screenshotRequests++;
+      AppLogger.log('📸 Requesting screenshot analysis #$_screenshotRequests');
+      
+      // Notify background service to analyze next screenshot
+      final service = FlutterBackgroundService();
+      service.invoke('requestAnalysis');
+    } catch (e) {
+      AppLogger.log('❌ Error requesting screenshot: $e');
+    } finally {
+      _isRequestingScreenshot = false;
+    }
+  }
   
   /// Handle method calls from native code
   Future<void> _handleMethodCall(MethodCall call) async {
@@ -148,8 +165,6 @@ class ScreenMonitoringService {
         if (path == null || timestamp == null) return;
         AppLogger.log('📸 UI: Screenshot received (path: $path). Background service will handle analysis.');
         
-        // No longer analyzing in the UI isolate to save VRAM and keep UI smooth.
-        // We just return success to clear the native back-pressure flag.
         return;
         
       default:
@@ -164,23 +179,12 @@ class ScreenMonitoringService {
   Map<String, dynamic> getStatistics() {
     return {
       'isMonitoring': _isMonitoring,
-      'framesAnalyzed': _framesAnalyzed,
-      'alertsGenerated': _alertsGenerated,
-      'lastAnalysisTime': _lastAnalysisTime?.toIso8601String(),
+      'screenshotRequests': _screenshotRequests,
     };
-  }
-  
-  /// Update statistics from background service events
-  void updateStats(int frames, int alerts, DateTime lastTime) {
-    _framesAnalyzed = frames;
-    _alertsGenerated = alerts;
-    _lastAnalysisTime = lastTime;
   }
   
   /// Reset statistics
   void resetStatistics() {
-    _framesAnalyzed = 0;
-    _alertsGenerated = 0;
-    _lastAnalysisTime = null;
+    _screenshotRequests = 0;
   }
 }

@@ -1060,6 +1060,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                           },
                         ),
                       ),
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 90),
+                        child: _buildDrawerMenuItem(
+                          icon: Icons.chat_bubble_outline,
+                          label: 'Encrypted Chat',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showChatBottomSheet();
+                          },
+                        ),
+                      ),
                       _parentDrawerSectionLabel('SETTINGS'),
                       FadeSlideIn(
                         delay: const Duration(milliseconds: 120),
@@ -1443,6 +1454,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       return;
     }
 
+    if (index == 0) {
+      _showChatBottomSheet();
+      return;
+    }
+
     // Handle Alerts (index 1)
     if (index == 1 && _selectedChild != null) {
       Navigator.push(
@@ -1546,6 +1562,36 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _showChatBottomSheet() async {
+    if (_selectedChild == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a child first'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    final childHash = _selectedChild!.childHash;
+    final chatService = Provider.of<ChatService>(context, listen: false);
+
+    await chatService.openGuardianChat(childHash: childHash);
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildChatBottomSheet(),
+    );
+
+    if (!mounted) return;
+    await chatService.disconnect();
+    chatService.clearChat();
   }
 
   Widget _buildDrawerMenuItem({
@@ -4251,11 +4297,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
 
   Widget _buildChatBottomSheet() {
     final TextEditingController messageController = TextEditingController();
-    final chatService = Provider.of<ChatService>(context, listen: false);
-    final childHash = _selectedChild?.childHash ?? '';
     
-    // Connect to WebSocket only once when opened (don't call on every rebuild)
-    // The connection is already established when the bottom sheet is shown
+    // Chat session is initialized when the sheet is opened.
+    // Avoid reconnecting on every rebuild.
     // See _showChatBottomSheet() method
     
     return Padding(
@@ -4470,37 +4514,41 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.send, color: Colors.white),
-                      onPressed: () async {
-                        if (messageController.text.trim().isNotEmpty && _selectedChild != null) {
-                          final message = messageController.text.trim();
-                          messageController.clear();
-                          
-                          final success = await chatService.sendMessage(
-                            _selectedChild!.childHash,
-                            message,
-                          );
-                          
-                          if (!success && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('⚠️ Failed to send message. No encryption key found for child.'),
-                                backgroundColor: AppTheme.error,
-                                duration: Duration(seconds: 4),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    ),
+                  Consumer<ChatService>(
+                    builder: (context, chatService, child) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5B4A9F), Color(0xFF4A3280)],
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white),
+                          onPressed: () async {
+                            if (messageController.text.trim().isNotEmpty && _selectedChild != null) {
+                              final message = messageController.text.trim();
+                              messageController.clear();
+                              
+                              final success = await chatService.sendMessage(
+                                _selectedChild!.childHash,
+                                message,
+                              );
+                              
+                              if (!success && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('⚠️ Failed to send message. No encryption key found for child.'),
+                                    backgroundColor: AppTheme.error,
+                                    duration: Duration(seconds: 4),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),

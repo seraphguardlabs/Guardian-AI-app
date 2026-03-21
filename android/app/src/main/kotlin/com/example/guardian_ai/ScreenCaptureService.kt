@@ -22,6 +22,7 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
@@ -100,6 +101,7 @@ class ScreenCaptureService : Service() {
 
     // Reusable file – only one screenshot on disk at any time
     private lateinit var screenshotFile: File
+    private var lastFrameJpegBytes: ByteArray? = null
 
     // ─────────────────────────────────────────────────────────────────────────
     override fun onCreate() {
@@ -120,7 +122,7 @@ class ScreenCaptureService : Service() {
         if (!dir.exists()) dir.mkdirs()
         screenshotFile = File(dir, "latest.jpg")
 
-        Log.d(TAG, "Capture resolution: ${captureWidth}x$captureHeight @ ${screenDensity}dpi")
+        Log.d(TAG, "Screen metrics: ${screenWidth}x$screenHeight @ ${screenDensity}dpi")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -235,16 +237,28 @@ class ScreenCaptureService : Service() {
         val reader = imageReader ?: return
         var image: Image? = null
         try {
-            image = reader.acquireLatestImage() ?: return   // nothing new
+            image = reader.acquireLatestImage()
+            if (image == null) {
+                // If screen is static, ImageReader may return null. Reuse the
+                // last frame so downstream AI analysis cadence stays consistent.
+                val fallbackBytes = lastFrameJpegBytes
+                if (fallbackBytes != null && saveJpegBytesToFile(fallbackBytes)) {
+                    Log.d(TAG, "No new frame available; reusing previous screenshot")
+                    sendScreenshotToFlutter(screenshotFile.absolutePath)
+                }
+                return
+            }
+
             val bitmap = imageToBitmap(image) ?: return
             image.close()
             image = null
 
-            if (saveBitmapToFile(bitmap)) {
-                bitmap.recycle()
+            val jpegBytes = bitmapToJpegBytes(bitmap)
+            bitmap.recycle()
+
+            if (jpegBytes != null && saveJpegBytesToFile(jpegBytes)) {
+                lastFrameJpegBytes = jpegBytes
                 sendScreenshotToFlutter(screenshotFile.absolutePath)
-            } else {
-                bitmap.recycle()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error grabbing frame", e)
@@ -284,10 +298,21 @@ class ScreenCaptureService : Service() {
     }
 
     // ── File I/O (single file, overwritten each time) ────────────────────────
-    private fun saveBitmapToFile(bitmap: Bitmap): Boolean {
+    private fun bitmapToJpegBytes(bitmap: Bitmap): ByteArray? {
+        return try {
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, stream)
+            stream.toByteArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error encoding screenshot", e)
+            null
+        }
+    }
+
+    private fun saveJpegBytesToFile(jpegBytes: ByteArray): Boolean {
         return try {
             FileOutputStream(screenshotFile).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out)
+                out.write(jpegBytes)
             }
             true
         } catch (e: Exception) {
@@ -394,6 +419,7 @@ class ScreenCaptureService : Service() {
         try { imageReader?.close() }       catch (_: Exception) {}
         virtualDisplay = null
         imageReader = null
+        lastFrameJpegBytes = null
     }
 
     override fun onDestroy() {

@@ -131,27 +131,46 @@ class GemmaManager {
 
     // Always do a fresh isModelInstalled() check to catch file-system truth
     final installed = await isModelInstalled();
-    if (installed) {
-      AppLogger.log('🤖 GemmaManager: Model on disk. Activating inference engine without re-downloading...');
-      // The plugin needs getActiveModel() called, which is done in main.dart after this,
-      // so we just mark it activated here.
-      _modelActivated = true;
-      _modelReady = true;
-      AppLogger.log('✅ GemmaManager: Model marked as activated.');
-      return;
+    if (!installed) {
+      AppLogger.log('🤖 GemmaManager: Model not on disk, triggering download via activateModel...');
+      final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
+      try {
+        await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+            .fromNetwork(url, token: hfToken, foreground: true)
+            .install();
+        _modelActivated = true;
+        _modelReady = true;
+        AppLogger.log('✅ GemmaManager: Model activated in inference engine.');
+        return;
+      } catch (e) {
+        AppLogger.log('❌ GemmaManager: Activation error: $e');
+        rethrow;
+      }
     }
 
-    AppLogger.log('🤖 GemmaManager: Model not on disk, triggering download via activateModel...');
-    final url = 'https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/$modelId';
+    // Model is on disk but not yet loaded into inference engine
+    // We need to call installModel().fromFile().install() to load the already-downloaded model
+    AppLogger.log('🤖 GemmaManager: Model on disk. Loading into inference engine...');
     try {
+      // Get the actual file path where the model is stored
+      final dir = await getApplicationDocumentsDirectory();
+      final correctedPath = dir.path.contains('/data/user/0/')
+          ? dir.path.replaceFirst('/data/user/0/', '/data/data/')
+          : dir.path;
+      final modelFilePath = '$correctedPath/$modelId';
+      
+      AppLogger.log('📁 GemmaManager: Loading from disk: $modelFilePath');
+
+      // Call installModel().fromFile().install() with the actual file path
       await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-          .fromNetwork(url, token: hfToken, foreground: true) // foreground:true = prevents OS killing download
+          .fromFile(modelFilePath)
           .install();
       _modelActivated = true;
       _modelReady = true;
-      AppLogger.log('✅ GemmaManager: Model activated in inference engine.');
+      AppLogger.log('✅ GemmaManager: Model successfully loaded into inference engine.');
     } catch (e) {
-      AppLogger.log('❌ GemmaManager: Activation error: $e');
+      AppLogger.log('❌ GemmaManager: Failed to load model into inference engine: $e');
+      _modelActivated = false;
       rethrow;
     }
   }
