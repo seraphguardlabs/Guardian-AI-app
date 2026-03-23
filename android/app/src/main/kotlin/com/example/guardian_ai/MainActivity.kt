@@ -14,19 +14,41 @@ import android.util.Log
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import java.util.Calendar
+import java.util.GregorianCalendar
 import androidx.annotation.NonNull
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.util.Calendar
+import io.flutter.plugin.common.EventChannel
+import android.os.Handler
+import android.os.Looper
 
 class MainActivity: FlutterActivity() {
+    companion object {
+        private const val TAG = "ScreenCapture"
+        var eventSink: EventChannel.EventSink? = null
+
+        fun sendFrameToFlutter(frame: ByteArray) {
+            Handler(Looper.getMainLooper()).post {
+                if (eventSink != null) {
+                    eventSink?.success(frame)
+                }
+            }
+        }
+    }
+
     private val CHANNEL = "com.guardian_ai/screen_time"
     private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
     private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
     private val MONITORING_CHANNEL = "com.example.guardian_ai/monitoring_service"
     private val SCREEN_CAPTURE_CHANNEL = "com.example.guardian_ai/screen_capture"
     private val LOCATION_SERVICE_CHANNEL = "com.example.guardian_ai/location_service"
+    private val EVENT_CHANNEL = "com.example.guardian_ai/screen_frames"
     
     private val SCREEN_CAPTURE_REQUEST_CODE = 1000
     private var screenCaptureResultCallback: MethodChannel.Result? = null
@@ -39,23 +61,31 @@ class MainActivity: FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler {
             call, result ->
             if (call.method == "getScreenTime") {
-                val screenTime = getScreenTime()
-                if (screenTime != null) {
-                    result.success(screenTime)
-                } else {
-                    result.error("UNAVAILABLE", "Screen time not available.", null)
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val screenTime = getScreenTime()
+                    withContext(Dispatchers.Main) {
+                        if (screenTime != null) {
+                            result.success(screenTime)
+                        } else {
+                            result.error("UNAVAILABLE", "Screen time not available.", null)
+                        }
+                    }
                 }
             } else if (call.method == "getScreenTimeDetails") {
                 if (!hasUsageStatsPermission()) {
                     result.error("PERMISSION", "Usage access not granted.", null)
                 } else {
-                    val details = computeScreenTimeDetails()
-                    result.success(
-                        mapOf(
-                            "totalSeconds" to details.first,
-                            "perAppSeconds" to details.second
-                        )
-                    )
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val details = computeScreenTimeDetails()
+                        withContext(Dispatchers.Main) {
+                            result.success(
+                                mapOf(
+                                    "totalSeconds" to details.first,
+                                    "perAppSeconds" to details.second
+                                )
+                            )
+                        }
+                    }
                 }
             } else if (call.method == "isAccessibilityServiceEnabled") {
                 val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
@@ -76,11 +106,12 @@ class MainActivity: FlutterActivity() {
             call, result ->
             if (call.method == "getBrowserHistory") {
                 val websites = WebsiteDataStore.getWebsites()
-                val historyList = websites.map { url ->
+                // websites is already List<Map<String, String>> with url and timestamp
+                val historyList = websites.map { entry ->
                     mapOf(
-                        "title" to url,
-                        "url" to url,
-                        "timestamp" to System.currentTimeMillis().toString()
+                        "title" to entry["url"],
+                        "url" to entry["url"],
+                        "timestamp" to entry["timestamp"]
                     )
                 }
                 result.success(historyList)
@@ -93,8 +124,12 @@ class MainActivity: FlutterActivity() {
             call, result ->
             when (call.method) {
                 "getForegroundApp" -> {
-                    val foregroundApp = getForegroundApp()
-                    result.success(foregroundApp)
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val foregroundApp = getForegroundApp()
+                        withContext(Dispatchers.Main) {
+                            result.success(foregroundApp)
+                        }
+                    }
                 }
                 "blockApp" -> {
                     val packageName = call.argument<String>("package")
@@ -165,6 +200,21 @@ class MainActivity: FlutterActivity() {
             }
         }
 
+        // Screen Capture Event Channel
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    eventSink = events
+                    Log.d("MainActivity", "EventChannel: onListen - eventSink CONNECTED")
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    Log.d("MainActivity", "EventChannel: onCancel - clearing eventSink")
+                    eventSink = null
+                }
+            }
+        )
+
         // Location Background Service Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOCATION_SERVICE_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -181,6 +231,22 @@ class MainActivity: FlutterActivity() {
                         result.success(LocationForegroundService.isServiceRunning)
                     }
                     else -> result.notImplemented()
+                }
+            }
+
+        // Shared Logger Channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.guardian_ai/shared_logger")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "initLogger") {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        NativeLogger.init(path)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGS", "Path required", null)
+                    }
+                } else {
+                    result.notImplemented()
                 }
             }
     }

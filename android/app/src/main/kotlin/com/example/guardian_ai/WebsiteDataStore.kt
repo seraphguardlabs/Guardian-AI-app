@@ -15,14 +15,27 @@ object WebsiteDataStore {
     
     fun addWebsite(url: String) {
         val prefs = sharedPreferences ?: return
-        val websites = getWebsitesSet()
-        websites.add(url)
-        saveWebsites(websites)
+        val websites = getWebsitesList()
+        
+        // Use a list of maps to maintain order and structure
+        val entry = mapOf(
+            "url" to url,
+            "timestamp" to System.currentTimeMillis().toString()
+        )
+        
+        // Limit to last 50 entries and avoid duplicates (simple logic: if same URL exists, replace it with new timestamp)
+        val filteredList = websites.filter { it["url"] != url }.toMutableList()
+        filteredList.add(0, entry) // Add at start (newest first)
+        
+        if (filteredList.size > 50) {
+            filteredList.removeAt(filteredList.size - 1)
+        }
+        
+        saveWebsites(filteredList)
     }
     
-    fun getWebsites(): List<String> {
-        val websites = getWebsitesSet()
-        return websites.toList().sortedDescending()
+    fun getWebsites(): List<Map<String, String>> {
+        return getWebsitesList()
     }
     
     fun clear() {
@@ -30,30 +43,49 @@ object WebsiteDataStore {
     }
     
     fun getWebsitesCount(): Int {
-        return getWebsitesSet().size
+        return getWebsitesList().size
     }
     
-    private fun getWebsitesSet(): MutableSet<String> {
-        val prefs = sharedPreferences ?: return mutableSetOf()
+    private fun getWebsitesList(): List<Map<String, String>> {
+        val prefs = sharedPreferences ?: return emptyList()
         val jsonString = prefs.getString(KEY_WEBSITES, "[]") ?: "[]"
-        val websites = mutableSetOf<String>()
+        val websites = mutableListOf<Map<String, String>>()
         
         try {
             val jsonArray = JSONArray(jsonString)
             for (i in 0 until jsonArray.length()) {
-                websites.add(jsonArray.getString(i))
+                val obj = jsonArray.getJSONObject(i)
+                websites.add(mapOf(
+                    "url" to obj.getString("url"),
+                    "timestamp" to obj.optString("timestamp", System.currentTimeMillis().toString())
+                ))
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            // Fallback for old simple string array format
+            try {
+                val jsonArray = JSONArray(jsonString)
+                for (i in 0 until jsonArray.length()) {
+                    websites.add(mapOf(
+                        "url" to jsonArray.getString(i),
+                        "timestamp" to System.currentTimeMillis().toString()
+                    ))
+                }
+            } catch (inner: Exception) {}
         }
         
         return websites
     }
     
-    private fun saveWebsites(websites: Set<String>) {
+    private fun saveWebsites(websites: List<Map<String, String>>) {
         val prefs = sharedPreferences ?: return
         val jsonArray = JSONArray()
-        websites.forEach { jsonArray.put(it) }
+        websites.forEach { entry ->
+            val obj = org.json.JSONObject()
+            obj.put("url", entry["url"])
+            obj.put("timestamp", entry["timestamp"])
+            jsonArray.put(obj)
+        }
         prefs.edit().putString(KEY_WEBSITES, jsonArray.toString()).apply()
     }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../utils/app_logger.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -46,7 +47,9 @@ class ChildScreen extends StatefulWidget {
 class _ChildScreenState extends State<ChildScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const platform = MethodChannel('com.guardian_ai/screen_time');
-  static const browserChannel = MethodChannel('com.guardian_ai/browser_history');
+  static const browserChannel = MethodChannel(
+    'com.guardian_ai/browser_history',
+  );
   String _screenTime = 'Unknown';
   int? _screenTimeSeconds;
   Map<String, int> _nativeAppUsageSeconds = {};
@@ -70,15 +73,15 @@ class _ChildScreenState extends State<ChildScreen>
   late final AnimationController _loadingPulseController;
 
   // ── Permission gate ──────────────────────────────────────────────────────
-  bool _awaitingPermissions    = true;
-  bool _locationGranted        = false;
-  bool _usageStatsGranted      = false;
-  bool _accessibilityGranted   = false;
+  bool _awaitingPermissions = true;
+  bool _locationGranted = false;
+  bool _usageStatsGranted = false;
+  bool _accessibilityGranted = false;
   // Per-row loading spinners — one per permission
-  bool _locationLoading        = false;
-  bool _usageLoading           = false;
-  bool _accessibilityLoading   = false;
-  
+  bool _locationLoading = false;
+  bool _usageLoading = false;
+  bool _accessibilityLoading = false;
+
   // AI Model status
   bool _modelInstalled = false;
   bool _isDownloadingModel = false;
@@ -86,9 +89,11 @@ class _ChildScreenState extends State<ChildScreen>
   String _modelStatus = '';
   StreamSubscription? _modelStatusSub;
   StreamSubscription? _modelProgressSub;
-  
+
   // Background AI monitoring
   StreamSubscription? _bgAlertSub;
+  StreamSubscription<ContentAnalysisResult>? _analysisSub;
+  ContentAnalysisResult? _latestAnalysis;
   bool _aiMonitoringActive = false;
 
   @override
@@ -98,7 +103,10 @@ class _ChildScreenState extends State<ChildScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _entranceFade = CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
+    _entranceFade = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
     _loadingPulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -111,19 +119,19 @@ class _ChildScreenState extends State<ChildScreen>
       _initModelStatus();
     });
   }
-  
+
   void _initModelStatus() async {
     final installed = await GemmaManager.instance.isModelInstalled();
     setState(() {
       _modelInstalled = installed;
       _modelStatus = installed ? 'Installed' : 'Not installed';
     });
-    
+
     // If model is already installed, start AI monitoring immediately
     if (installed && !_awaitingPermissions) {
       _startAIMonitoring();
     }
-    
+
     _modelStatusSub = GemmaManager.instance.statusStream.listen((status) {
       if (mounted) {
         setState(() {
@@ -135,18 +143,19 @@ class _ChildScreenState extends State<ChildScreen>
         });
       }
     });
-    
+
     _modelProgressSub = GemmaManager.instance.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
-           // Only update progress if we didn't just fail
-          if (!_modelStatus.contains('Failed') && !_modelStatus.contains('Error')) {
+          // Only update progress if we didn't just fail
+          if (!_modelStatus.contains('Failed') &&
+              !_modelStatus.contains('Error')) {
             _downloadProgress = progress;
             if (progress >= 1.0) {
-               _isDownloadingModel = false;
-               _modelInstalled = true;
-               // Model just finished downloading — start AI monitoring
-               _startAIMonitoring();
+              _isDownloadingModel = false;
+              _modelInstalled = true;
+              // Model just finished downloading — start AI monitoring
+              _startAIMonitoring();
             }
           }
         });
@@ -196,16 +205,18 @@ class _ChildScreenState extends State<ChildScreen>
     // Accessibility service (WebsiteMonitoringService)
     bool accessGranted = false;
     try {
-      final result = await platform.invokeMethod<bool>('isAccessibilityServiceEnabled');
+      final result = await platform.invokeMethod<bool>(
+        'isAccessibilityServiceEnabled',
+      );
       accessGranted = result == true;
     } catch (_) {}
 
     if (mounted) {
       setState(() {
-        _locationGranted      = locGranted;
-        _usageStatsGranted    = usageGranted == true;
+        _locationGranted = locGranted;
+        _usageStatsGranted = usageGranted == true;
         _accessibilityGranted = accessGranted;
-        _awaitingPermissions  =
+        _awaitingPermissions =
             !(_locationGranted && _usageStatsGranted && _accessibilityGranted);
       });
     }
@@ -227,7 +238,11 @@ class _ChildScreenState extends State<ChildScreen>
       if (!bgStatus.isGranted) await Permission.locationAlways.request();
     }
 
-    if (mounted) setState(() { _locationGranted = granted; _locationLoading = false; });
+    if (mounted)
+      setState(() {
+        _locationGranted = granted;
+        _locationLoading = false;
+      });
     _checkIfAllGranted();
   }
 
@@ -246,7 +261,9 @@ class _ChildScreenState extends State<ChildScreen>
     setState(() => _accessibilityLoading = true);
 
     // Opens Accessibility Settings directly
-    try { await platform.invokeMethod('openAccessibilitySettings'); } catch (_) {}
+    try {
+      await platform.invokeMethod('openAccessibilitySettings');
+    } catch (_) {}
     // Re-check happens in didChangeAppLifecycleState on return
     if (mounted) setState(() => _accessibilityLoading = false);
   }
@@ -287,7 +304,7 @@ class _ChildScreenState extends State<ChildScreen>
     } catch (e) {
       AppLogger.log('❌ Error starting BackgroundMonitoringService: $e');
     }
-    
+
     try {
       await LocationBackgroundService.start();
     } catch (e) {
@@ -296,11 +313,17 @@ class _ChildScreenState extends State<ChildScreen>
 
     // Start data loading
     _refreshData();
-    _refreshTimer ??= Timer.periodic(const Duration(seconds: 30), (_) => _refreshData());
+    _refreshTimer ??= Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshData(),
+    );
 
     // Network + server calls
     _uploadChildPublicKey();
-    final locationService = Provider.of<LocationService>(context, listen: false);
+    final locationService = Provider.of<LocationService>(
+      context,
+      listen: false,
+    );
     locationService.startTracking();
     _initializeWebSocket();
     _fetchRestrictions();
@@ -312,31 +335,34 @@ class _ChildScreenState extends State<ChildScreen>
 
   Future<void> _uploadChildPublicKey() async {
     AppLogger.log('🔐 Child Screen: Uploading child public key to server...');
-    
+
     // Initialize encryption service if not already done
     if (!EncryptionService.instance.isInitialized) {
       await EncryptionService.instance.initialize();
     }
-    
+
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash();
-    
+
     if (childHash == null || childHash.isEmpty) {
       AppLogger.log('⚠️ Child Screen: No child hash available');
       return;
     }
-    
-    if (EncryptionService.instance.hasKeys && EncryptionService.instance.publicKey != null) {
+
+    if (EncryptionService.instance.hasKeys &&
+        EncryptionService.instance.publicKey != null) {
       final apiService = ApiService();
       final result = await apiService.uploadChildPublicKey(
         childHash: childHash,
         publicKey: EncryptionService.instance.publicKey!,
       );
-      
+
       if (result['success'] == true) {
         AppLogger.log('✅ Child Screen: Child public key uploaded successfully');
       } else {
-        AppLogger.log('❌ Child Screen: Failed to upload child public key: ${result['error']}');
+        AppLogger.log(
+          '❌ Child Screen: Failed to upload child public key: ${result['error']}',
+        );
       }
     } else {
       AppLogger.log('⚠️ Child Screen: No encryption keys available');
@@ -354,7 +380,11 @@ class _ChildScreenState extends State<ChildScreen>
     _modelStatusSub?.cancel();
     _modelProgressSub?.cancel();
     _bgAlertSub?.cancel();
-    final locationService = Provider.of<LocationService>(context, listen: false);
+    _analysisSub?.cancel();
+    final locationService = Provider.of<LocationService>(
+      context,
+      listen: false,
+    );
     locationService.stopTracking();
     super.dispose();
   }
@@ -380,7 +410,10 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Future<void> _initializeWebSocket() async {
-    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final prefsManager = Provider.of<PreferencesManager>(
+      context,
+      listen: false,
+    );
     final childHash = prefsManager.getChildHash();
 
     if (childHash != null && childHash.isNotEmpty) {
@@ -392,26 +425,37 @@ class _ChildScreenState extends State<ChildScreen>
         if (message['type'] == 'restrictions_update') {
           AppLogger.log('🚫 Received restrictions update via WebSocket');
           _fetchRestrictions();
-          AppLogger.log('🎓 Fetching exam mode after WebSocket restrictions update');
+          AppLogger.log(
+            '🎓 Fetching exam mode after WebSocket restrictions update',
+          );
           _fetchExamMode(); // Also check exam mode when restrictions update
         }
       });
 
       // Connect the child-side time-extension WebSocket and listen for
       // approved / denied responses so we can re-fetch restrictions immediately.
-      final timeExtService = Provider.of<TimeExtensionService>(context, listen: false);
+      final timeExtService = Provider.of<TimeExtensionService>(
+        context,
+        listen: false,
+      );
       timeExtService.connectChildSocket(childHash: childHash);
-      _timeExtResponseSubscription = timeExtService.childResponseStream.listen((data) {
+      _timeExtResponseSubscription = timeExtService.childResponseStream.listen((
+        data,
+      ) {
         final type = data['type'] as String? ?? '';
         if (type == 'time_extension_response') {
           final d = data['data'] as Map<String, dynamic>? ?? {};
           final status = d['status'] as String? ?? '';
           if (status == 'approved') {
-            AppLogger.log('⏰ Time extension approved — refreshing restrictions');
+            AppLogger.log(
+              '⏰ Time extension approved — refreshing restrictions',
+            );
             _fetchRestrictions();
           }
         } else if (type == 'task_auto_approved') {
-          AppLogger.log('🎉 Task completed & auto-approved — refreshing restrictions');
+          AppLogger.log(
+            '🎉 Task completed & auto-approved — refreshing restrictions',
+          );
           _fetchRestrictions();
         }
       });
@@ -421,7 +465,10 @@ class _ChildScreenState extends State<ChildScreen>
   }
 
   Future<void> _fetchRestrictions() async {
-    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final prefsManager = Provider.of<PreferencesManager>(
+      context,
+      listen: false,
+    );
     final childHash = prefsManager.getChildHash();
 
     if (childHash == null || childHash.isEmpty) {
@@ -441,32 +488,44 @@ class _ChildScreenState extends State<ChildScreen>
 
     if (result['success'] == true && mounted) {
       final data = result['data'] as Map<String, dynamic>;
-      final rawRestricted = data['restricted_apps'] as Map<String, dynamic>? ?? {};
+      final rawRestricted =
+          data['restricted_apps'] as Map<String, dynamic>? ?? {};
       final restrictions = RestrictionsData.fromJson(rawRestricted);
       setState(() {
         _restrictions = restrictions;
       });
-      AppLogger.log('✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
+      AppLogger.log(
+        '✅ Restrictions updated: ${_restrictions!.restrictedApps.length} apps',
+      );
 
       // Fetch exam mode to get the combined restrictions
       await _fetchExamMode();
 
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
       appBlocker.updateRestrictions(_getEffectiveRestrictions());
-      BackgroundMonitoringService.updateRestrictions(_getEffectiveRestrictions());
+      BackgroundMonitoringService.updateRestrictions(
+        _getEffectiveRestrictions(),
+      );
     }
   }
 
   Future<void> _fetchExamMode() async {
     AppLogger.log('\n🎓 ===== FETCHING EXAM MODE =====');
-    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final prefsManager = Provider.of<PreferencesManager>(
+      context,
+      listen: false,
+    );
     final childHash = prefsManager.getChildHash();
     final parentEmail = prefsManager.getParentEmail();
     final parentPassword = prefsManager.getParentPassword();
 
     AppLogger.log('🎓 Child hash: $childHash');
-    AppLogger.log('🎓 Parent email available: ${parentEmail?.isNotEmpty ?? false}');
-    AppLogger.log('🎓 Parent password available: ${parentPassword?.isNotEmpty ?? false}');
+    AppLogger.log(
+      '🎓 Parent email available: ${parentEmail?.isNotEmpty ?? false}',
+    );
+    AppLogger.log(
+      '🎓 Parent password available: ${parentPassword?.isNotEmpty ?? false}',
+    );
 
     if (childHash == null || childHash.isEmpty) {
       AppLogger.log('⚠️ No child hash, skipping exam mode fetch');
@@ -478,7 +537,9 @@ class _ChildScreenState extends State<ChildScreen>
       return;
     }
 
-    AppLogger.log('🎓 Calling API: GET /api/mobile/child/$childHash/exam-mode/');
+    AppLogger.log(
+      '🎓 Calling API: GET /api/mobile/child/$childHash/exam-mode/',
+    );
     final apiService = Provider.of<ApiService>(context, listen: false);
     final result = await apiService.getExamMode(
       email: parentEmail,
@@ -494,15 +555,17 @@ class _ChildScreenState extends State<ChildScreen>
       final data = result['data'] as Map<String, dynamic>;
       final examModeValue = data['exam_mode'] ?? false;
       final examModeAppsList = List<String>.from(data['exam_mode_apps'] ?? []);
-      
-      AppLogger.log('🎓 Parsed exam_mode: $examModeValue (type: ${examModeValue.runtimeType})');
+
+      AppLogger.log(
+        '🎓 Parsed exam_mode: $examModeValue (type: ${examModeValue.runtimeType})',
+      );
       AppLogger.log('🎓 Parsed exam_mode_apps: $examModeAppsList');
-      
+
       setState(() {
         _examMode = examModeValue;
         _examModeApps = examModeAppsList;
       });
-      
+
       AppLogger.log('✅ EXAM MODE STATE UPDATED:');
       AppLogger.log('   - Exam Mode Active: $_examMode');
       AppLogger.log('   - Blocked Apps Count: ${_examModeApps.length}');
@@ -518,9 +581,9 @@ class _ChildScreenState extends State<ChildScreen>
 
   Map<String, double> _getEffectiveRestrictions() {
     if (_restrictions == null) return {};
-    
+
     final effective = Map<String, double>.from(_restrictions!.restrictedApps);
-    
+
     // If exam mode is active, set exam mode apps to 0 hours
     if (_examMode) {
       for (final packageName in _examModeApps) {
@@ -528,7 +591,7 @@ class _ChildScreenState extends State<ChildScreen>
         AppLogger.log('🎓 Exam mode: Blocking $packageName');
       }
     }
-    
+
     return effective;
   }
 
@@ -584,11 +647,16 @@ class _ChildScreenState extends State<ChildScreen>
       timezoneName: tzName,
     );
 
-    AppLogger.log('📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
+    AppLogger.log(
+      '📱 Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps',
+    );
   }
 
   Future<void> _sendLocationData() async {
-    final locationService = Provider.of<LocationService>(context, listen: false);
+    final locationService = Provider.of<LocationService>(
+      context,
+      listen: false,
+    );
     final wsService = Provider.of<WebSocketService>(context, listen: false);
 
     final currentPosition = locationService.currentPosition;
@@ -603,7 +671,9 @@ class _ChildScreenState extends State<ChildScreen>
         );
 
         if (distance < 5.0) {
-          AppLogger.log('📍 Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
+          AppLogger.log(
+            '📍 Location update skipped: Only moved ${distance.toStringAsFixed(2)}m',
+          );
           return;
         }
       }
@@ -615,7 +685,9 @@ class _ChildScreenState extends State<ChildScreen>
       );
 
       _lastSentPosition = currentPosition;
-      AppLogger.log('📍 Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      AppLogger.log(
+        '📍 Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}',
+      );
     }
   }
 
@@ -643,7 +715,9 @@ class _ChildScreenState extends State<ChildScreen>
     Map<String, int> perAppSeconds = {};
 
     try {
-      final dynamic details = await platform.invokeMethod('getScreenTimeDetails');
+      final dynamic details = await platform.invokeMethod(
+        'getScreenTimeDetails',
+      );
       if (details is Map) {
         final dynamic total = details['totalSeconds'];
         if (total is num) {
@@ -685,7 +759,7 @@ class _ChildScreenState extends State<ChildScreen>
     // After updating screen time, check if the global daily limit is exceeded
     _checkAndApplyDailyLimitEnforcement();
   }
-  
+
   Future<void> _loadDailyLimit() async {
     final prefs = Provider.of<PreferencesManager>(context, listen: false);
     final childHash = prefs.getChildHash();
@@ -698,12 +772,17 @@ class _ChildScreenState extends State<ChildScreen>
     if (childHash != null && parentEmail != null && parentPassword != null) {
       try {
         final api = Provider.of<ApiService>(context, listen: false);
-        final result = await api.fetchDailyLimit(parentEmail, parentPassword, childHash);
+        final result = await api.fetchDailyLimit(
+          parentEmail,
+          parentPassword,
+          childHash,
+        );
         if (result['success'] == true) {
           final data = result['data'] as Map<String, dynamic>?;
           if (data != null) {
             // Backend returns 'daily_screen_time_limit' (and may not include the old 'daily_limit_hours')
-            final value = data['daily_screen_time_limit'] ?? data['daily_limit_hours'];
+            final value =
+                data['daily_screen_time_limit'] ?? data['daily_limit_hours'];
             if (value is num && value > 0) {
               dailyLimit = value.toDouble();
             }
@@ -758,7 +837,6 @@ class _ChildScreenState extends State<ChildScreen>
       List<Task> tasks = result['tasks'] as List<Task>;
       AppLogger.log('📋 ✅ Received ${tasks.length} tasks from API');
       AppLogger.log('📋 Tasks: ${tasks.map((t) => t.id).toList()}');
-      
 
       // Decrypt task titles and descriptions
       final encryptionService = EncryptionService.instance;
@@ -766,27 +844,36 @@ class _ChildScreenState extends State<ChildScreen>
       List<Task> decryptedTasks = tasks.map((task) {
         String? decryptedTitle;
         String? decryptedDescription;
-        
+
         try {
           if (task.title.isNotEmpty) {
-            decryptedTitle = encryptionService.decryptWithPrivateKey(task.title);
+            decryptedTitle = encryptionService.decryptWithPrivateKey(
+              task.title,
+            );
           }
         } catch (e) {
           AppLogger.log('⚠️ Decryption failed for title (Task ${task.id}): $e');
           decryptedTitle = task.title; // Fallback to raw title
         }
-        
+
         try {
           if (task.description.isNotEmpty) {
-            decryptedDescription = encryptionService.decryptWithPrivateKey(task.description);
+            decryptedDescription = encryptionService.decryptWithPrivateKey(
+              task.description,
+            );
           }
         } catch (e) {
-          AppLogger.log('⚠️ Decryption failed for description (Task ${task.id}): $e');
-          decryptedDescription = task.description; // Fallback to raw description
+          AppLogger.log(
+            '⚠️ Decryption failed for description (Task ${task.id}): $e',
+          );
+          decryptedDescription =
+              task.description; // Fallback to raw description
         }
-        
-        AppLogger.log('📋 Task ${task.id}: decrypted=${decryptedTitle != task.title}');
-        
+
+        AppLogger.log(
+          '📋 Task ${task.id}: decrypted=${decryptedTitle != task.title}',
+        );
+
         return Task(
           id: task.id,
           title: decryptedTitle ?? task.title,
@@ -798,13 +885,17 @@ class _ChildScreenState extends State<ChildScreen>
           assignedBy: task.assignedBy,
         );
       }).toList();
-      
-      AppLogger.log('📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks');
+
+      AppLogger.log(
+        '📋 ✅ Successfully loaded ${decryptedTasks.length} pending tasks',
+      );
       setState(() {
         _pendingTasks = decryptedTasks;
         _loadingTasks = false;
       });
-      AppLogger.log('📋 State updated: _pendingTasks.length = ${_pendingTasks.length}');
+      AppLogger.log(
+        '📋 State updated: _pendingTasks.length = ${_pendingTasks.length}',
+      );
     } else {
       AppLogger.log('📋 ❌ Failed to load tasks: ${result['error']}');
       setState(() => _loadingTasks = false);
@@ -814,20 +905,20 @@ class _ChildScreenState extends State<ChildScreen>
   Future<void> _initializeBackgroundServices() async {
     AppLogger.log('🤖 Child Screen: Initializing Monitoring Services...');
     if (!mounted) return;
-    
+
     try {
       // Initialize ScreenMonitoringService
       AppLogger.log('  📸 Initializing ScreenMonitoringService...');
       final prefs = Provider.of<PreferencesManager>(context, listen: false);
       final childHash = prefs.getChildHash() ?? '';
-      final childName = 'Child'; 
-      
+      final childName = 'Child';
+
       final screenMonitoring = ScreenMonitoringService.instance;
       final monitoringInitialized = await screenMonitoring.initialize(
         childHash: childHash,
         childName: childName,
       );
-      
+
       if (!monitoringInitialized) {
         AppLogger.log('❌ ScreenMonitoringService initialization failed');
         return;
@@ -840,18 +931,23 @@ class _ChildScreenState extends State<ChildScreen>
       if (_modelInstalled) {
         _startAIMonitoring();
       } else {
-        AppLogger.log('⏳ AI model not installed yet — monitoring will start after download');
+        AppLogger.log(
+          '⏳ AI model not installed yet — monitoring will start after download',
+        );
       }
-      
+
       AppLogger.log('✅ Monitoring Services initialized');
     } catch (e, stackTrace) {
       AppLogger.log('❌ Error initializing Services: $e');
       AppLogger.log('Stack trace: $stackTrace');
     }
   }
-  
+
   /// Initialize the RealtimeAlertService with SQLite database
-  Future<void> _initializeAlertService(String childHash, String childName) async {
+  Future<void> _initializeAlertService(
+    String childHash,
+    String childName,
+  ) async {
     try {
       final dbPath = await getDatabasesPath();
       final db = await openDatabase(
@@ -875,9 +971,14 @@ class _ChildScreenState extends State<ChildScreen>
           ''');
         },
       );
-      
+
       final wsService = Provider.of<WebSocketService>(context, listen: false);
-      await RealtimeAlertService.instance.initialize(db, wsService);
+      final apiService = Provider.of<ApiService>(context, listen: false);
+      await RealtimeAlertService.instance.initialize(
+        db,
+        wsService,
+        apiService: apiService,
+      );
       RealtimeAlertService.instance.setCurrentChild(childHash, childName);
       AppLogger.log('✅ RealtimeAlertService initialized');
     } catch (e) {
@@ -889,9 +990,9 @@ class _ChildScreenState extends State<ChildScreen>
   Future<void> _startAIMonitoring() async {
     if (_aiMonitoringActive) return;
     if (!_modelInstalled) return;
-    
+
     AppLogger.log('🧠 Starting AI monitoring pipeline...');
-    
+
     try {
       // 1. Start screen capture (requests MediaProjection permission from user)
       final screenMonitoring = ScreenMonitoringService.instance;
@@ -901,10 +1002,12 @@ class _ChildScreenState extends State<ChildScreen>
         if (started) {
           AppLogger.log('  ✅ Screen capture started');
         } else {
-          AppLogger.log('  ⚠️ Screen capture not started (permission denied or error)');
+          AppLogger.log(
+            '  ⚠️ Screen capture not started (permission denied or error)',
+          );
         }
       }
-      
+
       // 2. Start the Flutter background service (runs the AI loop in a background isolate)
       final bgService = FlutterBackgroundService();
       final isRunning = await bgService.isRunning();
@@ -913,7 +1016,7 @@ class _ChildScreenState extends State<ChildScreen>
         await bgService.startService();
         AppLogger.log('  ✅ Background AI service started');
       }
-      
+
       // 3. Listen for alertGenerated events from the background service
       _bgAlertSub?.cancel();
       _bgAlertSub = bgService.on('alertGenerated').listen((event) {
@@ -921,8 +1024,19 @@ class _ChildScreenState extends State<ChildScreen>
         AppLogger.log('📡 Received alertGenerated from background service');
         _handleBackgroundAlert(event);
       });
-      
+
       if (mounted) setState(() => _aiMonitoringActive = true);
+
+      // 4. Listen for real-time analysis results for UI display
+      _analysisSub?.cancel();
+      _analysisSub = ScreenMonitoringService.instance.analysisResults.listen((result) {
+        if (mounted) {
+          setState(() {
+            _latestAnalysis = result;
+          });
+        }
+      });
+
       AppLogger.log('🧠 AI monitoring pipeline active');
     } catch (e) {
       AppLogger.log('❌ Error starting AI monitoring: $e');
@@ -935,7 +1049,7 @@ class _ChildScreenState extends State<ChildScreen>
       final result = ContentAnalysisResult.fromJson(event);
       final prefs = Provider.of<PreferencesManager>(context, listen: false);
       final childHash = prefs.getChildHash() ?? '';
-      
+
       final alert = Alert(
         id: const Uuid().v4(),
         timestamp: DateTime.now(),
@@ -950,18 +1064,20 @@ class _ChildScreenState extends State<ChildScreen>
         childHash: childHash,
         childName: 'Child',
       );
-      
+
       // Save to local DB + emit to stream
       await RealtimeAlertService.instance.addAlert(alert);
-      
+
       // Sync to server
       try {
         final apiService = Provider.of<ApiService>(context, listen: false);
         await RealtimeAlertService.instance.syncAlertToServer(
-          alert, apiService, 'Child',
+          alert,
+          apiService,
+          'Child',
         );
       } catch (_) {}
-      
+
       AppLogger.log('✅ Background alert processed and stored: ${alert.id}');
     } catch (e) {
       AppLogger.log('❌ Error handling background alert: $e');
@@ -1000,7 +1116,9 @@ class _ChildScreenState extends State<ChildScreen>
     if (!mounted) return;
 
     // Require both a valid screen time value and a positive daily limit
-    if (_screenTime == null || _dailyLimitHours == null || _dailyLimitHours! <= 0) {
+    if (_screenTime == null ||
+        _dailyLimitHours == null ||
+        _dailyLimitHours! <= 0) {
       return;
     }
 
@@ -1029,9 +1147,13 @@ class _ChildScreenState extends State<ChildScreen>
     BackgroundMonitoringService.updateDailyLimitExceeded(hasExceeded);
 
     if (hasExceeded) {
-      AppLogger.log('⏰ Daily limit exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+      AppLogger.log(
+        '⏰ Daily limit exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).',
+      );
     } else {
-      AppLogger.log('✅ Daily limit not exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).');
+      AppLogger.log(
+        '✅ Daily limit not exceeded (used=${usedHours.toStringAsFixed(2)}h / limit=${limitHours.toStringAsFixed(2)}h).',
+      );
     }
   }
 
@@ -1042,10 +1164,13 @@ class _ChildScreenState extends State<ChildScreen>
       bool? isPermissionGranted = await UsageStats.checkUsagePermission();
       if (isPermissionGranted != true) return;
 
-      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: true);
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        withIcon: true,
+      );
 
       Map<String, AppInfo> appMap = {
-        for (var app in apps) app.packageName: app
+        for (var app in apps) app.packageName: app,
       };
 
       DateTime now = DateTime.now();
@@ -1058,10 +1183,12 @@ class _ChildScreenState extends State<ChildScreen>
         endOfDay,
       );
 
-        usageStats = usageStats
-          .where((info) =>
-            double.parse(info.totalTimeInForeground ?? '0') > 0 &&
-            appMap.containsKey(info.packageName))
+      usageStats = usageStats
+          .where(
+            (info) =>
+                double.parse(info.totalTimeInForeground ?? '0') > 0 &&
+                appMap.containsKey(info.packageName),
+          )
           .toList();
 
       usageStats.sort((a, b) {
@@ -1144,12 +1271,14 @@ class _ChildScreenState extends State<ChildScreen>
       'kiwi',
       'vivaldi',
       'tor',
-      'duckduckgo'
+      'duckduckgo',
     ];
     final lowerPackage = packageName.toLowerCase();
     final lowerName = appName.toLowerCase();
-    return browserKeywords.any((keyword) =>
-        lowerPackage.contains(keyword) || lowerName.contains(keyword));
+    return browserKeywords.any(
+      (keyword) =>
+          lowerPackage.contains(keyword) || lowerName.contains(keyword),
+    );
   }
 
   List<UsageInfo> get _browserUsageStats {
@@ -1181,11 +1310,14 @@ class _ChildScreenState extends State<ChildScreen>
 
   Future<void> _getBrowserHistory() async {
     try {
-      final List<dynamic> result = await browserChannel.invokeMethod('getBrowserHistory');
+      final List<dynamic> result = await browserChannel.invokeMethod(
+        'getBrowserHistory',
+      );
       if (mounted) {
         setState(() {
-          _browserHistory =
-              result.map((item) => Map<String, String>.from(item)).toList();
+          _browserHistory = result
+              .map((item) => Map<String, String>.from(item))
+              .toList();
         });
       }
     } catch (e) {
@@ -1203,10 +1335,8 @@ class _ChildScreenState extends State<ChildScreen>
       final timestamp = int.tryParse(timestampStr) ?? 0;
       if (timestamp == 0) return 'Unknown';
 
-      final chromeEpochStart = 11644473600000000;
-      final millisSinceEpoch = (timestamp - chromeEpochStart) ~/ 1000;
-
-      final date = DateTime.fromMillisecondsSinceEpoch(millisSinceEpoch);
+      // Now using standard milliseconds since epoch from native
+      final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
       final now = DateTime.now();
       final diff = now.difference(date);
 
@@ -1215,7 +1345,7 @@ class _ChildScreenState extends State<ChildScreen>
       if (diff.inDays < 1) return '${diff.inHours}h ago';
       if (diff.inDays < 7) return '${diff.inDays}d ago';
 
-      return DateFormat('MMM d').format(date);
+      return DateFormat('MMM d, h:mm a').format(date);
     } catch (e) {
       return 'Unknown';
     }
@@ -1241,7 +1371,9 @@ class _ChildScreenState extends State<ChildScreen>
         }
       }
 
-      final percentage = ((totalHours / dailyLimitHours) * 100).clamp(0, 100).toInt();
+      final percentage = ((totalHours / dailyLimitHours) * 100)
+          .clamp(0, 100)
+          .toInt();
       return '$percentage% of daily limit';
     } catch (e) {
       return '0% of daily limit';
@@ -1251,41 +1383,60 @@ class _ChildScreenState extends State<ChildScreen>
   String _getAppCategory(String packageName, String appName) {
     final lower = packageName.toLowerCase();
     final nameLower = appName.toLowerCase();
-    
+
     // Social Media
-    if (lower.contains('instagram') || nameLower.contains('instagram')) return 'Entertainment';
-    if (lower.contains('facebook') || nameLower.contains('facebook')) return 'Chatting App';
-    if (lower.contains('whatsapp') || nameLower.contains('whatsapp')) return 'Chatting App';
-    if (lower.contains('messenger') || nameLower.contains('messenger')) return 'Job Portal';
-    if (lower.contains('snapchat') || nameLower.contains('snapchat')) return 'Entertainment';
-    if (lower.contains('twitter') || lower.contains('x.com') || nameLower.contains('twitter')) return 'Social Media';
-    if (lower.contains('tiktok') || nameLower.contains('tiktok')) return 'Entertainment';
-    if (lower.contains('linkedin') || nameLower.contains('linkedin')) return 'Job Portal';
-    
+    if (lower.contains('instagram') || nameLower.contains('instagram'))
+      return 'Entertainment';
+    if (lower.contains('facebook') || nameLower.contains('facebook'))
+      return 'Chatting App';
+    if (lower.contains('whatsapp') || nameLower.contains('whatsapp'))
+      return 'Chatting App';
+    if (lower.contains('messenger') || nameLower.contains('messenger'))
+      return 'Job Portal';
+    if (lower.contains('snapchat') || nameLower.contains('snapchat'))
+      return 'Entertainment';
+    if (lower.contains('twitter') ||
+        lower.contains('x.com') ||
+        nameLower.contains('twitter'))
+      return 'Social Media';
+    if (lower.contains('tiktok') || nameLower.contains('tiktok'))
+      return 'Entertainment';
+    if (lower.contains('linkedin') || nameLower.contains('linkedin'))
+      return 'Job Portal';
+
     // Entertainment & Video
-    if (lower.contains('youtube') || nameLower.contains('youtube')) return 'Entertainment';
-    if (lower.contains('netflix') || nameLower.contains('netflix')) return 'Entertainment';
-    if (lower.contains('spotify') || nameLower.contains('spotify')) return 'Music';
-    if (lower.contains('prime') || lower.contains('amazon') && nameLower.contains('video')) return 'Entertainment';
-    if (lower.contains('disney') || nameLower.contains('disney')) return 'Entertainment';
-    
+    if (lower.contains('youtube') || nameLower.contains('youtube'))
+      return 'Entertainment';
+    if (lower.contains('netflix') || nameLower.contains('netflix'))
+      return 'Entertainment';
+    if (lower.contains('spotify') || nameLower.contains('spotify'))
+      return 'Music';
+    if (lower.contains('prime') ||
+        lower.contains('amazon') && nameLower.contains('video'))
+      return 'Entertainment';
+    if (lower.contains('disney') || nameLower.contains('disney'))
+      return 'Entertainment';
+
     // Games
     if (lower.contains('game') || nameLower.contains('game')) return 'Gaming';
     if (lower.contains('play') && nameLower.contains('game')) return 'Gaming';
-    
+
     // Productivity
     if (lower.contains('chrome') || lower.contains('browser')) return 'Browser';
     if (lower.contains('gmail') || lower.contains('mail')) return 'Email';
     if (lower.contains('calendar')) return 'Productivity';
-    if (lower.contains('docs') || lower.contains('sheets') || lower.contains('drive')) return 'Productivity';
-    
+    if (lower.contains('docs') ||
+        lower.contains('sheets') ||
+        lower.contains('drive'))
+      return 'Productivity';
+
     // Default
     return 'Other';
   }
 
   bool _hasExceededApps() {
     if (_restrictions == null) return false;
-    
+
     for (var usage in _usageStats) {
       final packageName = usage.packageName ?? '';
       final hasLimit = _restrictions!.restrictedApps.containsKey(packageName);
@@ -1294,7 +1445,8 @@ class _ChildScreenState extends State<ChildScreen>
       if (limitHours == null) continue;
 
       double usedHours;
-      if (_nativeAppUsageSeconds.isNotEmpty && _nativeAppUsageSeconds.containsKey(packageName)) {
+      if (_nativeAppUsageSeconds.isNotEmpty &&
+          _nativeAppUsageSeconds.containsKey(packageName)) {
         usedHours = _nativeAppUsageSeconds[packageName]! / 3600.0;
       } else {
         final millis = int.tryParse(usage.totalTimeInForeground ?? '0') ?? 0;
@@ -1322,16 +1474,10 @@ class _ChildScreenState extends State<ChildScreen>
       // Already on dashboard, do nothing
       return;
     }
-    
+
     // Show coming soon dialog for other tabs
-    final titles = [
-      'Chat',
-      'Rewards',
-      'Dashboard',
-      'Activities',
-      'Profile',
-    ];
-    
+    final titles = ['Chat', 'Rewards', 'Dashboard', 'Activities', 'Profile'];
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1405,10 +1551,15 @@ class _ChildScreenState extends State<ChildScreen>
 
   @override
   Widget build(BuildContext context) {
-    AppLogger.log('🎓 BUILD: Exam Mode = $_examMode, Apps = ${_examModeApps.length}');
+    AppLogger.log(
+      '🎓 BUILD: Exam Mode = $_examMode, Apps = ${_examModeApps.length}',
+    );
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final prefsManager = Provider.of<PreferencesManager>(context, listen: false);
+    final prefsManager = Provider.of<PreferencesManager>(
+      context,
+      listen: false,
+    );
     final childName = prefsManager.getChildName() ?? 'Child';
 
     return Scaffold(
@@ -1440,7 +1591,10 @@ class _ChildScreenState extends State<ChildScreen>
                 const Spacer(),
                 if (_examMode)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.18),
@@ -1464,18 +1618,27 @@ class _ChildScreenState extends State<ChildScreen>
                     ),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.bug_report, color: Colors.white70, size: 22),
+                  icon: const Icon(
+                    Icons.bug_report,
+                    color: Colors.white70,
+                    size: 22,
+                  ),
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const LogViewerScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const LogViewerScreen(),
+                      ),
                     );
                   },
                 ),
                 Consumer<LocationService>(
                   builder: (context, locationService, child) {
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFF101722),
@@ -1492,7 +1655,11 @@ class _ChildScreenState extends State<ChildScreen>
                               color: Color(0xFF317AF7),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.location_on, color: Colors.white, size: 12),
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.white,
+                              size: 12,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           const Text(
@@ -1505,7 +1672,9 @@ class _ChildScreenState extends State<ChildScreen>
                           ),
                           const SizedBox(width: 6),
                           PulsingDot(
-                            color: locationService.isTracking ? Colors.green : Colors.grey,
+                            color: locationService.isTracking
+                                ? Colors.green
+                                : Colors.grey,
                             size: 8,
                           ),
                         ],
@@ -1521,7 +1690,11 @@ class _ChildScreenState extends State<ChildScreen>
                       CircleAvatar(
                         radius: 20,
                         backgroundColor: Colors.grey.shade700,
-                        child: const Icon(Icons.person, color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.person,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                       Positioned(
                         right: -1,
@@ -1551,903 +1724,1297 @@ class _ChildScreenState extends State<ChildScreen>
       body: _awaitingPermissions
           ? _buildPermissionSetup()
           : Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/images/mountain.png'),
-            fit: BoxFit.cover,
-          ),
-        ),
-        child: _loading
-            ? _buildLoadingState()
-            : FadeTransition(
-                opacity: _entranceFade,
-                child: RefreshIndicator(
-                color: const Color(0xFF317AF7),
-                onRefresh: _refreshData,
-                child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 110, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Screen Time Card - Match parent dashboard theme
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1A3C8B), Color(0xFF0D1F4A)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF0D1F4A).withOpacity(0.45),
-                            blurRadius: 25,
-                            offset: const Offset(0, 16),
+              decoration: const BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('assets/images/mountain.png'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: _loading
+                  ? _buildLoadingState()
+                  : FadeTransition(
+                      opacity: _entranceFade,
+                      child: RefreshIndicator(
+                        color: const Color(0xFF317AF7),
+                        onRefresh: _refreshData,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            MediaQuery.of(context).padding.top + 110,
+                            16,
+                            16,
                           ),
-                        ],
-                      ),
-                      child: Stack(
-                        children: [
-                          // Decorative circles like parent screen
-                          Positioned(
-                            top: -40,
-                            right: -40,
-                            child: Container(
-                              width: 150,
-                              height: 150,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.06),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            bottom: -70,
-                            left: -70,
-                            child: Container(
-                              width: 190,
-                              height: 190,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.04),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Screen Time Card - Match parent dashboard theme
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFF1A3C8B),
+                                      Color(0xFF0D1F4A),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFF0D1F4A,
+                                      ).withOpacity(0.45),
+                                      blurRadius: 25,
+                                      offset: const Offset(0, 16),
+                                    ),
+                                  ],
+                                ),
+                                child: Stack(
                                   children: [
-                                    Container(
-                                      width: 56,
-                                      height: 56,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.18),
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(18),
-                                        child: Image.asset(
-                                          'assets/images/screen_time_icon.png',
-                                          fit: BoxFit.contain,
+                                    // Decorative circles like parent screen
+                                    Positioned(
+                                      top: -40,
+                                      right: -40,
+                                      child: Container(
+                                        width: 150,
+                                        height: 150,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.06),
+                                          shape: BoxShape.circle,
                                         ),
                                       ),
                                     ),
-                                    const Spacer(),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
+                                    Positioned(
+                                      bottom: -70,
+                                      left: -70,
+                                      child: Container(
+                                        width: 190,
+                                        height: 190,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.04),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Container(
+                                                width: 56,
+                                                height: 56,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white
+                                                      .withOpacity(0.18),
+                                                  borderRadius:
+                                                      BorderRadius.circular(18),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(18),
+                                                  child: Image.asset(
+                                                    'assets/images/screen_time_icon.png',
+                                                    fit: BoxFit.contain,
+                                                  ),
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    _totalUsageTime,
+                                                    style: const TextStyle(
+                                                      fontSize: 28,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: Colors.white,
+                                                      letterSpacing: -0.5,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Daily Limit: ${_dailyLimitHours?.toStringAsFixed(1) ?? '8.0'} hr',
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.white70,
+                                                      fontWeight:
+                                                          FontWeight.w400,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 32),
+                                          const Text(
+                                            'Screen Time',
+                                            style: TextStyle(
+                                              fontSize: 22,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _calculateScreenTimePercentage(),
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.white70,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // AI Safety Monitoring Card
+                              if (_aiMonitoringActive) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(24),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF15335C),
+                                        Color(0xFF081526),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(24),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF0D1F4A).withOpacity(0.4),
+                                        blurRadius: 25,
+                                        offset: const Offset(0, 15),
+                                      ),
+                                    ],
+                                    border: Border.all(
+                                      color: _latestAnalysis != null && _latestAnalysis!.riskScore > 50
+                                          ? Colors.redAccent.withOpacity(0.3)
+                                          : Colors.white10,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(14),
+                                            ),
+                                            child: Icon(
+                                              Icons.psychology_rounded,
+                                              color: _latestAnalysis != null && _latestAnalysis!.riskScore > 50
+                                                  ? Colors.redAccent
+                                                  : const Color(0xFF48B3FF),
+                                              size: 26,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          const Text(
+                                            'AI Safety Monitoring',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: -0.5,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          if (_latestAnalysis == null)
+                                            const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                                              ),
+                                            )
+                                          else
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: Colors.greenAccent.withOpacity(0.18),
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Text(
+                                                'ACTIVE',
+                                                style: TextStyle(
+                                                  color: Colors.greenAccent.shade400,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 1.0,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 24),
+                                      if (_latestAnalysis != null) ...[
                                         Text(
-                                          _totalUsageTime,
+                                          _latestAnalysis!.summary,
                                           style: const TextStyle(
-                                            fontSize: 28,
-                                            fontWeight: FontWeight.w700,
                                             color: Colors.white,
-                                            letterSpacing: -0.5,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            height: 1.4,
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Daily Limit: ${_dailyLimitHours?.toStringAsFixed(1) ?? '8.0'} hr',
-                                          style: const TextStyle(
-                                            fontSize: 14,
+                                        const SizedBox(height: 16),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: _latestAnalysis!.riskScore > 50
+                                                    ? Colors.redAccent.withOpacity(0.15)
+                                                    : Colors.greenAccent.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                'Risk Level: ${_latestAnalysis!.riskScore}%',
+                                                style: TextStyle(
+                                                  color: _latestAnalysis!.riskScore > 50
+                                                      ? Colors.redAccent
+                                                      : Colors.greenAccent.shade400,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.radar_rounded,
+                                                  size: 14,
+                                                  color: Colors.white.withOpacity(0.4),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  'Scanning...',
+                                                  style: TextStyle(
+                                                    color: Colors.white.withOpacity(0.4),
+                                                    fontSize: 12,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ] else ...[
+                                        const Text(
+                                          'Initializing screen safety analysis...',
+                                          style: TextStyle(
                                             color: Colors.white70,
-                                            fontWeight: FontWeight.w400,
+                                            fontSize: 15,
+                                            fontStyle: FontStyle.italic,
                                           ),
                                         ),
                                       ],
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 32),
-                                const Text(
-                                  'Screen Time',
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _calculateScreenTimePercentage(),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white70,
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
+                                const SizedBox(height: 24),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Task Loading Status (only on initial load, not background refreshes)
-                    if (_loadingTasks && _pendingTasks.isEmpty) ...[
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Row(
-                          children: [
-                            CircularProgressIndicator(
-                              color: Color(0xFF317AF7),
-                              strokeWidth: 2,
-                            ),
-                            SizedBox(width: 16),
-                            Text(
-                              'Loading tasks...',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    
-                    // Pending Tasks Card
-                    if (_pendingTasks.isNotEmpty) ...[
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const MyTasksScreen()),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF15335C), Color(0xFF081526)], // Use app's primary gradient
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF15335C).withOpacity(0.18),
-                                blurRadius: 15,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.13),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.task_outlined,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Text(
-                                      'Pending Tasks',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.13),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      '${_pendingTasks.length}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.chevron_right,
-                                    color: Colors.white70,
-                                    size: 24,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              ...(_pendingTasks.take(3).map((task) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.radio_button_unchecked,
-                                      color: Colors.white70,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        task.title,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ))),
-                              if (_pendingTasks.length > 3) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  '+${_pendingTasks.length - 3} more tasks',
-                                  style: const TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    
-                    // App Usage Summary Card
-                    if (_displayUsageEntries.isNotEmpty) ...[
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStatItem(
-                              context,
-                              Icons.apps_rounded,
-                              '${_displayUsageEntries.length}',
-                              'Apps Used',
-                            ),
-                            Container(
-                              width: 1,
-                              height: 40,
-                              color: Colors.white24,
-                            ),
-                            _buildStatItem(
-                              context,
-                              Icons.access_time_rounded,
-                              _totalUsageTime,
-                              'Total Time',
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    
-                    // Browser Usage Section
-                    if (_browserUsageEntries.isNotEmpty) ...[
-                      Row(
-                        children: [
-                          const Icon(Icons.language_rounded, size: 20, color: Color(0xFF317AF7)),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Browser Activity',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF317AF7),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              _totalBrowserTime,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Card(
-                        color: const Color(0xFF1A1A1A),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        child: Container(
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1A),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _browserUsageEntries.length,
-                            itemBuilder: (context, index) {
-                              final entry = _browserUsageEntries[index];
-                              final app = _apps[entry.key];
-                              
-                              if (app == null) return const SizedBox.shrink();
 
-                              return Card(
-                                color: const Color(0xFF0F0F0F),
-                                margin: const EdgeInsets.only(bottom: 8),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
+                              // Task Loading Status (only on initial load, not background refreshes)
+                              if (_loadingTasks && _pendingTasks.isEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1A1A1A),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
-                                  leading: Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      color: const Color(0xFF2A2A2A),
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: app.icon != null
-                                          ? Image.memory(
-                                              app.icon!,
-                                              width: 48,
-                                              height: 48,
-                                              fit: BoxFit.cover,
-                                            )
-                                          : const Icon(
-                                              Icons.language_rounded,
-                                              color: Color(0xFF317AF7),
-                                            ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    app.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  subtitle: const Text(
-                                    'Browser app',
-                                    style: TextStyle(
-                                      color: Colors.white60,
-                                    ),
-                                  ),
-                                  trailing: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF317AF7),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      _formatDurationFromSeconds(entry.value),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    
-                    // Browser History Section
-                    Row(
-                      children: [
-                        const Icon(Icons.history_rounded, size: 20, color: Color(0xFF317AF7)),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Browsing History',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_browserHistory.isNotEmpty)
-                          Text(
-                            '${_browserHistory.length} ${_browserHistory.length == 1 ? 'entry' : 'entries'}',
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Card(
-                      color: const Color(0xFF1A1A1A),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Container(
-                        height: 300,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: _browserHistory.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                  child: const Row(
                                     children: [
-                                      const Icon(
-                                        Icons.info_outline_rounded,
-                                        size: 48,
+                                      CircularProgressIndicator(
                                         color: Color(0xFF317AF7),
+                                        strokeWidth: 2,
                                       ),
-                                      const SizedBox(height: 16),
-                                      const Text(
-                                        'No browsing history available',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      const Text(
-                                        'Browser history will appear here once available',
-                                        style: TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 12,
-                                        ),
-                                        textAlign: TextAlign.center,
+                                      SizedBox(width: 16),
+                                      Text(
+                                        'Loading tasks...',
+                                        style: TextStyle(color: Colors.white70),
                                       ),
                                     ],
                                   ),
                                 ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.all(8),
-                                itemCount: _browserHistory.length,
-                                itemBuilder: (context, index) {
-                                  final site = _browserHistory[index];
-                                  final title = site['title'] ?? 'Unknown';
-                                  final url = site['url'] ?? '';
-                                  final timestamp = site['timestamp'] ?? '';
-                                  
-                                  final isErrorMessage = title.contains('Failed') || 
-                                                         title.contains('Permission') ||
-                                                         title.contains('Debug');
-                                  
-                                  return Card(
-                                    color: const Color(0xFF0F0F0F),
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
-                                      leading: Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: isErrorMessage 
-                                              ? const Color(0xFF317AF7).withOpacity(0.3)
-                                              : const Color(0xFF317AF7),
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Icon(
-                                          isErrorMessage ? Icons.info_outline_rounded : Icons.public_rounded,
-                                          color: Colors.white,
-                                          size: 24,
-                                        ),
-                                      ),
-                                      title: Text(
-                                        title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            url,
-                                            style: TextStyle(
-                                              color: isErrorMessage 
-                                                  ? Colors.white 
-                                                  : const Color(0xFF317AF7),
-                                              fontSize: 12,
-                                            ),
-                                            maxLines: 3,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (!isErrorMessage) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              _formatTimestamp(timestamp),
-                                              style: const TextStyle(
-                                                color: Colors.white60,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      isThreeLine: true,
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // App Usage List Header
-                    Row(
-                      children: [
-                        const Text(
-                          'App Usage',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          DateFormat('MMM d').format(DateTime.now()),
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // App Usage List
-                    _displayUsageEntries.isEmpty
-                        ? Container(
-                            padding: const EdgeInsets.all(32),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A1A),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              children: const [
-                                Icon(
-                                  Icons.hourglass_empty_rounded,
-                                  size: 48,
-                                  color: Colors.white60,
-                                ),
-                                SizedBox(height: 16),
-                                Text(
-                                  'No usage data available',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Grant usage access permission to see statistics',
-                                  style: TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 12,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
+                                const SizedBox(height: 24),
                               ],
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              // Total usage across all apps (for percentage of total time)
-                              ...(() {
-                                int totalSecondsAll = 0;
-                                for (var entry in _displayUsageEntries) {
-                                  totalSecondsAll += entry.value;
-                                }
 
-                                return _displayUsageEntries.take(10).map((entry) {
-                                final app = _apps[entry.key];
-                                if (app == null) return const SizedBox.shrink();
-
-                                // Check if this app has a time limit
-                                final packageName = entry.key;
-                                final hasLimit = _restrictions?.restrictedApps.containsKey(packageName) ?? false;
-                                final limitHours = hasLimit ? _restrictions!.restrictedApps[packageName] : null;
-                                
-                                // Check if blocked by exam mode
-                                final isBlockedByExamMode = _examMode && _examModeApps.contains(packageName);
-                                final effectiveLimit = isBlockedByExamMode ? 0.0 : limitHours;
-                                
-                                // Calculate time used
-                                final seconds = entry.value;
-                                final usedHours = seconds / 3600;
-                                final usedMinutes = (seconds / 60).round();
-                                
-                                // Check if limit is exceeded
-                                final isExceeded = (hasLimit && effectiveLimit != null && usedHours >= effectiveLimit) || isBlockedByExamMode;
-                                
-                                // Calculate percentage of total app usage time
-                                final totalSeconds = totalSecondsAll == 0 ? 1 : totalSecondsAll;
-                                final percentage = ((seconds / totalSeconds) * 100).clamp(0, 100).toInt();
-                                
-                                // Get app category
-                                String category = _getAppCategory(packageName, app.name);
-
-                                return GestureDetector(
-                                  onTap: isExceeded ? () => _showRequestTimeDialog(
-                                    context,
-                                    packageName: packageName,
-                                    appName: app.name,
-                                  ) : null,
+                              // Pending Tasks Card
+                              if (_pendingTasks.isNotEmpty) ...[
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const MyTasksScreen(),
+                                      ),
+                                    );
+                                  },
                                   child: Container(
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    padding: const EdgeInsets.all(16),
+                                    padding: const EdgeInsets.all(20),
                                     decoration: BoxDecoration(
-                                      color: isExceeded 
-                                          ? const Color(0xFF317AF7).withOpacity(0.15)
-                                          : const Color(0xFF0F0F0F),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: isExceeded
-                                          ? Border.all(color: Colors.redAccent.withOpacity(0.3), width: 1)
-                                          : null,
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF15335C),
+                                          Color(0xFF081526),
+                                        ], // Use app's primary gradient
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(
+                                            0xFF15335C,
+                                          ).withOpacity(0.18),
+                                          blurRadius: 15,
+                                          offset: const Offset(0, 8),
+                                        ),
+                                      ],
                                     ),
                                     child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Row(
                                           children: [
-                                            // App Icon
                                             Container(
-                                              width: 40,
-                                              height: 40,
+                                              padding: const EdgeInsets.all(10),
                                               decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(10),
+                                                color: Colors.white.withOpacity(
+                                                  0.13,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: const Icon(
+                                                Icons.task_outlined,
+                                                color: Colors.white,
+                                                size: 24,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Expanded(
+                                              child: Text(
+                                                'Pending Tasks',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w600,
+                                                  letterSpacing: -0.5,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withOpacity(
+                                                  0.13,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                              child: Text(
+                                                '${_pendingTasks.length}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Icon(
+                                              Icons.chevron_right,
+                                              color: Colors.white70,
+                                              size: 24,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ...(_pendingTasks
+                                            .take(3)
+                                            .map(
+                                              (task) => Padding(
+                                                padding: const EdgeInsets.only(
+                                                  bottom: 8,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons
+                                                          .radio_button_unchecked,
+                                                      color: Colors.white70,
+                                                      size: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        task.title,
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            )),
+                                        if (_pendingTasks.length > 3) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '+${_pendingTasks.length - 3} more tasks',
+                                            style: const TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 12,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // App Usage Summary Card
+                              if (_displayUsageEntries.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1A1A1A),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceAround,
+                                    children: [
+                                      _buildStatItem(
+                                        context,
+                                        Icons.apps_rounded,
+                                        '${_displayUsageEntries.length}',
+                                        'Apps Used',
+                                      ),
+                                      Container(
+                                        width: 1,
+                                        height: 40,
+                                        color: Colors.white24,
+                                      ),
+                                      _buildStatItem(
+                                        context,
+                                        Icons.access_time_rounded,
+                                        _totalUsageTime,
+                                        'Total Time',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Browser Usage Section
+                              if (_browserUsageEntries.isNotEmpty) ...[
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.language_rounded,
+                                      size: 20,
+                                      color: Color(0xFF317AF7),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Browser Activity',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF317AF7),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        _totalBrowserTime,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Card(
+                                  color: const Color(0xFF1A1A1A),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Container(
+                                    height: 200,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF1A1A1A),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: ListView.builder(
+                                      padding: const EdgeInsets.all(8),
+                                      itemCount: _browserUsageEntries.length,
+                                      itemBuilder: (context, index) {
+                                        final entry =
+                                            _browserUsageEntries[index];
+                                        final app = _apps[entry.key];
+
+                                        if (app == null)
+                                          return const SizedBox.shrink();
+
+                                        return Card(
+                                          color: const Color(0xFF0F0F0F),
+                                          margin: const EdgeInsets.only(
+                                            bottom: 8,
+                                          ),
+                                          child: ListTile(
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 16,
+                                                  vertical: 8,
+                                                ),
+                                            leading: Container(
+                                              width: 48,
+                                              height: 48,
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 color: const Color(0xFF2A2A2A),
                                               ),
                                               child: ClipRRect(
-                                                borderRadius: BorderRadius.circular(10),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 child: app.icon != null
                                                     ? Image.memory(
                                                         app.icon!,
-                                                        width: 40,
-                                                        height: 40,
+                                                        width: 48,
+                                                        height: 48,
                                                         fit: BoxFit.cover,
                                                       )
                                                     : const Icon(
-                                                        Icons.android,
-                                                        color: Color(0xFF317AF7),
-                                                        size: 24,
+                                                        Icons.language_rounded,
+                                                        color: Color(
+                                                          0xFF317AF7,
+                                                        ),
                                                       ),
                                               ),
                                             ),
-                                            const SizedBox(width: 12),
-                                            // App Name and Category
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          app.name,
-                                                          style: const TextStyle(
-                                                            fontSize: 16,
-                                                            fontWeight: FontWeight.w600,
-                                                            color: Colors.white,
-                                                          ),
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                      if (isBlockedByExamMode) ...[
-                                                        const SizedBox(width: 4),
-                                                        const Icon(
-                                                          Icons.school,
-                                                          size: 14,
-                                                          color: Colors.orange,
-                                                        ),
-                                                      ] else if (isExceeded) ...[
-                                                        const SizedBox(width: 4),
-                                                        const Icon(
-                                                          Icons.block_rounded,
-                                                          size: 14,
-                                                          color: Colors.redAccent,
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Row(
-                                                    children: [
-                                                      Text(
-                                                        category,
-                                                        style: const TextStyle(
-                                                          fontSize: 13,
-                                                          color: Colors.white60,
-                                                        ),
-                                                      ),
-                                                      if (isBlockedByExamMode) ...[
-                                                        const SizedBox(width: 8),
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.orange.withOpacity(0.2),
-                                                            borderRadius: BorderRadius.circular(4),
-                                                          ),
-                                                          child: const Text(
-                                                            'Exam Mode',
-                                                            style: TextStyle(
-                                                              fontSize: 10,
-                                                              color: Colors.orange,
-                                                              fontWeight: FontWeight.bold,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            // Time
-                                            Text(
-                                              '$usedMinutes mins',
+                                            title: Text(
+                                              app.name,
                                               style: const TextStyle(
-                                                fontSize: 14,
                                                 fontWeight: FontWeight.w600,
                                                 color: Colors.white,
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 12),
-                                        // Progress Bar
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Stack(
-                                                children: [
-                                                  Container(
-                                                    height: 6,
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white.withOpacity(0.1),
-                                                      borderRadius: BorderRadius.circular(3),
-                                                    ),
-                                                  ),
-                                                  FractionallySizedBox(
-                                                    widthFactor: percentage / 100,
-                                                    child: Container(
-                                                      height: 6,
-                                                      decoration: BoxDecoration(
-                                                        gradient: LinearGradient(
-                                                          colors: isBlockedByExamMode
-                                                              ? [Colors.orange, Colors.deepOrange]
-                                                              : isExceeded
-                                                                  ? [Colors.redAccent, Colors.red]
-                                                                  : [const Color(0xFF48B3FF), const Color(0xFF3E6BFF)],
-                                                        ),
-                                                        borderRadius: BorderRadius.circular(3),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Text(
-                                              '$percentage%',
+                                            subtitle: const Text(
+                                              'Browser app',
                                               style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: isBlockedByExamMode 
-                                                    ? Colors.orange 
-                                                    : isExceeded 
-                                                        ? Colors.redAccent 
-                                                        : Colors.white70,
+                                                color: Colors.white60,
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }).toList();
-                            })(),
-                              // Load Earlier Activities Button
-                              if (_displayUsageEntries.length > 10)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  child: TextButton(
-                                    onPressed: () {
-                                      // TODO: Implement load more functionality
-                                    },
-                                    child: const Text(
-                                      'Load Earlier Activities',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 14,
-                                      ),
+                                            trailing: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF317AF7),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                _formatDurationFromSeconds(
+                                                  entry.value,
+                                                ),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Browser History Section
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.history_rounded,
+                                    size: 20,
+                                    color: Color(0xFF317AF7),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Browsing History',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (_browserHistory.isNotEmpty)
+                                    Text(
+                                      '${_browserHistory.length} ${_browserHistory.length == 1 ? 'entry' : 'entries'}',
+                                      style: const TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Card(
+                                color: const Color(0xFF1A1A1A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Container(
+                                  height: 300,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1A1A1A),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: _browserHistory.isEmpty
+                                      ? Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(24),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(
+                                                  Icons.info_outline_rounded,
+                                                  size: 48,
+                                                  color: Color(0xFF317AF7),
+                                                ),
+                                                const SizedBox(height: 16),
+                                                const Text(
+                                                  'No browsing history available',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.white,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                                const SizedBox(height: 8),
+                                                const Text(
+                                                  'Browser history will appear here once available',
+                                                  style: TextStyle(
+                                                    color: Colors.white60,
+                                                    fontSize: 12,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      : ListView.builder(
+                                          padding: const EdgeInsets.all(8),
+                                          itemCount: _browserHistory.length,
+                                          itemBuilder: (context, index) {
+                                            final site = _browserHistory[index];
+                                            final title =
+                                                site['title'] ?? 'Unknown';
+                                            final url = site['url'] ?? '';
+                                            final timestamp =
+                                                site['timestamp'] ?? '';
+
+                                            final isErrorMessage =
+                                                title.contains('Failed') ||
+                                                title.contains('Permission') ||
+                                                title.contains('Debug');
+
+                                            return Card(
+                                              color: const Color(0xFF0F0F0F),
+                                              margin: const EdgeInsets.only(
+                                                bottom: 8,
+                                              ),
+                                              child: ListTile(
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 12,
+                                                    ),
+                                                leading: Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: isErrorMessage
+                                                        ? const Color(
+                                                            0xFF317AF7,
+                                                          ).withOpacity(0.3)
+                                                        : const Color(
+                                                            0xFF317AF7,
+                                                          ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                  child: Icon(
+                                                    isErrorMessage
+                                                        ? Icons
+                                                              .info_outline_rounded
+                                                        : Icons.public_rounded,
+                                                    color: Colors.white,
+                                                    size: 24,
+                                                  ),
+                                                ),
+                                                title: Text(
+                                                  title,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                subtitle: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      url,
+                                                      style: TextStyle(
+                                                        color: isErrorMessage
+                                                            ? Colors.white
+                                                            : const Color(
+                                                                0xFF317AF7,
+                                                              ),
+                                                        fontSize: 12,
+                                                      ),
+                                                      maxLines: 3,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    if (!isErrorMessage) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        _formatTimestamp(
+                                                          timestamp,
+                                                        ),
+                                                        style: const TextStyle(
+                                                          color: Colors.white60,
+                                                          fontSize: 11,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                                isThreeLine: true,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // App Usage List Header
+                              Row(
+                                children: [
+                                  const Text(
+                                    'App Usage',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    DateFormat('MMM d').format(DateTime.now()),
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // App Usage List
+                              _displayUsageEntries.isEmpty
+                                  ? Container(
+                                      padding: const EdgeInsets.all(32),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1A1A1A),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Column(
+                                        children: const [
+                                          Icon(
+                                            Icons.hourglass_empty_rounded,
+                                            size: 48,
+                                            color: Colors.white60,
+                                          ),
+                                          SizedBox(height: 16),
+                                          Text(
+                                            'No usage data available',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            'Grant usage access permission to see statistics',
+                                            style: TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 12,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : Column(
+                                      children: [
+                                        // Total usage across all apps (for percentage of total time)
+                                        ...(() {
+                                          int totalSecondsAll = 0;
+                                          for (var entry
+                                              in _displayUsageEntries) {
+                                            totalSecondsAll += entry.value;
+                                          }
+
+                                          return _displayUsageEntries.take(10).map((
+                                            entry,
+                                          ) {
+                                            final app = _apps[entry.key];
+                                            if (app == null)
+                                              return const SizedBox.shrink();
+
+                                            // Check if this app has a time limit
+                                            final packageName = entry.key;
+                                            final hasLimit =
+                                                _restrictions?.restrictedApps
+                                                    .containsKey(packageName) ??
+                                                false;
+                                            final limitHours = hasLimit
+                                                ? _restrictions!
+                                                      .restrictedApps[packageName]
+                                                : null;
+
+                                            // Check if blocked by exam mode
+                                            final isBlockedByExamMode =
+                                                _examMode &&
+                                                _examModeApps.contains(
+                                                  packageName,
+                                                );
+                                            final effectiveLimit =
+                                                isBlockedByExamMode
+                                                ? 0.0
+                                                : limitHours;
+
+                                            // Calculate time used
+                                            final seconds = entry.value;
+                                            final usedHours = seconds / 3600;
+                                            final usedMinutes = (seconds / 60)
+                                                .round();
+
+                                            // Check if limit is exceeded
+                                            final isExceeded =
+                                                (hasLimit &&
+                                                    effectiveLimit != null &&
+                                                    usedHours >=
+                                                        effectiveLimit) ||
+                                                isBlockedByExamMode;
+
+                                            // Calculate percentage of total app usage time
+                                            final totalSeconds =
+                                                totalSecondsAll == 0
+                                                ? 1
+                                                : totalSecondsAll;
+                                            final percentage =
+                                                ((seconds / totalSeconds) * 100)
+                                                    .clamp(0, 100)
+                                                    .toInt();
+
+                                            // Get app category
+                                            String category = _getAppCategory(
+                                              packageName,
+                                              app.name,
+                                            );
+
+                                            return GestureDetector(
+                                              onTap: isExceeded
+                                                  ? () =>
+                                                        _showRequestTimeDialog(
+                                                          context,
+                                                          packageName:
+                                                              packageName,
+                                                          appName: app.name,
+                                                        )
+                                                  : null,
+                                              child: Container(
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 16,
+                                                ),
+                                                padding: const EdgeInsets.all(
+                                                  16,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: isExceeded
+                                                      ? const Color(
+                                                          0xFF317AF7,
+                                                        ).withOpacity(0.15)
+                                                      : const Color(0xFF0F0F0F),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: isExceeded
+                                                      ? Border.all(
+                                                          color: Colors
+                                                              .redAccent
+                                                              .withOpacity(0.3),
+                                                          width: 1,
+                                                        )
+                                                      : null,
+                                                ),
+                                                child: Column(
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        // App Icon
+                                                        Container(
+                                                          width: 40,
+                                                          height: 40,
+                                                          decoration: BoxDecoration(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  10,
+                                                                ),
+                                                            color: const Color(
+                                                              0xFF2A2A2A,
+                                                            ),
+                                                          ),
+                                                          child: ClipRRect(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  10,
+                                                                ),
+                                                            child:
+                                                                app.icon != null
+                                                                ? Image.memory(
+                                                                    app.icon!,
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    fit: BoxFit
+                                                                        .cover,
+                                                                  )
+                                                                : const Icon(
+                                                                    Icons
+                                                                        .android,
+                                                                    color: Color(
+                                                                      0xFF317AF7,
+                                                                    ),
+                                                                    size: 24,
+                                                                  ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 12,
+                                                        ),
+                                                        // App Name and Category
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Row(
+                                                                children: [
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      app.name,
+                                                                      style: const TextStyle(
+                                                                        fontSize:
+                                                                            16,
+                                                                        fontWeight:
+                                                                            FontWeight.w600,
+                                                                        color: Colors
+                                                                            .white,
+                                                                      ),
+                                                                      overflow:
+                                                                          TextOverflow
+                                                                              .ellipsis,
+                                                                    ),
+                                                                  ),
+                                                                  if (isBlockedByExamMode) ...[
+                                                                    const SizedBox(
+                                                                      width: 4,
+                                                                    ),
+                                                                    const Icon(
+                                                                      Icons
+                                                                          .school,
+                                                                      size: 14,
+                                                                      color: Colors
+                                                                          .orange,
+                                                                    ),
+                                                                  ] else if (isExceeded) ...[
+                                                                    const SizedBox(
+                                                                      width: 4,
+                                                                    ),
+                                                                    const Icon(
+                                                                      Icons
+                                                                          .block_rounded,
+                                                                      size: 14,
+                                                                      color: Colors
+                                                                          .redAccent,
+                                                                    ),
+                                                                  ],
+                                                                ],
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 2,
+                                                              ),
+                                                              Row(
+                                                                children: [
+                                                                  Text(
+                                                                    category,
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          13,
+                                                                      color: Colors
+                                                                          .white60,
+                                                                    ),
+                                                                  ),
+                                                                  if (isBlockedByExamMode) ...[
+                                                                    const SizedBox(
+                                                                      width: 8,
+                                                                    ),
+                                                                    Container(
+                                                                      padding: const EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            6,
+                                                                        vertical:
+                                                                            2,
+                                                                      ),
+                                                                      decoration: BoxDecoration(
+                                                                        color: Colors
+                                                                            .orange
+                                                                            .withOpacity(
+                                                                              0.2,
+                                                                            ),
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(
+                                                                              4,
+                                                                            ),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        'Exam Mode',
+                                                                        style: TextStyle(
+                                                                          fontSize:
+                                                                              10,
+                                                                          color:
+                                                                              Colors.orange,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ],
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 12,
+                                                        ),
+                                                        // Time
+                                                        Text(
+                                                          '$usedMinutes mins',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Colors
+                                                                    .white,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 12),
+                                                    // Progress Bar
+                                                    Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: Stack(
+                                                            children: [
+                                                              Container(
+                                                                height: 6,
+                                                                decoration: BoxDecoration(
+                                                                  color: Colors
+                                                                      .white
+                                                                      .withOpacity(
+                                                                        0.1,
+                                                                      ),
+                                                                  borderRadius:
+                                                                      BorderRadius.circular(
+                                                                        3,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                              FractionallySizedBox(
+                                                                widthFactor:
+                                                                    percentage /
+                                                                    100,
+                                                                child: Container(
+                                                                  height: 6,
+                                                                  decoration: BoxDecoration(
+                                                                    gradient: LinearGradient(
+                                                                      colors:
+                                                                          isBlockedByExamMode
+                                                                          ? [
+                                                                              Colors.orange,
+                                                                              Colors.deepOrange,
+                                                                            ]
+                                                                          : isExceeded
+                                                                          ? [
+                                                                              Colors.redAccent,
+                                                                              Colors.red,
+                                                                            ]
+                                                                          : [
+                                                                              const Color(
+                                                                                0xFF48B3FF,
+                                                                              ),
+                                                                              const Color(
+                                                                                0xFF3E6BFF,
+                                                                              ),
+                                                                            ],
+                                                                    ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          3,
+                                                                        ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 12,
+                                                        ),
+                                                        Text(
+                                                          '$percentage%',
+                                                          style: TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color:
+                                                                isBlockedByExamMode
+                                                                ? Colors.orange
+                                                                : isExceeded
+                                                                ? Colors
+                                                                      .redAccent
+                                                                : Colors
+                                                                      .white70,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          }).toList();
+                                        })(),
+                                        // Load Earlier Activities Button
+                                        if (_displayUsageEntries.length > 10)
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 16,
+                                            ),
+                                            child: TextButton(
+                                              onPressed: () {
+                                                // TODO: Implement load more functionality
+                                              },
+                                              child: const Text(
+                                                'Load Earlier Activities',
+                                                style: TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                             ],
                           ),
-                  ],
-                ),
-              ),
+                        ),
+                      ),
+                    ),
             ),
-          ),
-        ),
     );
   }
-  
-  void _showRequestTimeDialog(BuildContext context, {String? packageName, String? appName}) {
+
+  void _showRequestTimeDialog(
+    BuildContext context, {
+    String? packageName,
+    String? appName,
+  }) {
     final timeExtService = context.read<TimeExtensionService>();
     final prefsManager = context.read<PreferencesManager>();
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) => MultiProvider(
@@ -2455,17 +3022,17 @@ class _ChildScreenState extends State<ChildScreen>
           ChangeNotifierProvider.value(value: timeExtService),
           Provider.value(value: prefsManager),
         ],
-        child: TimeRequestDialog(
-          packageName: packageName,
-          appName: appName,
-        ),
+        child: TimeRequestDialog(packageName: packageName, appName: appName),
       ),
     );
   }
 
-
-  
-  Widget _buildStatItem(BuildContext context, IconData icon, String value, String label) {
+  Widget _buildStatItem(
+    BuildContext context,
+    IconData icon,
+    String value,
+    String label,
+  ) {
     return Column(
       children: [
         Icon(icon, color: const Color(0xFF317AF7), size: 28),
@@ -2481,24 +3048,24 @@ class _ChildScreenState extends State<ChildScreen>
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 12,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
         ),
       ],
     );
   }
 
   // ───────────────── Permission setup screen ─────────────────
-  
+
   void _showRestrictedHelp() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1F2C),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Restricted Setting', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Restricted Setting',
+          style: TextStyle(color: Colors.white),
+        ),
         content: const Text(
           'On Android 13+, accessibility services are restricted for sideloaded apps. '
           'To enable it:\n\n'
@@ -2510,7 +3077,10 @@ class _ChildScreenState extends State<ChildScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got It', style: TextStyle(color: Color(0xFF317AF7))),
+            child: const Text(
+              'Got It',
+              style: TextStyle(color: Color(0xFF317AF7)),
+            ),
           ),
         ],
       ),
@@ -2519,17 +3089,20 @@ class _ChildScreenState extends State<ChildScreen>
 
   void _startModelDownload() {
     if (_isDownloadingModel || _modelInstalled) return;
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1F2C),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Download AI Model', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'AI Safety Model',
+          style: TextStyle(color: Colors.white),
+        ),
         content: const Text(
-          'Guardian AI requires the Gemma model (approx 2.9GB) to monitor screen activity for safety. '
-          'Please ensure you are on Wi-Fi.',
+          'Guardian AI needs the Gemma model (2.9GB) to monitor screen activity. '
+          'If you already have the ".task" file on your device, you can import it to skip the download.',
           style: TextStyle(color: Colors.white70, height: 1.4),
         ),
         actions: [
@@ -2540,13 +3113,26 @@ class _ChildScreenState extends State<ChildScreen>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
+              _pickLocalModel();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white.withOpacity(0.1),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Import Local File'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
               setState(() {
                 _isDownloadingModel = true;
                 _downloadProgress = 0.0;
               });
               GemmaManager.instance.downloadModel();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF317AF7)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF317AF7),
+            ),
             child: const Text('Start Download'),
           ),
         ],
@@ -2554,8 +3140,32 @@ class _ChildScreenState extends State<ChildScreen>
     );
   }
 
+  Future<void> _pickLocalModel() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
+
+      if (result != null && result.files.single.path != null) {
+        final path = result.files.single.path!;
+        setState(() {
+          _isDownloadingModel = true;
+          _downloadProgress = 0.0;
+        });
+
+        await GemmaManager.instance.installModelFromFile(path);
+      }
+    } catch (e) {
+      AppLogger.log('❌ Error picking model: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
   Widget _buildPermissionSetup() {
-    final allGranted = _locationGranted && _usageStatsGranted && _accessibilityGranted;
+    final allGranted =
+        _locationGranted && _usageStatsGranted && _accessibilityGranted;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -2592,7 +3202,11 @@ class _ChildScreenState extends State<ChildScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.security_rounded, color: Colors.white, size: 46),
+                  child: const Icon(
+                    Icons.security_rounded,
+                    color: Colors.white,
+                    size: 46,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -2610,7 +3224,11 @@ class _ChildScreenState extends State<ChildScreen>
               const Text(
                 'Tap each item below to grant the required permissions.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 32),
               // ── Individual tappable permission rows ──
@@ -2661,13 +3279,14 @@ class _ChildScreenState extends State<ChildScreen>
               _buildPermRow(
                 icon: Icons.psychology_rounded,
                 title: 'AI Safety Model',
-                subtitle: _isDownloadingModel 
-                    ? 'Downloading: ${(_downloadProgress * 100).toStringAsFixed(1)}%' 
-                    : (_modelInstalled 
-                        ? 'Model Ready' 
-                        : (_modelStatus.contains('Failed') || _modelStatus.contains('Error') 
-                            ? '$_modelStatus\nTap to Retry' 
-                            : 'Tap to Download Model (2.9 GB)')),
+                subtitle: _isDownloadingModel
+                    ? 'Downloading: ${(_downloadProgress * 100).toStringAsFixed(1)}%'
+                    : (_modelInstalled
+                          ? 'Model Ready'
+                          : (_modelStatus.contains('Failed') ||
+                                    _modelStatus.contains('Error')
+                                ? '$_modelStatus\nTap to Retry'
+                                : 'Tap to Download Model (2.9 GB)')),
                 granted: _modelInstalled,
                 loading: _isDownloadingModel,
                 onTap: _startModelDownload,
@@ -2704,7 +3323,8 @@ class _ChildScreenState extends State<ChildScreen>
                         ? Colors.greenAccent.shade700
                         : const Color(0xFF317AF7),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     elevation: 0,
                   ),
                   child: Text(
@@ -2752,8 +3372,8 @@ class _ChildScreenState extends State<ChildScreen>
               color: granted
                   ? Colors.greenAccent.withOpacity(0.5)
                   : loading
-                      ? const Color(0xFF317AF7).withOpacity(0.6)
-                      : const Color(0xFF1B2433),
+                  ? const Color(0xFF317AF7).withOpacity(0.6)
+                  : const Color(0xFF1B2433),
               width: granted || loading ? 1.5 : 1.0,
             ),
           ),
@@ -2792,7 +3412,9 @@ class _ChildScreenState extends State<ChildScreen>
                     Text(
                       granted ? '✓ Granted' : subtitle,
                       style: TextStyle(
-                        color: granted ? Colors.greenAccent.withOpacity(0.8) : Colors.white54,
+                        color: granted
+                            ? Colors.greenAccent.withOpacity(0.8)
+                            : Colors.white54,
                         fontSize: 12,
                       ),
                     ),
@@ -2806,7 +3428,9 @@ class _ChildScreenState extends State<ChildScreen>
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF317AF7)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF317AF7),
+                        ),
                       ),
                     )
                   : Icon(
@@ -2829,7 +3453,11 @@ class _ChildScreenState extends State<ChildScreen>
     return SingleChildScrollView(
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
-          16, MediaQuery.of(context).padding.top + 110, 16, 16),
+        16,
+        MediaQuery.of(context).padding.top + 110,
+        16,
+        16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2989,7 +3617,11 @@ class _ChildScreenState extends State<ChildScreen>
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.person_rounded, color: Colors.white, size: 34),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 34,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -3032,7 +3664,9 @@ class _ChildScreenState extends State<ChildScreen>
                           Navigator.pop(context);
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const MyTasksScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const MyTasksScreen(),
+                            ),
                           );
                         },
                       ),
@@ -3050,7 +3684,10 @@ class _ChildScreenState extends State<ChildScreen>
                       ),
                     ),
                     const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                       child: Divider(color: Colors.white10, height: 1),
                     ),
                     _drawerSectionLabel('ACCOUNT'),
@@ -3068,33 +3705,44 @@ class _ChildScreenState extends State<ChildScreen>
                             builder: (context) => AlertDialog(
                               backgroundColor: const Color(0xFF1A1A1A),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18)),
-                              title: const Text('Logout',
-                                  style: TextStyle(color: Colors.white)),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              title: const Text(
+                                'Logout',
+                                style: TextStyle(color: Colors.white),
+                              ),
                               content: const Text(
-                                  'Are you sure you want to logout?',
-                                  style: TextStyle(color: Colors.white70)),
+                                'Are you sure you want to logout?',
+                                style: TextStyle(color: Colors.white70),
+                              ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
-                                  child: const Text('Cancel',
-                                      style: TextStyle(color: Colors.white70)),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text(
+                                    'Cancel',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
                                 ),
                                 ElevatedButton(
                                   onPressed: () => Navigator.pop(context, true),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF317AF7),
                                     shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12)),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
-                                  child: const Text('Logout',
-                                      style: TextStyle(color: Colors.white)),
+                                  child: const Text(
+                                    'Logout',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
                                 ),
                               ],
                             ),
                           );
                           if (confirmed == true && mounted) {
-                            final prefsManager = context.read<PreferencesManager>();
+                            final prefsManager = context
+                                .read<PreferencesManager>();
                             await LocationBackgroundService.stop(); // stop tracking on logout
                             await prefsManager.clearAll();
                             if (mounted) {
@@ -3111,7 +3759,10 @@ class _ChildScreenState extends State<ChildScreen>
               // ── Footer ──
               Container(
                 margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.04),
                   borderRadius: BorderRadius.circular(14),
@@ -3125,21 +3776,28 @@ class _ChildScreenState extends State<ChildScreen>
                         color: const Color(0xFF1A3C8B).withOpacity(0.5),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.shield_rounded,
-                          color: Color(0xFF317AF7), size: 16),
+                      child: const Icon(
+                        Icons.shield_rounded,
+                        color: Color(0xFF317AF7),
+                        size: 16,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Guardian AI',
-                            style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
-                        Text('v1.0  •  Child Mode',
-                            style:
-                                TextStyle(color: Colors.white30, fontSize: 10)),
+                        Text(
+                          'Guardian AI',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          'v1.0  •  Child Mode',
+                          style: TextStyle(color: Colors.white30, fontSize: 10),
+                        ),
                       ],
                     ),
                   ],
@@ -3184,9 +3842,7 @@ class _ChildScreenState extends State<ChildScreen>
         onTap: onTap ?? () {},
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
           child: Row(
             children: [
               Container(
@@ -3210,8 +3866,11 @@ class _ChildScreenState extends State<ChildScreen>
                 ),
               ),
               if (!isDestructive)
-                const Icon(Icons.chevron_right_rounded,
-                    color: Colors.white24, size: 18),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white24,
+                  size: 18,
+                ),
             ],
           ),
         ),

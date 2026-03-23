@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.guardian_ai"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.2.12479018"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

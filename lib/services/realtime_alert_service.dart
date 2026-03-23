@@ -26,6 +26,8 @@ class RealtimeAlertService {
   Database? _database;
   bool _isInitialized = false;
   String? _currentChildHash;
+  String? _currentChildName;
+  ApiService? _apiService;
   StreamSubscription? _websocketSubscription;
 
   // Controllers
@@ -46,8 +48,9 @@ class RealtimeAlertService {
   /// Initialize the realtime alert service
   Future<bool> initialize(
     Database db,
-    WebSocketService webSocketService,
-  ) async {
+    WebSocketService webSocketService, {
+    ApiService? apiService,
+  }) async {
     if (_isInitialized) {
       _log('✅ RealtimeAlertService already initialized');
       return true;
@@ -56,18 +59,33 @@ class RealtimeAlertService {
     try {
       _log('🔄 Initializing RealtimeAlertService...');
       _database = db;
+      _apiService = apiService;
 
       // Create alerts table if needed
       await _createAlertsTable();
 
       // Listen to WebSocket alerts
-      _websocketSubscription =
-          webSocketService.messages.listen(_onWebSocketMessage);
+      _websocketSubscription = webSocketService.messages.listen(
+        _onWebSocketMessage,
+      );
 
       _isInitialized = true;
       _log('✅ RealtimeAlertService initialized successfully');
       return true;
     } catch (e, stackTrace) {
+      if (e.toString().contains('SQLITE_FULL')) {
+        _log(
+          '⚠️  DISK FULL: RealtimeAlertService initialized in limited mode (no persistence)',
+        );
+        // Mark as initialized so the app can still function, albeit without DB saving
+        _isInitialized = true;
+        _apiService = apiService;
+        // Also listen to WebSocket even if DB fails
+        _websocketSubscription = webSocketService.messages.listen(
+          _onWebSocketMessage,
+        );
+        return true;
+      }
       _log('❌ RealtimeAlertService initialization failed: $e');
       _log('Stack trace: $stackTrace');
       return false;
@@ -109,27 +127,29 @@ class RealtimeAlertService {
   /// Set the current child context
   void setCurrentChild(String childHash, String childName) {
     _currentChildHash = childHash;
+    _currentChildName = childName;
     _log('📍 Current child set: $childName ($childHash)');
   }
 
   /// Add a new alert to the system
   /// Stores in database and emits to stream
   Future<void> addAlert(Alert alert) async {
-    if (!_isInitialized || _database == null) {
+    if (!_isInitialized) {
       _log('❌ RealtimeAlertService not initialized');
       return;
     }
 
     try {
       // Filter by current child if set
-      if (_currentChildHash != null &&
-          alert.childHash != _currentChildHash) {
+      if (_currentChildHash != null && alert.childHash != _currentChildHash) {
         _log('⊘ Alert filtered (different child): ${alert.childHash}');
         return;
       }
 
       // Save to database
-      await _saveAlert(alert, 'model');
+      if (_database != null) {
+        await _saveAlert(alert, 'model');
+      }
 
       // Emit to stream
       _alertController.add(alert);
@@ -137,8 +157,16 @@ class RealtimeAlertService {
       // Update alert count
       await _updateAlertCount();
 
-      _log('✅ Alert added: ${alert.severity} - '
-          '${alert.summary.substring(0, min(50, alert.summary.length))}');
+      // Automatically sync high-risk alerts to server
+      if (_apiService != null && (alert.severity == AlertSeverity.HIGH)) {
+        _log('📡 High risk alert detected, syncing to server...');
+        syncAlertToServer(alert, _apiService!, _currentChildName ?? 'Child');
+      }
+
+      _log(
+        '✅ Alert added: ${alert.severity} - '
+        '${alert.summary.substring(0, min(50, alert.summary.length))}',
+      );
     } catch (e, stackTrace) {
       _log('❌ Error adding alert: $e');
       _log('Stack trace: $stackTrace');
@@ -160,7 +188,8 @@ class RealtimeAlertService {
       }
 
       // Only process alerts from parent (trusted source)
-      if (message['source'] != 'parent' && message['source'] != 'parent_device') {
+      if (message['source'] != 'parent' &&
+          message['source'] != 'parent_device') {
         _log('⊘ Alert from untrusted source: ${message['source']}');
         return;
       }
@@ -175,9 +204,10 @@ class RealtimeAlertService {
       final alert = Alert.fromJson(alertData);
 
       // Validate this alert is for our child
-      if (_currentChildHash != null &&
-          alert.childHash != _currentChildHash) {
-        _log('⊘ WebSocket alert filtered (different child): ${alert.childHash}');
+      if (_currentChildHash != null && alert.childHash != _currentChildHash) {
+        _log(
+          '⊘ WebSocket alert filtered (different child): ${alert.childHash}',
+        );
         return;
       }
 
@@ -198,23 +228,19 @@ class RealtimeAlertService {
     }
 
     try {
-      await _database!.insert(
-        'alerts',
-        {
-          'id': alert.id,
-          'timestamp': alert.timestamp.toIso8601String(),
-          'risk_score': alert.riskScore,
-          'summary': alert.summary,
-          'severity': alert.severity.toString().split('.').last,
-          'content_type': alert.contentType.toString().split('.').last,
-          'detected_content': alert.detectedContent,
-          'child_hash': alert.childHash,
-          'child_name': alert.childName,
-          'created_at': DateTime.now().toIso8601String(),
-          'source': source,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await _database!.insert('alerts', {
+        'id': alert.id,
+        'timestamp': alert.timestamp.toIso8601String(),
+        'risk_score': alert.riskScore,
+        'summary': alert.summary,
+        'severity': alert.severity.toString().split('.').last,
+        'content_type': alert.contentType.toString().split('.').last,
+        'detected_content': alert.detectedContent,
+        'child_hash': alert.childHash,
+        'child_name': alert.childName,
+        'created_at': DateTime.now().toIso8601String(),
+        'source': source,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (e) {
       _log('⚠️  Failed to save alert to database: $e');
     }
@@ -267,7 +293,8 @@ class RealtimeAlertService {
       // Filter by current child or specified child
       final filterHash = childHash ?? _currentChildHash;
       if (filterHash != null) {
-        query = 'SELECT * FROM alerts WHERE child_hash = ? '
+        query =
+            'SELECT * FROM alerts WHERE child_hash = ? '
             'ORDER BY timestamp DESC LIMIT ?';
         args = [filterHash, limit];
       }
@@ -284,8 +311,10 @@ class RealtimeAlertService {
   }
 
   /// Get alerts filtered by severity
-  Future<List<Alert>> getAlertsBySeverity(AlertSeverity severity,
-      {String? childHash}) async {
+  Future<List<Alert>> getAlertsBySeverity(
+    AlertSeverity severity, {
+    String? childHash,
+  }) async {
     if (!_isInitialized || _database == null) {
       _log('❌ RealtimeAlertService not initialized');
       return [];
@@ -293,14 +322,16 @@ class RealtimeAlertService {
 
     try {
       final severityStr = severity.toString().split('.').last;
-      String query = 'SELECT * FROM alerts WHERE severity = ? '
+      String query =
+          'SELECT * FROM alerts WHERE severity = ? '
           'ORDER BY timestamp DESC';
       List<dynamic> args = [severityStr];
 
       // Filter by current child or specified child
       final filterHash = childHash ?? _currentChildHash;
       if (filterHash != null) {
-        query = 'SELECT * FROM alerts WHERE severity = ? AND child_hash = ? '
+        query =
+            'SELECT * FROM alerts WHERE severity = ? AND child_hash = ? '
             'ORDER BY timestamp DESC';
         args = [severityStr, filterHash];
       }
@@ -328,23 +359,18 @@ class RealtimeAlertService {
     }
 
     try {
-      String query = 'SELECT * FROM alerts WHERE timestamp >= ? AND timestamp <= ? '
+      String query =
+          'SELECT * FROM alerts WHERE timestamp >= ? AND timestamp <= ? '
           'ORDER BY timestamp DESC';
-      List<dynamic> args = [
-        start.toIso8601String(),
-        end.toIso8601String(),
-      ];
+      List<dynamic> args = [start.toIso8601String(), end.toIso8601String()];
 
       // Filter by current child or specified child
       final filterHash = childHash ?? _currentChildHash;
       if (filterHash != null) {
-        query = 'SELECT * FROM alerts WHERE timestamp >= ? AND timestamp <= ? '
+        query =
+            'SELECT * FROM alerts WHERE timestamp >= ? AND timestamp <= ? '
             'AND child_hash = ? ORDER BY timestamp DESC';
-        args = [
-          start.toIso8601String(),
-          end.toIso8601String(),
-          filterHash,
-        ];
+        args = [start.toIso8601String(), end.toIso8601String(), filterHash];
       }
 
       final results = await _database!.rawQuery(query, args);
@@ -366,8 +392,11 @@ class RealtimeAlertService {
     }
 
     try {
-      final count = await _database!
-          .delete('alerts', where: 'id = ?', whereArgs: [alertId]);
+      final count = await _database!.delete(
+        'alerts',
+        where: 'id = ?',
+        whereArgs: [alertId],
+      );
       if (count > 0) {
         await _updateAlertCount();
         _log('✅ Alert deleted: $alertId');
@@ -395,8 +424,11 @@ class RealtimeAlertService {
         return false;
       }
 
-      final count = await _database!
-          .delete('alerts', where: 'child_hash = ?', whereArgs: [filterHash]);
+      final count = await _database!.delete(
+        'alerts',
+        where: 'child_hash = ?',
+        whereArgs: [filterHash],
+      );
       await _updateAlertCount();
       _log('✅ Cleared $count alerts');
       return true;
@@ -445,7 +477,11 @@ class RealtimeAlertService {
 
   /// Sync new alerts via HTTP to server
   /// This is called to send locally detected alerts to the backend
-  Future<void> syncAlertToServer(Alert alert, ApiService apiService, String childName) async {
+  Future<void> syncAlertToServer(
+    Alert alert,
+    ApiService apiService,
+    String childName,
+  ) async {
     try {
       final result = await apiService.sendAIAlert(
         childHash: alert.childHash,
@@ -459,7 +495,7 @@ class RealtimeAlertService {
         detectedContent: alert.detectedContent,
         sourceApp: alert.sourceApp,
       );
-      
+
       if (result['success'] == true) {
         _log('✅ Alert synced to server: ${alert.id}');
       } else {
@@ -486,7 +522,7 @@ class RealtimeAlertService {
   }) async {
     try {
       _log('📡 Fetching alerts from server for child: $childHash');
-      
+
       final result = await apiService.fetchAIAlerts(
         email: email,
         password: password,
@@ -497,13 +533,15 @@ class RealtimeAlertService {
         contentType: contentType,
         limit: limit,
       );
-      
+
       if (result['success'] == true) {
         final alertsList = result['alerts'] as List? ?? [];
         final alerts = alertsList
-            .map((alertData) => Alert.fromJson(alertData as Map<String, dynamic>))
+            .map(
+              (alertData) => Alert.fromJson(alertData as Map<String, dynamic>),
+            )
             .toList();
-        
+
         _log('✅ Fetched ${alerts.length} alerts from server');
         return alerts;
       } else {
@@ -527,14 +565,14 @@ class RealtimeAlertService {
   }) async {
     try {
       _log('📤 Acknowledging alert on server: $alertId');
-      
+
       final result = await apiService.acknowledgeAlert(
         email: email,
         password: password,
         childHash: childHash,
         alertId: alertId,
       );
-      
+
       if (result['success'] == true) {
         _log('✅ Alert acknowledged on server: $alertId');
         return true;

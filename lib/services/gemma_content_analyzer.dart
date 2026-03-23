@@ -3,18 +3,38 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import '../models/content_analysis_result.dart';
+import '../utils/app_logger.dart';
 
 class GemmaContentAnalyzer {
   final InferenceModel _model;
 
   GemmaContentAnalyzer(this._model);
 
-  Future<ContentAnalysisResult> analyzeImage(Uint8List imageBytes) async {
+  Future<ContentAnalysisResult> analyzeImage(
+    Uint8List imageBytes, {
+    String? appContext,
+  }) async {
     int retryCount = 0;
     const maxRetries = 1;
 
+    // Refine prompt based on context
+    String contextInstruction = "";
+    if (appContext != null) {
+      final app = appContext.toLowerCase();
+      if (app.contains('whatsapp') ||
+          app.contains('messenger') ||
+          app.contains('telegram') ||
+          app.contains('snapchat')) {
+        contextInstruction =
+            " This is a Chat/Messaging app. Check for predatory grooming, severe bullying, or requests for private info/photos.";
+      } else if (app.contains('chrome') || app.contains('browser')) {
+        contextInstruction =
+            " This is a Browser. Check for explicit, adult, or illegal content.";
+      }
+    }
+
     while (true) {
-      final prompt = '''Safety classification from image.
+      final prompt = '''Safety classification from image.$contextInstruction
 Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
 {"explicit":0.0, "violence":0.0, "predatory":0.0, "suggestive":0.0, "risk_score":0, "summary":"short reason"}''';
 
@@ -40,11 +60,22 @@ Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
         }
 
         final rawResponse = responseBuffer.toString();
-        debugPrint('🔍 Raw Gemma Image response: ${rawResponse.substring(0, rawResponse.length.clamp(0, 500))}');
-        
-        return _parseAnalysisResponse(rawResponse);
+        AppLogger.log(
+          '🤖 AI Raw Response (${rawResponse.length} chars): $rawResponse',
+        );
+
+        try {
+          final result = _parseAnalysisResponse(rawResponse);
+          AppLogger.log(
+            '✅ AI Parsed: Score=${result.riskScore}, Summary="${result.summary}"',
+          );
+          return result;
+        } catch (e) {
+          AppLogger.log('⚠️ AI Parse Failed: $e');
+          return ContentAnalysisResult.safe();
+        }
       } catch (e, st) {
-        debugPrint('❌ GemmaContentAnalyzer Image error: $e');
+        AppLogger.logError('❌ AI Generation Error', e, st);
         final errStr = e.toString().toLowerCase();
         if ((errStr.contains('range') ||
                 errStr.contains('token') ||
@@ -66,10 +97,20 @@ Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
       return ContentAnalysisResult(
         riskScore: ((parsed['risk_score'] as num?)?.toInt() ?? 0).clamp(0, 100),
         categories: {
-          'explicit': ((parsed['explicit'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
-          'violence': ((parsed['violence'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
-          'predatory': ((parsed['predatory'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
-          'suggestive': ((parsed['suggestive'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
+          'explicit': ((parsed['explicit'] as num?)?.toDouble() ?? 0.0).clamp(
+            0.0,
+            1.0,
+          ),
+          'violence': ((parsed['violence'] as num?)?.toDouble() ?? 0.0).clamp(
+            0.0,
+            1.0,
+          ),
+          'predatory': ((parsed['predatory'] as num?)?.toDouble() ?? 0.0).clamp(
+            0.0,
+            1.0,
+          ),
+          'suggestive': ((parsed['suggestive'] as num?)?.toDouble() ?? 0.0)
+              .clamp(0.0, 1.0),
         },
         summary: parsed['summary'] as String? ?? 'Analysis completed.',
       );
@@ -127,9 +168,14 @@ Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
         'explicit': ((result['explicit'] as double?) ?? 0.0).clamp(0.0, 1.0),
         'violence': ((result['violence'] as double?) ?? 0.0).clamp(0.0, 1.0),
         'predatory': ((result['predatory'] as double?) ?? 0.0).clamp(0.0, 1.0),
-        'suggestive': ((result['suggestive'] as double?) ?? 0.0).clamp(0.0, 1.0),
+        'suggestive': ((result['suggestive'] as double?) ?? 0.0).clamp(
+          0.0,
+          1.0,
+        ),
       },
-      summary: (result['summary'] as String?) ?? 'Analysis completed (regex fallback).',
+      summary:
+          (result['summary'] as String?) ??
+          'Analysis completed (regex fallback).',
     );
   }
 }

@@ -6,52 +6,66 @@ import 'realtime_alert_service.dart';
 import 'gemma_content_analyzer.dart';
 import 'gemma_manager.dart';
 import '../models/alert.dart';
+import '../models/content_analysis_result.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 
 /// Service to manage continuous screen monitoring
 /// Receives screenshots from native Android code and analyzes them with vision models
 class ScreenMonitoringService {
-  static final ScreenMonitoringService _instance = ScreenMonitoringService._internal();
-  
+  static final ScreenMonitoringService _instance =
+      ScreenMonitoringService._internal();
+
   factory ScreenMonitoringService() => _instance;
-  
+
   ScreenMonitoringService._internal();
-  
+
   static ScreenMonitoringService get instance => _instance;
-  
-  static const platform = MethodChannel('com.example.guardian_ai/screen_capture');
-  
+
+  static const platform = MethodChannel(
+    'com.example.guardian_ai/screen_capture',
+  );
+
+  static const _eventChannel = EventChannel(
+    'com.example.guardian_ai/screen_frames',
+  );
+
+  StreamSubscription? _frameSubscription;
+
   bool _isMonitoring = false;
   bool _isInitialized = false;
-  
+
   // Analysis queue
   final List<Map<String, dynamic>> _analysisQueue = [];
   bool _isProcessingQueue = false;
-  
+
+  // Latest analysis result stream
+  final _analysisResultController = StreamController<ContentAnalysisResult>.broadcast();
+  Stream<ContentAnalysisResult> get analysisResults => _analysisResultController.stream;
+
   // Statistics
   int _framesAnalyzed = 0;
   int _alertsGenerated = 0;
   DateTime? _lastAnalysisTime;
-  
+
   // Child context
   String? _currentChildHash;
   String? _currentChildName;
-  
+
   // Services
   late RealtimeAlertService _alertService;
 
   // AI analysis
   InferenceModel? _model;
   GemmaContentAnalyzer? _analyzer;
-  
+
   // Getters
   bool get isMonitoring => _isMonitoring;
   bool get isInitialized => _isInitialized;
   int get framesAnalyzed => _framesAnalyzed;
   int get alertsGenerated => _alertsGenerated;
   DateTime? get lastAnalysisTime => _lastAnalysisTime;
-  
+
   /// Initialize the screen monitoring service
   Future<bool> initialize({
     required String childHash,
@@ -61,48 +75,53 @@ class ScreenMonitoringService {
       AppLogger.log('✅ ScreenMonitoringService already initialized');
       return true;
     }
-    
+
     try {
       AppLogger.log('🔄 Initializing ScreenMonitoringService...');
-      
+
       _currentChildHash = childHash;
       _currentChildName = childName;
-      
+
       // Initialize alert service
       _alertService = RealtimeAlertService();
-      
+
       // Set up method channel handler for screenshots
       platform.setMethodCallHandler(_handleMethodCall);
-      
+
       _isInitialized = true;
       AppLogger.log('✅ ScreenMonitoringService initialized successfully');
       return true;
     } catch (e, stackTrace) {
-      AppLogger.logError('ScreenMonitoringService initialization failed', e, stackTrace);
+      AppLogger.logError(
+        'ScreenMonitoringService initialization failed',
+        e,
+        stackTrace,
+      );
       return false;
     }
   }
-  
+
   /// Start continuous screen monitoring
   Future<bool> startMonitoring() async {
     if (!_isInitialized) {
       AppLogger.log('❌ ScreenMonitoringService not initialized');
       return false;
     }
-    
+
     if (_isMonitoring) {
       AppLogger.log('⚠️  ScreenMonitoringService already monitoring');
       return false;
     }
-    
+
     try {
       AppLogger.log('🚀 Starting screen monitoring...');
-      
+
       // Request screen capture permission from Android
       final result = await platform.invokeMethod('requestPermission');
-      
+
       if (result == true) {
         _isMonitoring = true;
+        _startFrameStreaming();
         AppLogger.log('✅ Screen monitoring started successfully');
         return true;
       } else {
@@ -114,25 +133,27 @@ class ScreenMonitoringService {
       return false;
     }
   }
-  
+
   /// Stop screen monitoring
   Future<void> stopMonitoring() async {
     if (!_isMonitoring) {
       AppLogger.log('⚠️  ScreenMonitoringService not monitoring');
       return;
     }
-    
+
     try {
       AppLogger.log('🛑 Stopping screen monitoring...');
       await platform.invokeMethod('stopCapture');
       _isMonitoring = false;
+      await _frameSubscription?.cancel();
+      _frameSubscription = null;
       _analysisQueue.clear();
       AppLogger.log('✅ Screen monitoring stopped');
     } catch (e) {
       AppLogger.log('❌ Error stopping screen monitoring: $e');
     }
   }
-  
+
   /// Handle method calls from native code
   Future<void> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
@@ -141,45 +162,159 @@ class ScreenMonitoringService {
         final path = args['path'] as String;
         final timestamp = args['timestamp'] as int;
         final foregroundApp = args['foregroundApp'] as String?;
-        
+
         AppLogger.log('📸 Screenshot received: $path');
-        
+
+        // Safety: If queue is too long, discard older frames (analysis is falling behind)
+        if (_analysisQueue.length > 5) {
+          AppLogger.log('⚠️ Analysis queue full, discarding oldest frame');
+          final old = _analysisQueue.removeAt(0);
+          try {
+            File(old['path']).delete();
+          } catch (_) {}
+        }
+
         // Add to analysis queue
         _analysisQueue.add({
           'path': path,
           'timestamp': timestamp,
           'foregroundApp': foregroundApp,
         });
-        
+
         // Process queue if not already processing
         if (!_isProcessingQueue) {
           _processAnalysisQueue();
         }
         break;
-        
+
       default:
         AppLogger.log('⚠️  Unknown method: ${call.method}');
     }
   }
-  
+
+  void _startFrameStreaming() {
+    AppLogger.log('📡 Starting real-time frame streaming listener...');
+    _frameSubscription?.cancel();
+    _frameSubscription = _eventChannel.receiveBroadcastStream().listen(
+      (dynamic event) {
+        if (event is Uint8List) {
+          _handleFrameReceived(event);
+        }
+      },
+      onError: (err) {
+        AppLogger.log('❌ Frame Stream Error: $err');
+      },
+    );
+  }
+
+  void _handleFrameReceived(Uint8List frames) {
+    // Add to analysis queue (reuse existing processing logic)
+    _analysisQueue.add({
+      'bytes': frames,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'foregroundApp': 'Real-time Stream',
+    });
+
+    if (!_isProcessingQueue) {
+      _processAnalysisQueue();
+    }
+  }
+
   /// Process the analysis queue
   Future<void> _processAnalysisQueue() async {
     if (_isProcessingQueue) return;
-    
+
     _isProcessingQueue = true;
-    
+
     while (_analysisQueue.isNotEmpty) {
       final item = _analysisQueue.removeAt(0);
-      await _analyzeScreenshot(
-        item['path'],
-        item['timestamp'],
-        item['foregroundApp'],
-      );
+      if (item.containsKey('bytes')) {
+        await _analyzeFrameBytes(
+          item['bytes'] as Uint8List,
+          item['timestamp'] as int,
+          item['foregroundApp'] as String?,
+        );
+      } else {
+        await _analyzeScreenshot(
+          item['path'] as String,
+          item['timestamp'] as int,
+          item['foregroundApp'] as String?,
+        );
+      }
     }
-    
+
     _isProcessingQueue = false;
   }
-  
+
+  /// Analyze raw frame bytes (Real-time Stream)
+  Future<void> _analyzeFrameBytes(
+    Uint8List imageBytes,
+    int timestamp,
+    String? foregroundApp,
+  ) async {
+    final startTime = DateTime.now();
+    try {
+      AppLogger.log('🧠 Analyzing real-time frame bytes...');
+      if (!await _ensureAnalyzerReady()) return;
+
+      final result = await _analyzer!.analyzeImage(
+        imageBytes,
+        appContext: foregroundApp,
+      );
+
+      _processAnalysisResult(result, foregroundApp, startTime);
+    } catch (e, st) {
+      AppLogger.logError('Error analysing frame bytes', e, st);
+    }
+  }
+
+  void _processAnalysisResult(
+    ContentAnalysisResult result,
+    String? foregroundApp,
+    DateTime startTime,
+  ) {
+    final duration = DateTime.now().difference(startTime).inMilliseconds;
+    AppLogger.log('✅ [AI] Analysis complete ($duration ms)');
+
+    _framesAnalyzed++;
+    _lastAnalysisTime = DateTime.now();
+
+    AppLogger.log(
+      '📊 Result: risk=${result.riskScore}, cats=${result.categories}',
+    );
+
+    // Emit to stream for UI updates
+    _analysisResultController.add(result);
+
+    final explicit = result.categories['explicit'] ?? 0.0;
+    final violence = result.categories['violence'] ?? 0.0;
+    final predatory = result.categories['predatory'] ?? 0.0;
+    final suggestive = result.categories['suggestive'] ?? 0.0;
+
+    final bool hasCategoryThreshold =
+        explicit > 0.1 || violence > 0.1 || predatory > 0.1 || suggestive > 0.1;
+
+    if (result.riskScore >= 70 || hasCategoryThreshold) {
+      int effectiveRiskScore = result.riskScore;
+      if (hasCategoryThreshold && result.riskScore < 70) {
+        final scores = [explicit, violence, predatory, suggestive];
+        double maxScore = scores.first;
+        for (var score in scores) {
+          if (score > maxScore) maxScore = score;
+        }
+        effectiveRiskScore = (maxScore * 100).toInt().clamp(70, 100);
+      }
+
+      AppLogger.log('🚨 RISK DETECTED – generating alert');
+      _generateAlert(
+        riskScore: effectiveRiskScore,
+        scores: result.categories,
+        summary: result.summary,
+        foregroundApp: foregroundApp,
+      );
+    }
+  }
+
   /// Ensure the Gemma model is loaded for analysis.
   Future<bool> _ensureAnalyzerReady() async {
     if (_analyzer != null) return true;
@@ -212,40 +347,36 @@ class ScreenMonitoringService {
     int timestamp,
     String? foregroundApp,
   ) async {
+    final startTime = DateTime.now();
     try {
-      AppLogger.log('🔍 Analysing screenshot: $path');
+      AppLogger.log(
+        '🔍 [AI] [START] Analyzing frame (Queue: ${_analysisQueue.length + 1})',
+      );
 
       final file = File(path);
       if (!await file.exists()) {
-        AppLogger.log('⚠️ Screenshot file not found: $path');
+        AppLogger.log('⚠️ [AI] Screenshot file missing: $path');
         return;
       }
 
       final imageBytes = await file.readAsBytes();
 
       // Delete immediately after reading (zero-cache privacy policy)
-      try { await file.delete(); } catch (_) {}
+      try {
+        await file.delete();
+      } catch (_) {}
 
       if (!await _ensureAnalyzerReady()) {
-        AppLogger.log('⏭️ Skipping analysis – model not ready');
+        AppLogger.log('⏭️ [AI] Skipping – model/analyzer not ready');
         return;
       }
 
-      final result = await _analyzer!.analyzeImage(imageBytes);
-      _framesAnalyzed++;
-      _lastAnalysisTime = DateTime.now();
+      final result = await _analyzer!.analyzeImage(
+        imageBytes,
+        appContext: foregroundApp,
+      );
 
-      AppLogger.log('📊 Analysis result: risk=${result.riskScore}, cats=${result.categories}');
-
-      if (result.riskScore >= 70) {
-        AppLogger.log('🚨 HIGH RISK (${result.riskScore}%) – generating alert');
-        await _generateAlert(
-          riskScore: result.riskScore,
-          scores: result.categories,
-          summary: result.summary,
-          foregroundApp: foregroundApp,
-        );
-      }
+      _processAnalysisResult(result, foregroundApp, startTime);
     } catch (e, stackTrace) {
       AppLogger.logError('Error analysing screenshot', e, stackTrace);
     }
@@ -280,10 +411,12 @@ class ScreenMonitoringService {
     }
   }
 
-  String _generateAlertSummary(int riskScore, Map<String, double> scores, String? foregroundApp) {
-    final topCategory = scores.entries
-        .where((e) => e.value > 0.3)
-        .toList()
+  String _generateAlertSummary(
+    int riskScore,
+    Map<String, double> scores,
+    String? foregroundApp,
+  ) {
+    final topCategory = scores.entries.where((e) => e.value > 0.3).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
     final cats = topCategory.isNotEmpty
@@ -293,7 +426,6 @@ class ScreenMonitoringService {
     return 'Risk $riskScore%: $cats content detected$app';
   }
 
-  
   /// Get monitoring statistics
   Map<String, dynamic> getStatistics() {
     return {
@@ -304,7 +436,7 @@ class ScreenMonitoringService {
       'queueSize': _analysisQueue.length,
     };
   }
-  
+
   /// Reset statistics
   void resetStatistics() {
     _framesAnalyzed = 0;

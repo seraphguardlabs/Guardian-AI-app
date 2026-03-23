@@ -21,6 +21,7 @@ import android.util.Log
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -234,26 +235,49 @@ class ScreenCaptureService : Service() {
         Log.d(TAG, "Capture interval: ${currentInterval}ms (app: $foregroundApp, battery: $batteryLevel%)")
     }
     
+    private val captureExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    
     private fun captureScreen() {
         try {
+            NativeLogger.log("📸 Capture pulse started...")
             val image = imageReader?.acquireLatestImage()
             if (image != null) {
                 val bitmap = imageToBitmap(image)
                 image.close()
                 
                 if (bitmap != null) {
-                    // Save screenshot to temp file
-                    val screenshotFile = saveScreenshot(bitmap)
-                    bitmap.recycle()
-                    
-                    if (screenshotFile != null) {
-                        // Send to Flutter for analysis
-                        sendScreenshotToFlutter(screenshotFile.absolutePath)
+                    NativeLogger.log("🎨 Bitmap produced, processing in background...")
+                    // Process saving and sending in background to avoid ANRs
+                    captureExecutor.execute {
+                        try {
+                            val screenshotFile = saveScreenshot(bitmap)
+                            
+                            if (screenshotFile != null) {
+                                NativeLogger.log("💾 Screenshot saved: ${screenshotFile.name}")
+                                sendScreenshotToFlutter(screenshotFile.absolutePath)
+                                
+                                // ALSO: Stream the bytes directly to Flutter for real-time AI analysis
+                                val stream = ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                                val byteArray = stream.toByteArray()
+                                MainActivity.sendFrameToFlutter(byteArray)
+                                NativeLogger.log("📡 Frame streamed to Flutter (${byteArray.size} bytes)")
+                            } else {
+                                NativeLogger.logError("❌ Failed to save screenshot file")
+                            }
+                            bitmap.recycle()
+                        } catch (e: Exception) {
+                            NativeLogger.logError("❌ Error in background capture processing", e)
+                        }
                     }
+                } else {
+                    NativeLogger.logError("❌ Failed to convert image to bitmap")
                 }
+            } else {
+                NativeLogger.log("⏭️ AcquireLatestImage returned null (screen unchanged?)")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error capturing screen", e)
+            NativeLogger.logError("❌ Error capturing screen", e)
         }
     }
     

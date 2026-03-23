@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/text_analysis_service.dart';
+// import '../services/text_analysis_service.dart';
 
 class AITestScreen extends StatefulWidget {
   const AITestScreen({super.key});
@@ -9,7 +9,7 @@ class AITestScreen extends StatefulWidget {
 }
 
 class _AITestScreenState extends State<AITestScreen> {
-  late TextAnalysisService _textAnalysisService;
+  // late TextAnalysisService _textAnalysisService;
   bool _isInitialized = false;
   bool _isInitializing = false;
   List<String> _logs = [];
@@ -20,7 +20,7 @@ class _AITestScreenState extends State<AITestScreen> {
   @override
   void initState() {
     super.initState();
-    _textAnalysisService = TextAnalysisService.instance;
+    // _textAnalysisService = TextAnalysisService.instance;
     _addLog('🚀 Test Screen initialized');
   }
 
@@ -40,18 +40,19 @@ class _AITestScreenState extends State<AITestScreen> {
 
     try {
       _addLog('🔄 Starting model initialization...');
-      final success = await _textAnalysisService.initialize();
+      // final success = await _textAnalysisService.initialize();
+      const success = false; // Model missing
 
       if (success) {
         _addLog('✅ Model initialization SUCCESSFUL!');
         setState(() {
           _isInitialized = true;
-          _logs.addAll(_textAnalysisService.initializationLogs);
+          // _logs.addAll(_textAnalysisService.initializationLogs);
         });
       } else {
-        _addLog('❌ Model initialization FAILED!');
+        _addLog('❌ Model initialization FAILED (Service Missing)!');
         setState(() {
-          _logs.addAll(_textAnalysisService.initializationLogs);
+          // _logs.addAll(_textAnalysisService.initializationLogs);
         });
       }
     } catch (e, stackTrace) {
@@ -72,14 +73,15 @@ class _AITestScreenState extends State<AITestScreen> {
 
     try {
       _addLog('🔍 Analyzing text: "$_testText"...');
-      final score = await _textAnalysisService.analyzeText(_testText);
+      // final score = await _textAnalysisService.analyzeText(_testText);
+      const score = 0.0;
 
       setState(() {
         _analysisScore = score;
         _addLog(
-          '✅ Analysis complete! '
+          '✅ Analysis complete (MOCK)! '
           'Score: ${(score * 100).toStringAsFixed(2)}% '
-          'Risk: ${_getRiskLevel(score)}'
+          'Risk: ${_getRiskLevel(score)}',
         );
       });
     } catch (e) {
@@ -166,11 +168,11 @@ class _AITestScreenState extends State<AITestScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            if (_isInitialized && _textAnalysisService.modelBasePath != null)
+            /*if (_isInitialized && _textAnalysisService.modelBasePath != null)
               Text(
                 'Models Path: ${_textAnalysisService.modelBasePath}',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              ),*/
             const SizedBox(height: 8),
             if (_analysisScore != null)
               Row(
@@ -225,8 +227,8 @@ class _AITestScreenState extends State<AITestScreen> {
                   _isInitializing
                       ? 'Initializing...'
                       : _isInitialized
-                          ? 'Models Initialized'
-                          : 'Initialize Models',
+                      ? 'Models Initialized'
+                      : 'Initialize Models',
                 ),
               ),
             ),
@@ -317,7 +319,11 @@ class _AITestScreenState extends State<AITestScreen> {
             minHeight: 30,
             backgroundColor: Colors.grey[300],
             valueColor: AlwaysStoppedAnimation<Color>(
-              score < 0.3 ? Colors.green : score < 0.6 ? Colors.orange : Colors.red,
+              score < 0.3
+                  ? Colors.green
+                  : score < 0.6
+                  ? Colors.orange
+                  : Colors.red,
             ),
             semanticsLabel: 'Risk level',
           ),
