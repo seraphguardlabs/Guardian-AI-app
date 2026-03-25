@@ -8,6 +8,10 @@ import '../utils/app_logger.dart';
 class GemmaContentAnalyzer {
   final InferenceModel _model;
 
+  InferenceChat? _chat;
+  int _analysisCount = 0;
+  static const int maxAnalysisPerSession = 10;
+
   GemmaContentAnalyzer(this._model);
 
   Future<ContentAnalysisResult> analyzeImage(
@@ -38,22 +42,28 @@ class GemmaContentAnalyzer {
 Output ONLY JSON (0.0 to 1.0, risk_score 0 to 100):
 {"explicit":0.0, "violence":0.0, "predatory":0.0, "suggestive":0.0, "risk_score":0, "summary":"short reason"}''';
 
-      InferenceChat? chat;
       try {
-        chat = await _model.createChat(
-          temperature: 0.1,
-          topK: 40,
-          supportImage: true,
-        );
+        // Reuse chat session to save battery and reduce lag
+        if (_chat == null || _analysisCount >= maxAnalysisPerSession) {
+          AppLogger.log('🔄 Creating new AI chat session (Count: $_analysisCount)');
+          _chat = await _model.createChat(
+            temperature: 0.1,
+            topK: 40,
+            supportImage: true,
+          );
+          _analysisCount = 0;
+        }
+        
+        _analysisCount++;
         final message = Message.withImage(
           text: prompt,
           imageBytes: imageBytes,
           isUser: true,
         );
-        await chat.addQuery(message);
+        await _chat!.addQuery(message);
 
         final responseBuffer = StringBuffer();
-        await for (final modelResponse in chat.generateChatResponseAsync()) {
+        await for (final modelResponse in _chat!.generateChatResponseAsync()) {
           if (modelResponse is TextResponse) {
             responseBuffer.write(modelResponse.token);
           }

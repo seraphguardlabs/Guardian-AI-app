@@ -163,15 +163,22 @@ class ScreenMonitoringService {
         final timestamp = args['timestamp'] as int;
         final foregroundApp = args['foregroundApp'] as String?;
 
-        AppLogger.log('📸 Screenshot received: $path');
-
-        // Safety: If queue is too long, discard older frames (analysis is falling behind)
-        if (_analysisQueue.length > 5) {
-          AppLogger.log('⚠️ Analysis queue full, discarding oldest frame');
-          final old = _analysisQueue.removeAt(0);
+        // Optimization: If streaming is active, discard file-based screenshots to avoid hitting AI twice
+        if (_frameSubscription != null) {
+          AppLogger.log('⏭️ Skipping file screenshot (streaming is active): $path');
           try {
-            File(old['path']).delete();
+            File(path).delete();
           } catch (_) {}
+          break;
+        }
+
+        // Strict Throttling: Keep max 1 item in queue to eliminate lag
+        if (_analysisQueue.isNotEmpty) {
+          AppLogger.log('⏭️ Analysis busy, skipping file frame');
+          try {
+            File(path).delete();
+          } catch (_) {}
+          break;
         }
 
         // Add to analysis queue
@@ -208,16 +215,19 @@ class ScreenMonitoringService {
   }
 
   void _handleFrameReceived(Uint8List frames) {
-    // Add to analysis queue (reuse existing processing logic)
+    // Strict Throttling: If AI is busy or queue has an item, drop this frame
+    if (_analysisQueue.isNotEmpty || _isProcessingQueue) {
+      return;
+    }
+
+    // Add to analysis queue
     _analysisQueue.add({
       'bytes': frames,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
       'foregroundApp': 'Real-time Stream',
     });
 
-    if (!_isProcessingQueue) {
-      _processAnalysisQueue();
-    }
+    _processAnalysisQueue();
   }
 
   /// Process the analysis queue

@@ -33,8 +33,8 @@ class ScreenCaptureService : Service() {
         private const val CHANNEL_ID = "screen_capture_channel"
         
         // Adaptive sampling intervals (in milliseconds)
-        private const val HIGH_RISK_INTERVAL = 2000L  // 2 seconds for browsers
-        private const val NORMAL_INTERVAL = 10000L     // 10 seconds for normal apps
+        private const val HIGH_RISK_INTERVAL = 10000L // 10 seconds for browsers
+        private const val NORMAL_INTERVAL = 30000L    // 30 seconds for normal apps
         private const val LOW_BATTERY_MULTIPLIER = 2   // Double interval when battery < 20%
         
         // High-risk app packages (browsers, social media)

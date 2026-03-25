@@ -157,9 +157,9 @@ class RealtimeAlertService {
       // Update alert count
       await _updateAlertCount();
 
-      // Automatically sync high-risk alerts to server
-      if (_apiService != null && (alert.severity == AlertSeverity.HIGH)) {
-        _log('📡 High risk alert detected, syncing to server...');
+      // Automatically sync high and medium risk alerts to server
+      if (_apiService != null && (alert.severity == AlertSeverity.HIGH || alert.severity == AlertSeverity.MEDIUM)) {
+        _log('📡 High/Medium risk alert detected, syncing to server...');
         syncAlertToServer(alert, _apiService!, _currentChildName ?? 'Child');
       }
 
