@@ -109,6 +109,9 @@ class ScreenCaptureService : Service() {
         instance = this
         Log.d(TAG, "ScreenCaptureService created")
 
+        // Log device information for diagnostic purposes
+        Log.d(TAG, "Device Info: ${Build.MANUFACTURER} ${Build.MODEL} (API ${Build.VERSION.SDK_INT})")
+
         // Use half-resolution to save memory
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
@@ -183,19 +186,45 @@ class ScreenCaptureService : Service() {
             this.captureWidth = (screenWidth * scaleFactor).toInt()
             this.captureHeight = (screenHeight * scaleFactor).toInt()
 
-            imageReader = ImageReader.newInstance(
-                this.captureWidth, this.captureHeight,
-                PixelFormat.RGBA_8888, 2
-            )
+            Log.d(TAG, "ImageReader dimensions: ${this.captureWidth}x${this.captureHeight}")
+
+            try {
+                imageReader = ImageReader.newInstance(
+                    this.captureWidth, this.captureHeight,
+                    PixelFormat.RGBA_8888, 2
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create ImageReader, retrying with smaller buffer", e)
+                // Fallback: try with max 1 image in buffer
+                imageReader = ImageReader.newInstance(
+                    this.captureWidth, this.captureHeight,
+                    PixelFormat.RGBA_8888, 1
+                )
+            }
 
             // Create ONE VirtualDisplay that mirrors the screen into the reader.
-            virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "GuardianCapture",
-                this.captureWidth, this.captureHeight, screenDensity,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader!!.surface,
-                null, null
-            )
+            try {
+                virtualDisplay = mediaProjection?.createVirtualDisplay(
+                    "GuardianCapture",
+                    this.captureWidth, this.captureHeight, screenDensity,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader!!.surface,
+                    null, null
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create VirtualDisplay", e)
+                imageReader?.close()
+                imageReader = null
+                throw e
+            }
+
+            if (virtualDisplay == null) {
+                Log.e(TAG, "VirtualDisplay creation returned null")
+                imageReader?.close()
+                imageReader = null
+                stopSelf()
+                return
+            }
 
             isCapturing = true
             Log.d(TAG, "Persistent VirtualDisplay created – capturing every ${CAPTURE_INTERVAL_MS}ms")
@@ -204,7 +233,7 @@ class ScreenCaptureService : Service() {
             scheduleTick()
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting screen capture", e)
+            Log.e(TAG, "Error starting screen capture: ${e.message}", e)
             stopSelf()
         }
     }
@@ -236,6 +265,7 @@ class ScreenCaptureService : Service() {
 
         val reader = imageReader ?: return
         var image: Image? = null
+        var bitmap: Bitmap? = null
         try {
             image = reader.acquireLatestImage()
             if (image == null) {
@@ -249,50 +279,125 @@ class ScreenCaptureService : Service() {
                 return
             }
 
-            val bitmap = imageToBitmap(image) ?: return
-            image.close()
-            image = null
+            // Convert image to bitmap with safety checks
+            bitmap = imageToBitmap(image)
+            if (bitmap == null) {
+                Log.w(TAG, "Failed to convert image to bitmap, reusing previous screenshot")
+                val fallbackBytes = lastFrameJpegBytes
+                if (fallbackBytes != null && saveJpegBytesToFile(fallbackBytes)) {
+                    sendScreenshotToFlutter(screenshotFile.absolutePath)
+                }
+                return
+            }
 
             val jpegBytes = bitmapToJpegBytes(bitmap)
-            bitmap.recycle()
+            if (jpegBytes == null) {
+                Log.w(TAG, "Failed to encode bitmap to JPEG")
+                return
+            }
 
-            if (jpegBytes != null && saveJpegBytesToFile(jpegBytes)) {
+            if (saveJpegBytesToFile(jpegBytes)) {
                 lastFrameJpegBytes = jpegBytes
                 sendScreenshotToFlutter(screenshotFile.absolutePath)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error grabbing frame", e)
+            Log.e(TAG, "Error grabbing frame: ${e.message}", e)
         } finally {
-            // Always close the image if it wasn't closed above
+            // Always clean up resources
+            try { bitmap?.recycle() } catch (_: Exception) {}
             try { image?.close() } catch (_: Exception) {}
         }
     }
 
-    // ── Bitmap conversion ────────────────────────────────────────────────────
+    // ── Bitmap conversion (device-safe with fallback) ─────────────────────────
     private fun imageToBitmap(image: Image): Bitmap? {
         return try {
+            // Validate image format and planes
+            if (image.planes.isEmpty()) {
+                Log.e(TAG, "Image has no planes")
+                return null
+            }
+
             val plane = image.planes[0]
             val buffer: ByteBuffer = plane.buffer
             val pixelStride = plane.pixelStride
             val rowStride   = plane.rowStride
-            val rowPadding  = rowStride - pixelStride * image.width
+            val width = image.width
+            val height = image.height
 
-            val bmp = Bitmap.createBitmap(
-                image.width + rowPadding / pixelStride,
-                image.height,
-                Bitmap.Config.ARGB_8888
-            )
-            bmp.copyPixelsFromBuffer(buffer)
+            // Validate stride configuration
+            if (pixelStride <= 0 || rowStride <= 0) {
+                Log.e(TAG, "Invalid stride: pixelStride=$pixelStride, rowStride=$rowStride")
+                return null
+            }
 
-            if (rowPadding > 0) {
-                val cropped = Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
-                if (cropped !== bmp) bmp.recycle()
-                cropped
-            } else {
-                bmp
+            // Calculate row padding – check for negative values
+            val rowPadding = rowStride - pixelStride * width
+            
+            if (rowPadding < 0) {
+                // Device has stride < width*pixelStride; copy row-by-row instead
+                Log.d(TAG, "Negative rowPadding=$rowPadding; using row-by-row copy")
+                return copyImageRowByRow(image, plane, buffer, pixelStride, rowStride, width, height)
+            }
+
+            // Standard path: attempt direct buffer copy
+            try {
+                val bitmapWidth = if (rowPadding > 0) width + rowPadding / pixelStride else width
+                val bmp = Bitmap.createBitmap(bitmapWidth, height, Bitmap.Config.ARGB_8888)
+                bmp.copyPixelsFromBuffer(buffer)
+
+                return if (rowPadding > 0) {
+                    val cropped = Bitmap.createBitmap(bmp, 0, 0, width, height)
+                    bmp.recycle()
+                    cropped
+                } else {
+                    bmp
+                }
+            } catch (bufferEx: Exception) {
+                // If direct buffer copy fails, fall back to row-by-row
+                Log.w(TAG, "Direct buffer copy failed (${bufferEx.message}), using row-by-row copy")
+                return copyImageRowByRow(image, plane, buffer, pixelStride, rowStride, width, height)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error converting image to bitmap", e)
+            null
+        }
+    }
+
+    /**
+     * Fallback: Copy image data row-by-row to avoid stride issues on problematic devices.
+     * This is more robust for devices with unusual buffer configurations.
+     */
+    private fun copyImageRowByRow(
+        image: Image,
+        plane: Image.Plane,
+        buffer: ByteBuffer,
+        pixelStride: Int,
+        rowStride: Int,
+        width: Int,
+        height: Int
+    ): Bitmap? {
+        return try {
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            buffer.position(0)
+            
+            val pixelData = IntArray(width)
+            for (y in 0 until height) {
+                buffer.position(y * rowStride)
+                for (x in 0 until width) {
+                    val offset = x * pixelStride
+                    // Read ARGB pixel from RGBA format
+                    val a = buffer.get(offset + 3).toInt() and 0xFF
+                    val r = buffer.get(offset + 0).toInt() and 0xFF
+                    val g = buffer.get(offset + 1).toInt() and 0xFF
+                    val b = buffer.get(offset + 2).toInt() and 0xFF
+                    pixelData[x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                }
+                bitmap.setPixels(pixelData, 0, width, 0, y, width, 1)
+            }
+            bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in row-by-row copy: ${e.message}", e)
             null
         }
     }
