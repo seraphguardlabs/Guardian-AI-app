@@ -55,8 +55,6 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   flutter_gemma: ^0.12.5
-  flutter_background_service: ^5.0.10
-  flutter_background_service_android: ^6.2.2
   flutter_local_notifications: ^17.2.1+2
   dio: ^5.9.1
   flutter_dotenv: ^6.0.0

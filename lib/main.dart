@@ -1,17 +1,10 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:path_provider/path_provider.dart';
 
+import 'package:guardian_ai/screens/startup_gate_screen.dart';
 import 'package:guardian_ai/screens/login_screen.dart';
 import 'package:guardian_ai/screens/dashboard_screen.dart';
 import 'package:guardian_ai/screens/child_screen.dart';
@@ -27,9 +20,6 @@ import 'package:guardian_ai/services/time_extension_service.dart';
 import 'package:guardian_ai/services/encryption_service.dart';
 import 'package:guardian_ai/services/geofence_service.dart';
 import 'package:guardian_ai/services/gamified_permission_service.dart';
-import 'package:guardian_ai/services/gemma_content_analyzer.dart';
-import 'package:guardian_ai/services/gemma_manager.dart';
-import 'package:guardian_ai/services/alert_sync_service.dart';
 
 import 'package:guardian_ai/utils/preferences_manager.dart';
 import 'package:guardian_ai/utils/app_theme.dart';
@@ -38,30 +28,22 @@ import 'package:guardian_ai/utils/app_logger.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
-  
-  // Initialize AppLogger
+
   await AppLogger.init();
   AppLogger.log('═══════════════════════════════════════════════════════');
   AppLogger.log('🚀 GUARDIAN AI APP STARTING...');
   AppLogger.log('═══════════════════════════════════════════════════════');
-  
-  // Initialize PreferencesManager
-  AppLogger.log('📦 Initializing PreferencesManager...');
+
   final prefsManager = await PreferencesManager.init();
   AppLogger.log('✅ PreferencesManager initialized');
-  
+
   try {
     await EncryptionService.instance.initialize();
-    AppLogger.log('✅ Encryption Service initialized successfully');
-  } catch (e, stackTrace) {
-    AppLogger.logError('ENCRYPTION SERVICE INITIALIZATION FAILED!', e, stackTrace);
+    AppLogger.log('✅ Encryption Service initialized');
+  } catch (e, st) {
+    AppLogger.logError('Encryption init failed', e, st);
   }
-  
-  // Initialize Background Service
-  AppLogger.log('🔄 Initializing Background Service...');
-  await initializeBackgroundService();
-  AppLogger.log('✅ Background Service initialized');
-  
+
   AppLogger.log('═══════════════════════════════════════════════════════');
 
   runZonedGuarded(
@@ -73,7 +55,7 @@ void main() async {
           details.stack,
         );
       };
-      runApp(GuardianAIAppWrapper());
+      runApp(GuardianAIAppWrapper(prefsManager: prefsManager));
     },
     (error, stack) {
       AppLogger.logError('Uncaught zone error', error, stack);
@@ -81,208 +63,50 @@ void main() async {
   );
 }
 
-// Wrapper that handles initialization after app starts
 class GuardianAIAppWrapper extends StatelessWidget {
-  const GuardianAIAppWrapper({super.key});
+  final PreferencesManager prefsManager;
+  const GuardianAIAppWrapper({super.key, required this.prefsManager});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Guardian AI',
       debugShowCheckedModeBanner: false,
-      home: InitializationScreen(),
+      home: StartupGateScreen(appBuilder: (_) => _buildMainApp()),
     );
   }
-}
 
-// Screen that performs initialization and then navigates to main app
-class InitializationScreen extends StatefulWidget {
-  const InitializationScreen({super.key});
+  Widget _buildMainApp() {
+    Widget initialScreen = const LoginScreen();
 
-  @override
-  State<InitializationScreen> createState() => _InitializationScreenState();
-}
+    if (prefsManager.isLoggedIn()) {
+      final lastRoute = prefsManager.getLastRoute();
+      final viewMode = prefsManager.getViewMode();
 
-class _InitializationScreenState extends State<InitializationScreen>
-    with SingleTickerProviderStateMixin {
-  String _status = 'Initializing...';
-  bool _hasError = false;
-  String _errorMessage = '';
-  late final AnimationController _logoController;
-  late final Animation<double> _logoScale;
-  late final Animation<double> _logoOpacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _logoScale = Tween<double>(begin: 0.6, end: 1.0)
-        .animate(CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack));
-    _logoOpacity = CurvedAnimation(parent: _logoController, curve: Curves.easeOut);
-    _logoController.forward();
-    _initialize();
-  }
-
-  @override
-  void dispose() {
-    _logoController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initialize() async {
-    try {
-      setState(() => _status = 'Loading preferences...');
-      await Future.delayed(const Duration(milliseconds: 100)); // Let UI update
-      
-      final prefsManager = await PreferencesManager.init();
-      
-      setState(() => _status = 'Initializing encryption...');
-      try {
-        await EncryptionService.instance.initialize();
-      } catch (e) {
-        print('Encryption init failed: $e');
-      }
-      
-      setState(() => _status = 'Initializing AI safety...');
-      await GemmaManager.instance.initialize();
-      
-      // Successfully initialized - navigate to main app
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => MultiProvider(
-              providers: [
-                Provider<PreferencesManager>.value(value: prefsManager),
-                Provider<ApiService>(create: (_) => ApiService()),
-                ChangeNotifierProvider(create: (_) => LocationService()),
-                ChangeNotifierProvider(create: (_) => WebSocketService()),
-                ChangeNotifierProvider(create: (_) => AppBlockerService()),
-                ChangeNotifierProvider(create: (_) => ChatService()),
-                ChangeNotifierProvider(create: (_) => TimeExtensionService()),
-                ChangeNotifierProvider(create: (_) => GeofenceService()),
-                ChangeNotifierProvider(create: (_) => GamifiedPermissionService()),
-              ],
-              child: GuardianAIApp(prefsManager: prefsManager),
-            ),
-          ),
-        );
-      }
-    } catch (e, stackTrace) {
-      print('Initialization error: $e');
-      print('Stack: $stackTrace');
-      
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = e.toString();
-        });
+      if (lastRoute == '/parent_dashboard' || viewMode == 'parent') {
+        initialScreen = const ParentDashboardScreen();
+      } else if (prefsManager.hasSelectedChild()) {
+        initialScreen = const ChildScreen();
+      } else {
+        initialScreen = const ProfileSelectionScreen();
       }
     }
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: AnimatedGradientBg(
-        child: Center(
-          child: _hasError
-              ? Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Initialization Error',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _errorMessage,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14, color: Colors.white70),
-                      ),
-                      const SizedBox(height: 24),
-                      TapBounce(
-                        onTap: () {
-                          setState(() {
-                            _hasError = false;
-                            _errorMessage = '';
-                          });
-                          _initialize();
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                          decoration: BoxDecoration(
-                            gradient: AppTheme.blueGrad,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'Retry',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    FadeTransition(
-                      opacity: _logoOpacity,
-                      child: ScaleTransition(
-                        scale: _logoScale,
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primary.withOpacity(0.4),
-                                blurRadius: 32,
-                                spreadRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: Image.asset(
-                            'assets/images/shield_logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        color: AppTheme.primary,
-                        strokeWidth: 2.5,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Text(
-                        _status,
-                        key: ValueKey(_status),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white54,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-        ),
+    return MultiProvider(
+      providers: [
+        Provider<PreferencesManager>.value(value: prefsManager),
+        Provider<ApiService>(create: (_) => ApiService()),
+        ChangeNotifierProvider(create: (_) => LocationService()),
+        ChangeNotifierProvider(create: (_) => WebSocketService()),
+        ChangeNotifierProvider(create: (_) => AppBlockerService()),
+        ChangeNotifierProvider(create: (_) => ChatService()),
+        ChangeNotifierProvider(create: (_) => TimeExtensionService()),
+        ChangeNotifierProvider(create: (_) => GeofenceService()),
+        ChangeNotifierProvider(create: (_) => GamifiedPermissionService()),
+      ],
+      child: GuardianAIApp(
+        prefsManager: prefsManager,
+        initialScreen: initialScreen,
       ),
     );
   }
@@ -290,30 +114,16 @@ class _InitializationScreenState extends State<InitializationScreen>
 
 class GuardianAIApp extends StatelessWidget {
   final PreferencesManager prefsManager;
-  
-  const GuardianAIApp({super.key, required this.prefsManager});
+  final Widget initialScreen;
+
+  const GuardianAIApp({
+    super.key,
+    required this.prefsManager,
+    required this.initialScreen,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Determine initial route based on login status
-    Widget initialScreen = const LoginScreen();
-    
-    if (prefsManager.isLoggedIn()) {
-      final lastRoute = prefsManager.getLastRoute();
-      final viewMode = prefsManager.getViewMode();
-      
-      if (lastRoute == '/parent_dashboard' || viewMode == 'parent') {
-        // Parent was viewing parent dashboard
-        initialScreen = const ParentDashboardScreen();
-      } else if (prefsManager.hasSelectedChild()) {
-        // Child screen
-        initialScreen = const ChildScreen();
-      } else {
-        // Logged in but no child selected - go to profile selection
-        initialScreen = const ProfileSelectionScreen();
-      }
-    }
-    
     return MaterialApp(
       title: 'Guardian AI',
       debugShowCheckedModeBanner: false,
@@ -351,7 +161,9 @@ class GuardianAIApp extends StatelessWidget {
         ),
         dialogTheme: DialogThemeData(
           backgroundColor: AppTheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusXL)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusXL),
+          ),
         ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: AppTheme.surface,
@@ -365,7 +177,9 @@ class GuardianAIApp extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusM)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
             elevation: 0,
           ),
@@ -374,14 +188,14 @@ class GuardianAIApp extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white70,
             side: BorderSide(color: AppTheme.border),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusM)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
           ),
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: AppTheme.accentBlue,
-          ),
+          style: TextButton.styleFrom(foregroundColor: AppTheme.accentBlue),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -410,12 +224,16 @@ class GuardianAIApp extends StatelessWidget {
           color: AppTheme.primary,
         ),
         switchTheme: SwitchThemeData(
-          thumbColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? AppTheme.success : Colors.grey),
-          trackColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected)
-              ? AppTheme.success.withOpacity(0.4)
-              : Colors.grey.withOpacity(0.3)),
+          thumbColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? AppTheme.success
+                : Colors.grey,
+          ),
+          trackColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? AppTheme.success.withOpacity(0.4)
+                : Colors.grey.withOpacity(0.3),
+          ),
         ),
       ),
       themeMode: ThemeMode.dark,
@@ -429,254 +247,4 @@ class GuardianAIApp extends StatelessWidget {
       },
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// Background Service Setup
-// ---------------------------------------------------------------------------
-
-Future<void> initializeBackgroundService() async {
-  final service = FlutterBackgroundService();
-
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'monitoring_foreground',
-    'Guardian AI Monitoring',
-    description: 'Running safety analysis in background',
-    importance: Importance.low,
-  );
-
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-
-  await service.configure(
-    androidConfiguration: AndroidConfiguration(
-      onStart: onStart,
-      autoStart: false,
-      isForegroundMode: true,
-      notificationChannelId: 'monitoring_foreground',
-      initialNotificationTitle: 'Guardian AI Active',
-      initialNotificationContent: 'Monitoring child activity',
-      foregroundServiceNotificationId: 888,
-    ),
-    iosConfiguration: IosConfiguration(
-      autoStart: false,
-      onForeground: onStart,
-      onBackground: onIosBackground,
-    ),
-  );
-}
-
-@pragma('vm:entry-point')
-Future<bool> onIosBackground(ServiceInstance service) async => true;
-
-@pragma('vm:entry-point')
-void onStart(ServiceInstance service) async {
-  DartPluginRegistrant.ensureInitialized();
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    AppLogger.log('[BG] Warning: .env file missing in background isolate');
-  }
-  
-  await AppLogger.init();
-  AppLogger.log('[BG] Background Service onStart initialized');
-
-  if (service is AndroidServiceInstance) {
-    service.on('setAsForeground').listen((_) => service.setAsForegroundService());
-    service.on('setAsBackground').listen((_) => service.setAsBackgroundService());
-  }
-
-  service.on('stopService').listen((_) => service.stopSelf());
-
-  final notifications = FlutterLocalNotificationsPlugin();
-  
-  // Initialize notification channel for alerts
-  const alertChannel = AndroidNotificationChannel(
-    'alerts_channel',
-    'Safety Alerts',
-    description: 'High-risk content safety alerts',
-    importance: Importance.high,
-  );
-  await notifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(alertChannel);
-  
-  InferenceModel? model;
-  GemmaContentAnalyzer? analyzer;
-  InferenceChat? visionChat;
-  bool gemmaInitialized = false;
-  bool isAnalyzingScreenshot = false;
-  int screenshotsAnalyzed = 0;
-
-  /// Request screenshot analysis on-demand (only when ready)
-  Future<void> analyzeNextScreenshot() async {
-    if (isAnalyzingScreenshot) {
-      AppLogger.log('[BG] Already analyzing a screenshot, skipping request');
-      return;
-    }
-
-    // Lazy initialize Gemma model once
-    if (!gemmaInitialized) {
-      try {
-        AppLogger.log('[BG] 🔄 Initializing Gemma in background isolate...');
-        await GemmaManager.instance.initialize();
-        
-        if (!GemmaManager.instance.modelReady) {
-          await GemmaManager.instance.isModelInstalled();
-        }
-        
-        if (!GemmaManager.instance.modelReady) {
-          AppLogger.log('[BG] ⏳ Model not ready yet, scheduling retry...');
-          Future.delayed(const Duration(seconds: 3), analyzeNextScreenshot);
-          return;
-        }
-
-        // Activate model with proper error handling
-        try {
-          AppLogger.log('[BG] 📁 Activating Gemma model...');
-          await GemmaManager.instance.activateModel();
-          model = await FlutterGemma.getActiveModel(
-            maxTokens: 128,
-            supportImage: true,
-          );
-
-          if (model == null) {
-            throw Exception('Failed to get active model after activation');
-          }
-
-          analyzer = GemmaContentAnalyzer(model!);
-          visionChat = await model!.createChat(
-            temperature: 0.1,
-            topK: 40,
-            supportImage: true,
-          );
-
-          gemmaInitialized = true;
-          AppLogger.log('[BG] ✅ Gemma model successfully initialized in background isolate');
-        } catch (e) {
-          AppLogger.log('[BG] ❌ Model activation failed: $e');
-          gemmaInitialized = false;
-          return;
-        }
-      } catch (e) {
-        AppLogger.log('[BG] ❌ Gemma initialization error: $e');
-        gemmaInitialized = false;
-        return;
-      }
-    }
-
-    if (analyzer == null || visionChat == null) {
-      AppLogger.log('[BG] ⚠️ Analyzer not ready');
-      return;
-    }
-
-    isAnalyzingScreenshot = true;
-    try {
-      // Check for latest screenshot
-      final cacheDir = Directory('/data/data/com.example.guardian_ai/cache/screenshots');
-      if (!await cacheDir.exists()) {
-        AppLogger.log('[BG] Screenshot cache dir does not exist');
-        return;
-      }
-
-      final files = cacheDir.listSync().whereType<File>().toList();
-      if (files.isEmpty) {
-        AppLogger.log('[BG] No screenshots available for analysis');
-        return;
-      }
-
-      // Get most recent screenshot
-      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-      final newest = files.first;
-
-      final Uint8List imageBytes;
-      try {
-        imageBytes = await newest.readAsBytes();
-      } catch (e) {
-        AppLogger.log('[BG] Could not read screenshot file: $e');
-        return;
-      }
-
-      if (imageBytes.isEmpty) {
-        AppLogger.log('[BG] Screenshot is empty');
-        return;
-      }
-
-      // Delete all screenshots (zero-cache policy)
-      for (final f in files) {
-        try { await f.delete(); } catch (_) {}
-      }
-
-      screenshotsAnalyzed++;
-      AppLogger.log('[BG] 📸 Analyzing screenshot #$screenshotsAnalyzed (${imageBytes.length} bytes)');
-
-      // Describe image
-      final description = await analyzer!.describeImageWithChat(
-        visionChat!,
-        imageBytes,
-      );
-      
-      if (description.isEmpty) {
-        AppLogger.log('[BG] Empty description, skipping');
-        return;
-      }
-
-      AppLogger.log('[BG] 🔍 Description: ${description.substring(0, description.length.clamp(0, 80))}...');
-
-      // Analyze for safety
-      final result = await analyzer!.analyzeText(
-        description,
-        foregroundApp: 'Background Monitor',
-        useCache: false,
-      );
-
-      AppLogger.log('[BG] ✔️ Analysis complete - Risk Score: ${result.riskScore}%');
-
-      if (result.riskScore >= 70) {
-        AppLogger.log('[BG] 🚨 HIGH RISK CONTENT DETECTED (${result.riskScore}%)');
-        
-        // Sync to backend
-        try {
-          final alertSync = AlertSyncService();
-          await alertSync.syncAlert(result, 'Screenshot Analysis');
-        } catch (e) {
-          AppLogger.log('[BG] Alert sync error: $e');
-        }
-
-        // Show notification
-        await notifications.show(
-          999,
-          '🚨 Safety Alert: ${result.riskScore}% Risk',
-          'Detected content: ${result.summary}',
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'alerts_channel',
-              'Safety Alerts',
-              importance: Importance.high,
-              priority: Priority.high,
-            ),
-          ),
-        );
-
-        // Notify UI
-        service.invoke('alertGenerated', result.toJson());
-      }
-    } catch (e) {
-      AppLogger.log('[BG] ❌ Screenshot analysis error: $e');
-    } finally {
-      isAnalyzingScreenshot = false;
-    }
-  }
-
-  // Listen for screenshot requests from the UI
-  service.on('requestAnalysis').listen((_) {
-    AppLogger.log('[BG] 📲 Received request to analyze screenshot');
-    analyzeNextScreenshot();
-  });
-
-  AppLogger.log('[BG] ✅ Background service initialized - ready for on-demand screenshot analysis');
 }

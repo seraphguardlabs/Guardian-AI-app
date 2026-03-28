@@ -17,23 +17,40 @@ import android.provider.Settings
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.util.Calendar
 
 class MainActivity: FlutterActivity() {
+
+    companion object {
+        private const val TAG = "GuardianAI"
+
+        /** Receives JPEG ByteArray frames from ScreenCaptureService and delivers them to Dart. */
+        var eventSink: EventChannel.EventSink? = null
+
+        fun sendFrameToFlutter(frame: ByteArray) {
+            Handler(Looper.getMainLooper()).post {
+                if (eventSink != null) {
+                    eventSink?.success(frame)
+                    Log.d(TAG, "sendFrameToFlutter: ${frame.size} bytes sent ✅")
+                } else {
+                    Log.w(TAG, "sendFrameToFlutter: EventSink null — frame dropped")
+                }
+            }
+        }
+    }
+
     private val CHANNEL = "com.guardian_ai/screen_time"
     private val BROWSER_CHANNEL = "com.guardian_ai/browser_history"
     private val BLOCKER_CHANNEL = "com.example.guardian_ai/app_blocker"
     private val MONITORING_CHANNEL = "com.example.guardian_ai/monitoring_service"
-    private val SCREEN_CAPTURE_CHANNEL = "com.example.guardian_ai/screen_capture"
+    private val SCREEN_CAPTURE_CHANNEL = "guardian/screen_capture"
+    private val SCREEN_FRAMES_CHANNEL = "guardian/screen_frames"
     private val LOCATION_SERVICE_CHANNEL = "com.example.guardian_ai/location_service"
-    
+
     private val SCREEN_CAPTURE_REQUEST_CODE = 1000
     private var screenCaptureResultCallback: MethodChannel.Result? = null
-    
-    // Store permission result so capture can start later (after AI is ready)
-    private var pendingProjectionResultCode: Int? = null
-    private var pendingProjectionData: Intent? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -152,36 +169,38 @@ class MainActivity: FlutterActivity() {
             }
         }
         
-        // Screen Capture Channel
-        val screenCaptureChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CAPTURE_CHANNEL)
-        ScreenCaptureService.methodChannel = screenCaptureChannel
-        
-        screenCaptureChannel.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "requestPermission" -> {
-                    requestScreenCapturePermission(result)
-                }
-                "startCapture" -> {
-                    // Actually start the capture service (call after AI is ready)
-                    val rc = pendingProjectionResultCode
-                    val data = pendingProjectionData
-                    if (rc != null && data != null) {
-                        ScreenCaptureService.start(this, rc, data)
-                        result.success(true)
-                    } else {
-                        result.error("NO_PERMISSION", "Screen capture permission not yet granted", null)
+        // Screen Capture MethodChannel — startService triggers permission dialog,
+        // then service starts directly from onActivityResult (gemma3n pattern).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CAPTURE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startService" -> {
+                        screenCaptureResultCallback = result
+                        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        startActivityForResult(mpm.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
+                        Log.d(TAG, "Screen capture permission dialog launched")
                     }
+                    "stopService" -> {
+                        ScreenCaptureService.stop(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
                 }
-                "stopCapture" -> {
-                    ScreenCaptureService.stop(this)
-                    result.success(true)
-                }
-                "isCapturing" -> {
-                    result.success(ScreenCaptureService.isRunning)
-                }
-                else -> result.notImplemented()
             }
-        }
+
+        // Screen Frames EventChannel — ScreenCaptureService calls sendFrameToFlutter()
+        // which posts to this sink. Dart side receives Uint8List directly in memory.
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_FRAMES_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    eventSink = events
+                    Log.d(TAG, "EventChannel: Dart is listening ✅")
+                }
+                override fun onCancel(arguments: Any?) {
+                    eventSink = null
+                    Log.d(TAG, "EventChannel: Dart cancelled stream")
+                }
+            })
 
         // Location Background Service Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOCATION_SERVICE_CHANNEL)
@@ -452,27 +471,19 @@ class MainActivity: FlutterActivity() {
         return mode == AppOpsManager.MODE_ALLOWED
     }
     
-    private fun requestScreenCapturePermission(result: MethodChannel.Result) {
-        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        screenCaptureResultCallback = result
-        startActivityForResult(mediaProjectionManager.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
-        Log.d("MainActivity", "Screen capture permission requested")
-    }
-    
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        
+
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK && data != null) {
-                Log.d("MainActivity", "Screen capture permission granted (stored, not started yet)")
-                // Store the permission result — don't start the service yet.
-                // Flutter will call 'startCapture' once the AI model is activated.
-                pendingProjectionResultCode = resultCode
-                pendingProjectionData = data
+                Log.d(TAG, "Screen capture permission GRANTED ✅")
+                // Start the service immediately — gemma3n pattern.
+                // No deferred startCapture() call needed.
+                ScreenCaptureService.start(this, resultCode, data)
                 screenCaptureResultCallback?.success(true)
             } else {
-                Log.d("MainActivity", "Screen capture permission denied")
-                screenCaptureResultCallback?.error("PERMISSION_DENIED", "User denied screen capture permission", null)
+                Log.w(TAG, "Screen capture permission DENIED")
+                screenCaptureResultCallback?.success(false)
             }
             screenCaptureResultCallback = null
         }

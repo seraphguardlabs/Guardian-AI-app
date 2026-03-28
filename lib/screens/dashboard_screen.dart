@@ -110,18 +110,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (childHash != null && childHash.isNotEmpty) {
       final wsService = Provider.of<WebSocketService>(context, listen: false);
       await wsService.connect(childHash);
-      debugPrint('=ÉˆÓ WebSocket connected for child: $childHash');
+      debugPrint('= WebSocket connected for child: $childHash');
       
       // Listen for incoming messages from server
       _wsMessageSubscription = wsService.messages.listen((message) {
         if (message['type'] == 'restrictions_update') {
-          debugPrint('=É‹Ω Received restrictions update via WebSocket');
+          debugPrint('=‹Ω Received restrictions update via WebSocket');
           _fetchRestrictions();
         }
       });
       
     } else {
-      debugPrint('G‹·n+≈ No child hash found, skipping WebSocket connection');
+      debugPrint('Gn+ No child hash found, skipping WebSocket connection');
     }
   }
   
@@ -130,7 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final childHash = prefsManager.getChildHash();
     
     if (childHash == null || childHash.isEmpty) {
-      debugPrint('G‹·n+≈ No child hash, skipping restrictions fetch');
+      debugPrint('Gn+ No child hash, skipping restrictions fetch');
       return;
     }
     
@@ -150,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       setState(() {
         _restrictions = restrictions;
       });
-      debugPrint('G£‡ Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
+      debugPrint('G Restrictions updated: ${_restrictions!.restrictedApps.length} apps');
       
       // Update app blocker service
       final appBlocker = Provider.of<AppBlockerService>(context, listen: false);
@@ -165,7 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final wsService = Provider.of<WebSocketService>(context, listen: false);
     
     if (!wsService.isConnected) {
-      debugPrint('G‹·n+≈ WebSocket not connected, skipping data send');
+      debugPrint('Gn+ WebSocket not connected, skipping data send');
       return;
     }
     
@@ -208,7 +208,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       appWiseData: appWiseData,
     );
     
-    debugPrint('=ÉÙ¶ Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
+    debugPrint('= Sent screen time: ${totalSeconds}s, ${appWiseData.length} apps');
   }
   
   Future<void> _sendLocationData() async {
@@ -227,7 +227,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         );
 
         if (distance < 5.0) {
-          debugPrint('=ÉÙÏ (Old) Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
+          debugPrint('= (Old) Location update skipped: Only moved ${distance.toStringAsFixed(2)}m');
           return;
         }
       }
@@ -239,7 +239,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
 
       _lastSentPosition = currentPosition;
-      debugPrint('=ÉÙÏ (Old) Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
+      debugPrint('= (Old) Sent location: ${currentPosition.latitude}, ${currentPosition.longitude}');
     }
   }
   
@@ -258,7 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     
     await wsService.sendSiteAccess(logs: logs);
     
-    debugPrint('=ÉÓ… Sent ${logs.length} website visits');
+    debugPrint('= Sent ${logs.length} website visits');
   }
 
   Future<void> _getScreenTime() async {
@@ -755,7 +755,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
-                                              'Accuracy: -¶${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
+                                              'Accuracy: -${locationService.currentPosition!.accuracy.toStringAsFixed(1)}m',
                                               style: TextStyle(
                                                 color: Colors.white70,
                                               ),
