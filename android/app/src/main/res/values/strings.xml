@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Guardian AI takes periodic screenshots and scores child-safety risk categories.</string>
+    <string name="accessibility_service_summary">Screenshot-only child-safety monitoring</string>
+</resources>
